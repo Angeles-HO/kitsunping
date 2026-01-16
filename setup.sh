@@ -100,7 +100,7 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
 
     log_info "Starting calibration process..."
     
-    calibrate_network_settings 10 2> >(tee "/sdcard/seguimiento2.log" >&2) | tee "$NEWMODPATH/logs/results.env"
+    calibrate_network_settings 10 2> >(tee "/sdcard/trace_log2.log" >&2) | tee "$NEWMODPATH/logs/results.env"
 
     if [ -s "$NEWMODPATH/logs/results.env" ]; then
         . "$NEWMODPATH/logs/results.env"
