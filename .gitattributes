@@ -1,0 +1,21 @@
+# todo a Lf para compatibilidad cross-platform
+* text=auto eol=lf
+# evitar conflictos de fin de linea en scripts bash
+*.sh text eol=lf
+*.bash text eol=lf
+# evitar conflictos de fin de linea en archivos de configuracion
+*.conf text eol=lf
+*.env text eol=lf
+*.cfg text eol=lf
+# evitar conflictos de fin de linea en archivos JSON
+*.json text eol=lf
+*.jsonc text eol=lf
+# evitar conflictos de fin de linea en archivos de log  
+*.log text eol=lf
+# evitar conflictos de fin de linea en archivos de texto
+*.txt text eol=lf
+*.md text eol=lf
+*.ini text eol=lf
+*.xml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

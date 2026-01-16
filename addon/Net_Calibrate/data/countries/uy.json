@@ -1,0 +1,52 @@
+{
+  "entries": [
+    {
+      "mcc": 748,
+      "mnc": "001",
+      "provider": "Digitel",
+      "dns": [
+        "200.44.32.12",
+        "200.44.32.13"
+      ],
+      "ping": "digitel.com.ve"
+    },
+    {
+      "mcc": 748,
+      "mnc": "002",
+      "provider": "Digitel",
+      "dns": [
+        "200.44.32.12",
+        "200.44.32.13"
+      ],
+      "ping": "digitel.com.ve"
+    },
+    {
+      "mcc": 748,
+      "mnc": "004",
+      "provider": "Movistar",
+      "dns": [
+        "80.58.61.250",
+        "80.58.61.254"
+      ],
+      "ping": "200.71.191.112"
+    },
+    {
+      "mcc": 748,
+      "mnc": "006",
+      "provider": "Antel Movil",
+      "dns": [
+        "200.35.64.3",
+        "200.35.64.4"
+      ],
+      "ping": "movilnet.com.ve"
+    }
+  ],
+  "default": {
+    "provider": "google",
+    "dns": [
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
+    "ping": "google.com"
+  }
+}

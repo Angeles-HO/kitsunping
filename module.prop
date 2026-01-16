@@ -1,0 +1,7 @@
+id=Kitsun_ping
+name=Kitsunping
+version=4.85
+versionCode=4
+author=@Angeles_ho
+description=Improved data transfer over both Wi-Fi and mobile data. Network timeout has also been increased, so you can stay connected even in areas with weak signals. Stability improvements have also been made for a number of devices.
+updateJson=https://angeles-ho.github.io/angeles_ho.github.io/Kitsun_ping/update.json

@@ -1,0 +1,208 @@
+{
+  "entries": [
+    {
+      "mcc": 724,
+      "mnc": "038",
+      "provider": "Claro",
+      "dns": [
+        "200.160.0.10",
+        "200.160.0.11"
+      ],
+      "ping": "digitel.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "005",
+      "provider": "Claro",
+      "dns": [
+        "200.160.0.10",
+        "200.160.0.11"
+      ],
+      "ping": "digitel.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "004",
+      "provider": "TIM",
+      "dns": [
+        "200.160.1.10",
+        "200.160.1.11"
+      ],
+      "ping": "tim.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "003",
+      "provider": "TIM",
+      "dns": [
+        "200.160.1.10",
+        "200.160.1.11"
+      ],
+      "ping": "tim.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "054",
+      "provider": "TIM",
+      "dns": [
+        "200.160.1.10",
+        "200.160.1.11"
+      ],
+      "ping": "tim.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "002",
+      "provider": "TIM",
+      "dns": [
+        "200.160.1.10",
+        "200.160.1.11"
+      ],
+      "ping": "tim.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "023",
+      "provider": "Vivo",
+      "dns": [
+        "200.160.2.10",
+        "200.160.2.11"
+      ],
+      "ping": "vivo.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "006",
+      "provider": "Vivo",
+      "dns": [
+        "200.160.2.10",
+        "200.160.2.11"
+      ],
+      "ping": "vivo.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "010",
+      "provider": "Vivo",
+      "dns": [
+        "200.160.2.10",
+        "200.160.2.11"
+      ],
+      "ping": "vivo.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "011",
+      "provider": "Vivo",
+      "dns": [
+        "200.160.2.10",
+        "200.160.2.11"
+      ],
+      "ping": "vivo.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "031",
+      "provider": "Oi Movel",
+      "dns": [
+        "200.160.3.10",
+        "200.160.3.11"
+      ],
+      "ping": "oi.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "016",
+      "provider": "Oi Movel",
+      "dns": [
+        "200.160.3.10",
+        "200.160.3.11"
+      ],
+      "ping": "oi.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "015",
+      "provider": "Sercomtel",
+      "dns": [
+        "200.160.4.10",
+        "200.160.4.11"
+      ],
+      "ping": "sercomtel.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "032",
+      "provider": "Algar Telecom",
+      "dns": [
+        "200.160.5.10",
+        "200.160.5.11"
+      ],
+      "ping": "algartelecom.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "033",
+      "provider": "Algar Telecom",
+      "dns": [
+        "200.160.5.10",
+        "200.160.5.11"
+      ],
+      "ping": "algartelecom.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "034",
+      "provider": "Algar Telecom",
+      "dns": [
+        "200.160.5.10",
+        "200.160.5.11"
+      ],
+      "ping": "algartelecom.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "000",
+      "provider": "Claro-nxt/Nextel",
+      "dns": [
+        "200.160.6.10"
+      ],
+      "ping": "nextel.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "039",
+      "provider": "Claro-nxt/Nextel",
+      "dns": [
+        "200.160.6.10"
+      ],
+      "ping": "nextel.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "026",
+      "provider": "Americanet",
+      "dns": [
+        "200.160.7.10"
+      ],
+      "ping": "americanet.com.br"
+    },
+    {
+      "mcc": 724,
+      "mnc": "021",
+      "provider": "Ligue",
+      "dns": [
+        "200.160.8.10"
+      ],
+      "ping": "ligue.com.br"
+    }
+  ],
+  "default": {
+    "provider": "google",
+    "dns": [
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
+    "ping": "google.com"
+  }
+}

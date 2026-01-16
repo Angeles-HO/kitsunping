@@ -1,0 +1,15 @@
+# Profiles
+net_profiles/*
+
+# Cache
+cache/*
+
+# Configs
+configs/default.conf
+configs/games_backup.conf
+
+# Logs
+logs/*
+
+# Temporary files
+kUtils.txt

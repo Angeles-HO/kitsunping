@@ -1,0 +1,43 @@
+# Configuracion optimizada para red en Samsung Galaxy As (puede ser inestable en otros dispositivos, proceder con precaucion)
+
+# --- Radio / RIL ---
+# Permite transferencia simultanea de voz y datos (0: deshabilitar | 1: habilitar si la red lo soporta)
+ro.ril.enable.dtm=1
+
+# Cifrado de trafico GSM/GPRS
+ro.ril.enable.a51=1
+ro.ril.enable.a52=0
+ro.ril.enable.a53=1
+ro.ril.gprsclass=34
+ro.ril.transmitpower=true
+
+# Metodo de correlacion de la base de datos para obtener ubicacion (ajustar si se prioriza privacidad)
+# ro.ril.enable.dcm.feature=0
+
+# Configuracion de red predeterminada
+# 0: GSM/WCDMA (WCDMA preferido) 1: GSM 2: WCDMA 3: GSM/WCDMA (auto) 9: LTE/GSM/WCDMA 10: LTE 11: LTE/WCDMA 12: LTE/CDMA/EvDo
+# 13: LTE/CDMA/EvDo/GSM/WCDMA 22: LTE/TDSCDMA/CDMA/EvDo/GSM/WCDMA
+ro.telephony.default_network=9
+
+# --- Wi-Fi ---
+wifi.interface=wlan0
+ro.wifi.direct.interface=p2p0
+wifi.tethering.interface=wlan0
+wifi.supplicant_scan_interval=0
+
+# --- VoLTE / VoWiFi ---
+persist.vendor.mtk.volte.enable=1
+persist.vendor.volte_support=1
+persist.vendor.vowifi.enable=1
+persist.vendor.vowifi_support=1
+
+# --- Energia y otros ---
+persist.sys.vzw_wifi_running=true
+persist.radio.add_power_save=0
+ro.config.hw_power_saving=false
+ro.media.enc.jpeg.quality=100
+persist.audio.fluence.voicecall=true
+logcat.live=disable
+
+# Categoria Uplink-Downlink: HSPA+ (5.76 Mbps) | HSDA+ (42 Mbps) | RIL Settings (mejora de conectividad y señal) | hsxpa | hspa | lte | ltea |
+# Aca se agregaran los valores de las bandas soportadas por el dispositivo cuando termine de ejecutarse el script

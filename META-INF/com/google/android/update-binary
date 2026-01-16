@@ -1,0 +1,142 @@
+#!/sbin/sh
+
+# --- Initialization ---
+umask 022
+PERSISTDIR="/sbin/.magisk/mirror/persist"
+
+ui_print() { echo "$@"; }
+
+# --- Setup environment ---
+OUTFD="$2"
+ZIPFILE="$3"
+
+mount /data 2>/dev/null
+. "/data/adb/magisk/util_functions.sh"
+setup_flashable
+mount_partitions
+api_level_arch_detect
+
+if [ "$BOOTMODE" ]; then
+  boot_actions
+else
+  recovery_actions
+fi
+
+# --- Preparation ---
+trap 'rm -rf "$TMPDIR"' EXIT
+unzip -o "$ZIPFILE" -d "$TMPDIR" >&2 || { echo " [x] ZIP file extraction failed"; exit 1; }
+
+if [ "$BOOTMODE" ]; then
+  MODDIRNAME="modules_update"
+else
+  MODDIRNAME="modules"
+fi
+
+NVBASE="/data/adb"
+MODID=$(grep_prop "id" "$TMPDIR/module.prop")
+MODNAME=$(grep_prop "name" "$TMPDIR/module.prop")
+MODVERS=$(grep_prop "version" "$TMPDIR/module.prop")
+MODULEROOT="$NVBASE/$MODDIRNAME"
+MODPATH="$MODULEROOT/$MODID"
+NEWMODPATH="$MODULEROOT/$MODID"
+LOGDIR="$NVBASE/logs"
+LOGFILE="$LOGDIR/${MODID}_up_binary.log"
+
+mkdir -p "$LOGDIR"
+
+log_line() { echo "$1" | tee -a "$LOGFILE"; }
+
+if [ -z "$MODID" ] || [ -z "$MODNAME" ] || [ -z "$MODVERS" ]; then
+  log_line " [x] Error: Missing module information (ID, Name, Version)."
+  exit 1
+fi
+
+# Limpia instalacion previa si existe
+if [ -d "$MODPATH" ]; then
+  log_line " [i] Previous installation detected, removing old module files..."
+  rm -rf "$MODPATH" || { log_line " [SYS] [up-bi] Failed to remove old module files"; exit 1; }
+fi
+
+# Crear ruta de modulo
+mkdir -p "$MODPATH" 2>/dev/null
+
+if ! mkdir -p "$MODPATH"; then
+  log_line " [x] Failed to create directory $MODPATH"
+  exit 1
+fi
+
+# --- Installation ---
+if unzip -o "$ZIPFILE" -d "$MODPATH" >&2; then
+  log_line " [i] Files extracted successfully"
+else
+  log_line " [x] ZIP file extraction failed"
+  exit 1
+fi
+
+# Ejecutar setup
+if [ -f "$MODPATH/setup.sh" ]; then
+  log_line " [i] setup.sh file found, setting executable permissions and continuing installation"
+  chmod +x "$MODPATH/setup.sh" || { log_line " [x] Failed to set executable permissions on setup.sh"; exit 1; }
+  set_perm "$MODPATH/setup.sh" 0 0 0755 u:object_r:system_file:s0
+  set_perm "$MODPATH/addon/Net_Calibrate/calibrate.sh" 0 0 0755 u:object_r:system_file:s0
+  . "$MODPATH/setup.sh"
+else
+  log_line " [x] setup.sh not found, canceling installation"
+  exit 1
+fi
+
+copy_file_if_exists() {
+  local SRC="$TMPDIR/scripts/$1"
+  local DEST="$MODPATH/$1"
+
+  if [ -f "$SRC" ]; then
+    cp -af "$SRC" "$DEST" || { log_line " [x] Error al copiar $1"; exit 1; }
+    log_line " [✓] Copiado: [$SRC] --> [$DEST]"
+  else
+    log_line " [x] Archivo faltante: $1"
+    exit 1
+  fi
+}
+
+copy_file_if_exists "service.sh"
+copy_file_if_exists "uninstall.sh"
+copy_file_if_exists "post-fs-data.sh"
+
+if [ "$DEBUG" = "true" ]; then
+  set -x
+fi
+
+if [ "$SKIPMOUNT" = "true" ]; then
+  touch "$MODPATH/skip_mount"
+fi
+
+set_permissions
+
+for TARGET in $REPLACE; do
+  log_line "[*] Replacing destination: $TARGET"
+  mktouch "$MODPATH$TARGET/.replace"
+done
+
+if [ "$BOOTMODE" = "true" ]; then
+  mktouch "$NVBASE/modules/$MODID/update"
+  cp -af "$MODPATH/module.prop" "$NVBASE/modules/$MODID/module.prop"
+fi
+
+if [ -f "$MODPATH/sepolicy.rule" ]; then
+  copy_sepolicy_rules
+fi
+
+rm -rf "$MODPATH/scripts"
+rm -rf "$MODPATH/addon"
+rm -rf "$MODPATH/META-INF"
+rm -rf "$MODPATH/setup.sh"
+
+log_line " [i] Installation/update process completed"
+log_line " [i] You can now restart the device"
+
+cd /
+if [ "$BOOTMODE" != "true" ]; then
+  recovery_cleanup
+fi
+
+exit 0
