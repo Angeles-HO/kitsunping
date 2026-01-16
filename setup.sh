@@ -33,11 +33,11 @@ verify_complemento "$complemento_net_calibrate"
 divider="══════════════════════════════════════════════════"
 
 # Backup inicial (solo una vez)
-log_info "Creando backup de configuraciones originales..."
+log_info "Creating backup of original settings..."
 create_backup
-log_info "Backup creado en $NEWMODPATH/configs/kitsuneping_original_backup.conf"
+log_info "Backup created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
 
-# --- Info de instalacion ---
+# --- Installation info ---
 echo "${divider}"
 echo "❖ Information"
 echo "${divider}"
@@ -63,20 +63,20 @@ echo "❖ Contacto:"
 echo "${divider}"
 echo "Github      : https://github.com/Angeles-HO"
 echo "${divider}"
-echo "❖ Instalacion en progreso..."
+echo "❖ Installation in progress..."
 echo "${divider}"
 
-# --- Seleccion de modo ---
-log_info "Seleccione el modo de operacion:"
-log_info "  [Vol+] Modo Fijo"
-log_info "  [Vol-] Modo Automatico (4 mins aprox)"
-log_info "  [None] Modo Automatico (4 mins aprox)"
+# --- Mode selection ---
+log_info "Select operation mode:"
+log_info "  [Vol+] Fixed mode"
+log_info "  [Vol-] Automatic mode (~4 mins)"
+log_info "  [None] Automatic mode (~4 mins)"
 
 # Espera de entrada por 60s
 if $VKSEL 60; then
     echo "=============================="
     MODE_SELECTION=0
-    log_info "Modo Fijo seleccionado"
+    log_info "Fixed mode selected"
 
     # Valores fijos
     echo "ro.ril.hsupa.category=6" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
@@ -94,11 +94,11 @@ fi
 # --- Modo Automatico ---
 if [ "$MODE_SELECTION" -eq 1 ]; then
     log_info "Modo Automatico seleccionado"
-    log_info "Iniciando calibracion de red..."
-    log_info "Este proceso puede tardar, tenga una buena conexion a internet y paciencia"
-    log_info "Backup ya creado en $NEWMODPATH/configs/kitsuneping_original_backup.conf"
+    log_info "Starting network calibration..."
+    log_info "This may take a while; ensure good connection and be patient"
+    log_info "Backup already created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
 
-    log_info "Iniciando proceso de calibracion..."
+    log_info "Starting calibration process..."
     
     calibrate_network_settings 10 2> >(tee "/sdcard/seguimiento2.log" >&2) | tee "$NEWMODPATH/logs/results.env"
 
@@ -115,9 +115,9 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
             [ -n "$BEST_ro_ril_ltea_category" ] && echo "ro.ril.ltea.category=$BEST_ro_ril_ltea_category"
             [ -n "$BEST_ro_ril_nr5g_category" ] && echo "ro.ril.nr5g.category=$BEST_ro_ril_nr5g_category"
         } >> "$SYSTEM_PROP"
-        log_info "Configuracion aplicada con exito en system.prop"
+        log_info "Configuration applied successfully to system.prop"
     else
-        log_error "No se encontraron valores optimos en el log."
+        log_error "No optimal values found in the log."
         exit 1
     fi
 fi
@@ -128,5 +128,5 @@ progress_bar
 INSTALL_END_TIME=$(date +%s)
 INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))
 echo "${divider}"
-echo "❖ Instalación completada en ${INSTALL_DURATION} segundos."
+echo "❖ Installation completed in ${INSTALL_DURATION} seconds."
 echo "${divider}"

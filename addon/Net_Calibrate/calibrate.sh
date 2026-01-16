@@ -37,26 +37,26 @@ check_and_detect_commands() {
         # Buscar ping
         PING_BIN=$(command -v ping 2>/dev/null)
         if [ -z "$PING_BIN" ] || [ ! -x "$PING_BIN" ]; then
-            log_warning "Ping no encontrado en PATH, buscando en rutas comunes..."
+            log_warning "Ping not found in PATH, scanning common locations..."
             for path in /system/bin /system/xbin /vendor/bin /data/adb/magisk /data/data/com.termux/files/usr/bin; do
                 if [ -x "$path/ping" ]; then
                     PING_BIN="$path/ping"
-                    log_warning "Binario Ping encontrado en PATH: $PING_BIN" >> "$seguimiento_log"
-                    log_warning "Usando binario...." >> "$seguimiento_log"
+                    log_warning "Ping binary found at: $PING_BIN" >> "$seguimiento_log"
+                    log_warning "Using detected ping binary..." >> "$seguimiento_log"
                     break
                 fi
-                log_warning "Ping no encontrado en: $path" >> "$seguimiento_log"
+                log_warning "Ping not found in: $path" >> "$seguimiento_log"
             done
         fi
 
         if [ -z "$PING_BIN" ]; then
-            log_error "Ping no disponible en el sistema"
+            log_error "Ping not available on the system"
             return 1
         fi
 
         # Verificar si ping es funcional
         if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-            log_error "Ping disponible pero no funcional (revisa permisos, SELinux, red)"
+            log_error "Ping available but not functional (check permissions, SELinux, network)"
             return 1
         fi
 
@@ -78,10 +78,10 @@ calibrate_network_settings() {
     local config_json dns1 dns2 TEST_IP # variables locales sin asiganar
 
     log_info "====================== calibrate_property =========================" >> "$seguimiento_log"
-    log_info "Seguimiento de ejecucion, delay: $delay segundos" >> "$seguimiento_log"
+    log_info "Execution trace, delay: $delay seconds" >> "$seguimiento_log"
     config_json=$(configure_network) # obtener configuracion de red
     log_info "====================== calibrate_property =========================" >> "$seguimiento_log"
-    log_info "Configuracion de red obtenida (config_json): $config_json" >> "$seguimiento_log"
+    log_info "Network configuration obtained (config_json): $config_json" >> "$seguimiento_log"
 
     echo "$config_json" | "$jqbin" -e 'type == "object" and has("provider") and has("dns") and has("ping")' >/dev/null || {
         log_info "[ERROR] config_json invalido o incompleto:" >> "$seguimiento_log"
@@ -94,19 +94,19 @@ calibrate_network_settings() {
     TEST_IP=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
 
     log_info "DNS1: $dns1, DNS2: $dns2, TEST_IP: $TEST_IP" >> "$seguimiento_log"
-    log_info "Verificando conexion..."  >> "$seguimiento_log"
+    log_info "Checking connectivity..."  >> "$seguimiento_log"
 
     if ! $PING_BIN -c 3 -W 5 "$TEST_IP" >/dev/null; then
-        log_error "[ERROR] Sin conexion a Internet" >> "$seguimiento_log"
+        log_error "[ERROR] No Internet connection" >> "$seguimiento_log"
         return 1
     else
-        log_info "Test de conexion exitosa" >> "$seguimiento_log"
+        log_info "Connectivity test passed" >> "$seguimiento_log"
     fi
 
     local index=1
     export TEST_IP
 
-    log_info "Iniciando calibracion para $TEST_IP" >> "$seguimiento_log"
+    log_info "Starting calibration for $TEST_IP" >> "$seguimiento_log"
     for prop in $NET_PROPERTIES_KEYS; do
         (
             case "$prop" in
@@ -121,11 +121,11 @@ calibrate_network_settings() {
                     ;;
             esac
             if [ -z "$vals" ]; then
-                log_info "Valores vacios para $prop" >> "$seguimiento_log"
+                log_info "Empty value set for $prop" >> "$seguimiento_log"
                 continue
             fi
             log_info "====================== calibrate_network_settings =========================" >> "$seguimiento_log"
-            log_info "calibrando_propiedades: prop: [$prop] val: [$vals] delay: [$delay] en [${CACHE_DIR_cln}/$prop.best]" >> "$seguimiento_log"
+            log_info "Calibrating properties: prop: [$prop] val: [$vals] delay: [$delay] at [${CACHE_DIR_cln}/$prop.best]" >> "$seguimiento_log"
             calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR_cln/$prop.best"
         ) &
         index=$((index + 1))
@@ -138,7 +138,7 @@ calibrate_network_settings() {
         local best_file="$CACHE_DIR_cln/$prop.best"
         local best_val="1"
         [ -f "$best_file" ] && best_val=$(cat "$best_file")
-        log_info "exportando propiedades: [BEST_${prop//./_}=$best_val]" >> "$seguimiento_log"
+        log_info "Exporting properties: [BEST_${prop//./_}=$best_val]" >> "$seguimiento_log"
         export "BEST_${prop//./_}=$best_val"
     done
 
@@ -160,10 +160,10 @@ calibrate_network_settings() {
 
     
     if echo "$current_iface" | grep -qi 'rmnet'; then
-        log_info "Modo MOVIL/datos: Calibracion extendida [detalle:${current_iface}]" >> "$seguimiento_log"
+        log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$seguimiento_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
     else
-        log_info "Modo Wi-Fi/u otro: Calibrando solo HSUPA/HSDPA [detalle:${current_iface}]" >> "$seguimiento_log"
+        log_info "Wi-Fi/other mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$seguimiento_log"
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$seguimiento_log"
@@ -216,13 +216,13 @@ calibrate_property() {
     local attempts=3
     
     log_info "====================== calibrate_property =========================" >> "$seguimiento_log"
-    log_info "Propiedades: property: $property |  candidates: $candidates | delay: $delay | best_file: $best_file" >> "$seguimiento_log"
+    log_info "Properties: property: $property | candidates: $candidates | delay: $delay | best_file: $best_file" >> "$seguimiento_log"
     log_info "best_val: $best_val" >> "$seguimiento_log"
     # Verificar permisos de escritura primero
     local write_test="${best_file}.test"
     log_info "write_test: $write_test" >> "$seguimiento_log"
     if ! touch "$write_test" 2>/dev/null; then
-        log_error "No se puede escribir en: $(dirname "$best_file")"
+        log_error "Cannot write to: $(dirname "$best_file")"
         return 1
     fi
     rm -f "$write_test"
@@ -231,23 +231,23 @@ calibrate_property() {
         local total_score=0
         
         resetprop "$property" "$candidate" >/dev/null 2>&1
-        log_info "usando resetprop: property: $property | candidate: $candidate" >> "$seguimiento_log"
+            log_info "using resetprop: property: $property | candidate: $candidate" >> "$seguimiento_log"
 
         sleep 1
         
         for i in $(seq 1 $attempts); do
             local ping_result=$(test_configuration "$property" "$candidate" "$delay")
-            log_info "usando ping_result: $ping_result" >> "$seguimiento_log"
+            log_info "using ping_result: $ping_result" >> "$seguimiento_log"
             local score=$(extract_scores "$ping_result")
-            log_info "usando score: $score" >> "$seguimiento_log"
+            log_info "using score: $score" >> "$seguimiento_log"
             
             total_score=$(awk "BEGIN {print $total_score + $score}")
-            log_info "usando total_score: $total_score" >> "$seguimiento_log"
+            log_info "using total_score: $total_score" >> "$seguimiento_log"
             sleep 0.5
         done
         
         local avg_score=$(awk "BEGIN {print $total_score / $attempts}")
-        log_info "usando avg_score: $avg_score" >> "$seguimiento_log"
+        log_info "using avg_score: $avg_score" >> "$seguimiento_log"
         
         if awk "BEGIN {exit !($avg_score > $best_score)}"; then
             best_score="$avg_score"
@@ -257,13 +257,13 @@ calibrate_property() {
     
     # Crear directorio con verificación de errores
     if ! mkdir -p "$(dirname "$best_file")"; then
-        log_error "No se pudo crear directorio: $(dirname "$best_file")"
+        log_error "Could not create directory: $(dirname "$best_file")"
         return 1
     fi
     
     # Escribir archivo con verificación
     if ! echo "$best_val" > "$best_file"; then
-        log_error "Error al escribir en: $best_file"
+        log_error "Error writing to: $best_file"
         return 1
     fi
     
@@ -275,14 +275,14 @@ extract_scores() {
     local current_jitter=$(echo "$1" | awk '{print $2}')
     local current_loss=$(echo "$1" | awk '{print $3}')
     log_info "====================== extract_scores =========================" >> "$seguimiento_log"
-    log_info "propiedades antes verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$seguimiento_log"
+    log_info "props before verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$seguimiento_log"
     
     
     # Validación básica
     [ -z "$current_ping" ] && current_ping="-1"
     [ -z "$current_jitter" ] && current_jitter="-1"
     [ -z "$current_loss" ] && current_loss="100"
-    log_info "propiedades despues verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$seguimiento_log"
+    log_info "props after verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$seguimiento_log"
 
     # Cálculo del score con validación numérica
     if ! echo "$current_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || \
@@ -339,7 +339,7 @@ configure_network() {
     json_file="$data_dir/countries/${country_code}.json"
 
     if [ "$mcc" = "000" ] && [ "$mnc" = "000" ]; then
-        log_warning "MCC/MNC no detectados, usando configuracion por defecto" | tee -a /sdcard/errors.log
+        log_warning "MCC/MNC not detected, using default configuration" | tee -a /sdcard/errors.log
         json_file="$fallback_json"
     fi
 
@@ -348,7 +348,7 @@ configure_network() {
     log_info "country_code: $country_code | mcc: $mcc | mnc: $mnc | json_file: $json_file | cache_file: $cache_file" >> "$seguimiento_log"
     
     if [ -z "$mcc" ] || [ -z "$mnc" ]; then
-        log_warning "MCC/MNC no detectados, usando configuracion por defecto" | tee -a /sdcard/errors.log
+        log_warning "MCC/MNC not detected, using default configuration" | tee -a /sdcard/errors.log
         mcc="000"
         mnc="000"
         json_file="$fallback_json"
@@ -356,10 +356,10 @@ configure_network() {
     fi
 
     # Comprobacion de locos para evitar posibles errores comunes y poco comunes
-    [ -x "$jqbin" ] || { log_error "jq no ejecutable"; return 1; }
+    [ -x "$jqbin" ] || { log_error "jq is not executable"; return 1; }
     [ -f "$json_file" ] || json_file="$fallback_json"
-    [ -f "$json_file" ] || { log_error "JSON no encontrado"; return 1; }
-    "$jqbin" empty "$json_file" || { log_error "JSON invalido"; return 1; }
+    [ -f "$json_file" ] || { log_error "JSON not found"; return 1; }
+    "$jqbin" empty "$json_file" || { log_error "Invalid JSON"; return 1; }
     head -c3 "$json_file" | grep -q $'\xEF\xBB\xBF' && tail -c +4 "$json_file" > "${json_file}.tmp" && mv "${json_file}.tmp" "$json_file" # prevenir BOM
 
     if [ -f "$cache_file" ] && \
@@ -382,19 +382,19 @@ configure_network() {
                 (try $root.default catch {})
         ')
 
-        log_info "Configuracion de red obtenida (raw): $raw" >> "$seguimiento_log"
+        log_info "Network configuration obtained (raw): $raw" >> "$seguimiento_log"
 
         if [ -z "$raw" ] || [ "$raw" = "null" ]; then
             raw=$(cat "$fallback_json")
-            log_info "Usando fallback_json por raw vacio" >> "$seguimiento_log"
+            log_info "Using fallback_json because raw is empty" >> "$seguimiento_log"
         fi
 
         if ! echo "$raw" | "$jqbin" -e 'type == "object" and has("provider")' >/dev/null; then
-            echo "[ERROR] JSON invalido o sin clave 'provider'" >> "/sdcard/errors.log"
+            echo "[ERROR] Invalid JSON or missing 'provider' key" >> "/sdcard/errors.log"
             return 1
         fi
 
-        provider=$(echo "$raw" | "$jqbin" -r '.provider // "Desconocido"')
+        provider=$(echo "$raw" | "$jqbin" -r '.provider // "Unknown"')
         dns_list=$(echo "$raw" | "$jqbin" -r '.dns[]?' | paste -sd " ")
         ping=$(echo "$raw" | "$jqbin" -r '.ping // "8.8.8.8"')
 

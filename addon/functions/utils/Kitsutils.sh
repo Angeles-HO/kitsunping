@@ -5,18 +5,17 @@
 # ---------------------------------------------------------------------
 # actualizacion 1.7 solo la progress bar que andaba mal, muy mal
 # actualizacion 1.8 solo la progress bar que andaba mal
-# Actualizacion: Verificar si el complemento de funciones utilitarias existe
-# funcion para verificar si el complemento existe
+# Check if util complemento exists
 verify_complemento() {
     local complemento="$1"
 
     if [ -f "$NEWMODPATH/$complemento" ]; then
         . "$NEWMODPATH/$complemento" || {
-            echo "[ERROR] No se pudo cargar el complemento: $complemento"
+            echo "[ERROR] Could not load complemento: $complemento"
             exit 1
         }
     else
-        echo "[ERROR] Complemento no encontrado: $complemento"
+        echo "[ERROR] Complemento not found: $complemento"
         exit 1
     fi
 }
@@ -49,7 +48,7 @@ set_permissions_module() {
         chmod 0755 "$modpath/addon/jq/arm64/jq" 2>/dev/null
     fi
 
-    [ -n "$log_file" ] && echo "[OK] Permisos asignados en $modpath" >> "$log_file"
+    [ -n "$log_file" ] && echo "[OK] Permissions set in $modpath" >> "$log_file"
     return 0
 }
 
@@ -85,8 +84,8 @@ getprop_or_default() {
 create_backup() {
     BACKUP_FILE="$NEWMODPATH/configs/kitsuneping_original_backup.conf"
     if [ -f "$BACKUP_FILE" ]; then
-        log_info "Backup ya existe en $BACKUP_FILE"
-        log_info "Creando uno nuevo con timestamp"
+        log_info "Backup already exists at $BACKUP_FILE"
+        log_info "Creating a new one with timestamp"
         BACKUP_FILE="$NEWMODPATH/configs/kitsuneping_original_backup_$(get_time_stamp).conf"
         return 0
     fi
@@ -107,22 +106,22 @@ set_selinux_enforce() {
     log_file="$2"
 
     if [ "$(id -u)" -ne 0 ]; then
-        [ -n "$log_file" ] && echo "[SYS][ERROR] root requerido" >> "$log_file"
+        [ -n "$log_file" ] && echo "[SYS][ERROR] root required" >> "$log_file"
         return 1
     fi
 
     case "$enforce_state" in
         0|1) :;;
         *)
-            [ -n "$log_file" ] && echo "[SYS][ERROR] Valor invalido: $enforce_state" >> "$log_file"
+            [ -n "$log_file" ] && echo "[SYS][ERROR] Invalid value: $enforce_state" >> "$log_file"
             return 2
             ;;
     esac
 
     if setenforce "$enforce_state" 2>>"$log_file"; then
-        [ -n "$log_file" ] && echo "[SYS][OK] SELinux temporal: $(getenforce)" >> "$log_file"
+        [ -n "$log_file" ] && echo "[SYS][OK] SELinux temporary: $(getenforce)" >> "$log_file"
     else
-        [ -n "$log_file" ] && echo "[SYS][ERROR] Fallo setenforce" >> "$log_file"
+        [ -n "$log_file" ] && echo "[SYS][ERROR] setenforce failed" >> "$log_file"
         return 3
     fi
 
