@@ -80,6 +80,8 @@ xychart-beta
   line "With module" [22, 22, 21, 22, 20]
 ```
 
+> Lower values indicate better latency.
+
 - Best gains vs baseline: +35% download (48.80 Mbps), +323% upload (34.36 Mbps), -23% ping (20 ms).
 - Average over 5 runs vs baseline: +9% download (39.35 Mbps), +234% upload (27.11 Mbps), -18% ping (21.4 ms).
 - Expect variance: signal and network conditions will influence results; rerun if environment changes.
