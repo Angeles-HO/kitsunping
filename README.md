@@ -80,8 +80,8 @@ xychart-beta
   line "Ping" [22, 22, 21, 22, 20]
 ```
 
-- Best gains vs baseline: +34% download (48.80 Mbps), +323% upload (34.36 Mbps), -23% ping (20 ms).
-- Average over 5 runs vs baseline: +6% download (38.55 Mbps), +234% upload (27.11 Mbps), -18% ping (21.4 ms).
+- Best gains vs baseline: +35% download (48.80 Mbps), +323% upload (34.36 Mbps), -23% ping (20 ms).
+- Average over 5 runs vs baseline: +9% download (39.35 Mbps), +234% upload (27.11 Mbps), -18% ping (21.4 ms).
 - Expect variance: signal and network conditions will influence results; rerun if environment changes.
 
 ## Borrowed / Credits / External
