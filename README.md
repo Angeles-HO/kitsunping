@@ -90,3 +90,7 @@ xychart-beta
 
 - Keycheck Info: [keycheck binary](/addon/Volume-Key-Selector/README.md#credits)
   - [keycheck binary](/addon/Volume-Key-Selector/README.md#credits) compiled by [Zackptg5](/addon/Volume-Key-Selector/README.md#credits).
+
+## Contributing
+
+Contributions are welcome: report bugs, open issues with questions or suggestions, and submit PRs if you want to improve the module.
