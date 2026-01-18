@@ -33,6 +33,54 @@ Magisk module that tunes radio/network properties based on detected carrier (MCC
 - `setup.sh` drives mode selection (fixed vs automatic calibration) during flashing; outputs results to `system.prop` and logs to `logs/results.env`.
 - If bundled `ip`/`ping` are unusable, the scripts prefer system binaries.
 
+## Tests
+
+- Version: 4.85 (Magisk module), calibration mode: automatic, 5 post-install runs via Speedtest.net.
+- Baseline (before module): 36.26 Mbps down / 8.12 Mbps up / 26 ms ping.
+- Method: same device, location, and carrier; airplane mode toggled between runs to reset radio state.
+
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
+| -------- | --------------- | ------------- | --------- |
+| Baseline | 36.26           | 8.12          | 26        |
+| Test 1   | 48.74           | 32.14         | 22        |
+| Test 2   | 48.80           | 34.36         | 22        |
+| Test 3   | 38.27           | 28.46         | 21        |
+| Test 4   | 23.38           | 18.61         | 22        |
+| Test 5   | 37.56           | 21.97         | 20        |
+
+```mermaid
+xychart-beta
+  title "Download (Mbps)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "Mbps"
+  line "Before module" [36.26, 36.26, 36.26, 36.26, 36.26]
+  line "Download" [48.74, 48.80, 38.27, 23.38, 37.56]
+```
+
+Test depending on signal and network conditions; rerun if environment changes.
+
+```mermaid
+xychart-beta
+  title "Upload (Mbps)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "Mbps"
+  line "Before module" [8.12, 8.12, 8.12, 8.12, 8.12]
+  line "Upload" [32.14, 34.36, 28.46, 18.61, 21.97]
+```
+
+```mermaid
+xychart-beta
+  title "Ping (ms)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "ms"
+  line "Before module" [26, 26, 26, 26, 26]
+  line "Ping" [22, 22, 21, 22, 20]
+```
+
+- Best gains vs baseline: +34% download (48.80 Mbps), +323% upload (34.36 Mbps), -23% ping (20 ms).
+- Average over 5 runs vs baseline: +6% download (38.55 Mbps), +234% upload (27.11 Mbps), -18% ping (21.4 ms).
+- Expect variance: signal and network conditions will influence results; rerun if environment changes.
+
 ## Borrowed / Credits / External
 
 - Keycheck Info: [keycheck binary](/addon/Volume-Key-Selector/README.md#credits)
