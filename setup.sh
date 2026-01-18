@@ -59,7 +59,7 @@ echo "CPU ARCH        = $(prop_or_default ro.product.cpu.abi "N/A")"
 echo "RAM INFO        = $(free -m | awk '/^Mem:/{print $2}')"
 echo "ANDROID VERSION = $(prop_or_default ro.build.version.release "N/A")"
 echo "${divider}"
-echo "❖ Contacto:"
+echo "❖ Contact:"
 echo "${divider}"
 echo "Github      : https://github.com/Angeles-HO"
 echo "${divider}"
@@ -124,8 +124,9 @@ fi
 
 # --- Finalizacion ---
 progress_bar
-
-INSTALL_END_TIME=$(date +%s)
+# Auto mode: aprox 215s (more calculation time for more accuracy)
+# Fixed mode: aprox 20s (static values + minimal processing)
+INSTALL_END_TIME=$(date +%s) 
 INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))
 echo "${divider}"
 echo "❖ Installation completed in ${INSTALL_DURATION} seconds."

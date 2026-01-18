@@ -13,3 +13,11 @@ logs/*
 
 # Temporary files
 kUtils.txt
+
+# git
+.git*
+.git/
+
+# IDE files
+.vscode/
+.idea/
