@@ -151,19 +151,23 @@ calibrate_network_settings() {
     #    log_info "Modo WIFI: Calibrando solo HSUPA/HSDPA [detalle:${current_iface}]" >> "$trace_log"
     #fi
 
+    # Obtener la interfaz de red activa desde la ruta por defecto (todo dentro de su -c para evitar errores de awk/grep)
+    local current_iface
+    # Detectar interfaz priorizando tráfico real: primero rmnet*, luego wlan*
+    current_iface=$(su -c "awk 'NR>2 {gsub(/:/,\"\",\$1); if (\$1 ~ /^rmnet/) {t=\$2+\$10; if (t>max_rm) {max_rm=t; dev_rm=\$1}} else if (\$1 ~ /^wlan/) {t=\$2+\$10; if (t>max_wl) {max_wl=t; dev_wl=\$1}}} END {if (dev_rm != \"\") print dev_rm; else if (dev_wl != \"\") print dev_wl;}' /proc/net/dev" 2>/dev/null)
 
-    local current_iface=$(su -c "$ipbin route show 2>/dev/null | grep -v linkdown | grep -E 'rmnet|wlan' | awk '{print \$5}' | head -n1")
+    sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
 
-    if [ -z "$current_iface" ]; then
-        current_iface=$(su -c "cat /proc/net/dev 2>/dev/null | awk 'NR>2 && (\$2 > 1000 || \$10 > 1000) {print \$1; exit}' | tr -d :")
-    fi
-
-    
-    if echo "$current_iface" | grep -qi 'rmnet'; then
+    if echo "$current_iface" | grep -qi '^rmnet'; then
         log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$trace_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
+    elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
+        log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
+    elif [ -n "$sim_iso" ]; then
+        log_info "SIM detected ($sim_iso) with non-rmnet iface; running extended calibration anyway [detail:${current_iface}]" >> "$trace_log"
+        calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
     else
-        log_info "Wi-Fi/other mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
+        log_info "Unknown iface, defaulting to Wi-Fi calibration path [detail:${current_iface}]" >> "$trace_log"
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
@@ -433,9 +437,9 @@ EOF
 
 
 calibrate_secondary_network_settings() {
-    local delay=$1
-    local CACHE_DIR="$2"
-    local index=1
+    delay=$1
+    CACHE_DIR="$2"
+    index=1
 
     log_info "====================== calibrate_secondary_network_settings =========================" >> "$trace_log"
 
@@ -463,9 +467,15 @@ calibrate_secondary_network_settings() {
 
     # Exportar resultados
     for prop in $NET_OTHERS_PROPERTIES_KEYS; do
-        local best_file="$CACHE_DIR/$prop.best"
-        log_info "Mejor valor para $prop: $(cat "$best_file")" >> "$trace_log"
-        [ -f "$best_file" ] && export "BEST_${prop//./_}=$(cat "$best_file")"
+        best_file="$CACHE_DIR/$prop.best"
+        if [ -f "$best_file" ]; then
+            best_val=$(cat "$best_file")
+            log_info "Mejor valor para $prop: $best_val" >> "$trace_log"
+            exp_name=$(echo "$prop" | tr '.' '_')
+            export "BEST_${exp_name}=$best_val"
+        else
+            log_info "Mejor valor para $prop: (no encontrado)" >> "$trace_log"
+        fi
     done
 }
 

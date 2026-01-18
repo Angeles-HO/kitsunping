@@ -39,6 +39,7 @@ set_permissions_module() {
         set_perm "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 0 0 0755
         set_perm "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 0 0 0755
         set_perm "$modpath/addon/jq/arm64/jq" 0 0 0755
+        set_perm "$modpath/addon/ip/ip" 0 0 0755
     else
         find "$modpath" -type d -exec chmod 0755 {} \;
         find "$modpath" -type f -exec chmod 0644 {} \;
@@ -46,6 +47,7 @@ set_permissions_module() {
         chmod 0755 "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 2>/dev/null
         chmod 0755 "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 2>/dev/null
         chmod 0755 "$modpath/addon/jq/arm64/jq" 2>/dev/null
+        chmod 0755 "$modpath/addon/ip/ip" 2>/dev/null
     fi
 
     [ -n "$log_file" ] && echo "[OK] Permissions set in $modpath" >> "$log_file"
@@ -83,14 +85,21 @@ getprop_or_default() {
 # Crear backup de los valores que se van a modificar para backup y restauracion
 create_backup() {
     BACKUP_FILE="$NEWMODPATH/configs/kitsuneping_original_backup.conf"
+
+    # Asegurar directorio
+    mkdir -p "$NEWMODPATH/configs" 2>/dev/null
+
+    # Si ya existe, rotar con timestamp y continuar (no salir) para siempre tener uno fresco
     if [ -f "$BACKUP_FILE" ]; then
         log_info "Backup already exists at $BACKUP_FILE"
         log_info "Creating a new one with timestamp"
         BACKUP_FILE="$NEWMODPATH/configs/kitsuneping_original_backup_$(get_time_stamp).conf"
-        return 0
     fi
 
-    touch "$BACKUP_FILE"
+    if ! touch "$BACKUP_FILE" 2>/dev/null; then
+        log_error "Cannot write backup file at $BACKUP_FILE"
+        return 1
+    fi
 
     {
         echo "ro.ril.hsdpa.category=$(getprop_or_default ro.ril.hsdpa.category)"
@@ -98,7 +107,10 @@ create_backup() {
         echo "ro.ril.lte.category=$(getprop_or_default ro.ril.lte.category)"
         echo "ro.ril.ltea.category=$(getprop_or_default ro.ril.ltea.category)"
         echo "ro.ril.nr5g.category=$(getprop_or_default ro.ril.nr5g.category)"
-    } >> "$BACKUP_FILE"
+    } > "$BACKUP_FILE"
+
+    log_info "Backup saved at $BACKUP_FILE"
+    return 0
 }
 
 set_selinux_enforce() {

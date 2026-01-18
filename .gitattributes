@@ -10,6 +10,8 @@
 # evitar conflictos de fin de linea en archivos JSON
 *.json text eol=lf
 *.jsonc text eol=lf
+# marcar archivos binarios para evitar conversiones de fin de linea
+system/** binary
 # evitar conflictos de fin de linea en archivos de log  
 *.log text eol=lf
 # evitar conflictos de fin de linea en archivos de texto

@@ -41,6 +41,9 @@ else
     log "Could not load $COMMON_UTIL"
 fi
 
+# Detectar chipset; solo ejecutar ajustes Qualcomm (WCNSS) si es Qualcomm
+CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
+
 # Set permissions
 set_permissions_module "$MODPATH" "$SERVICES_LOGS"
 
@@ -60,6 +63,52 @@ done
 log "System boot completed; running services"
 MAIN_SERVICE="$MODPATH/service.sh"
 BACKUP_SERVICE="/data/adb/modules/Kitsun_ping_backup/service.sh"
+
+if echo "$CHIPSET" | grep -qi 'qcom\|qualcomm\|msm\|sdm\|sm-'; then
+    log "Qualcomm detected ($CHIPSET): applying WCNSS_qcom_cfg.ini tweaks"
+
+    CMDPREFIX=""
+    if command -v magisk >/dev/null 2>&1; then
+        if magisk --denylist ls >/dev/null 2>&1; then
+            CMDPREFIX="magisk --denylist exec"
+        elif magisk magiskhide ls >/dev/null 2>&1; then
+            CMDPREFIX="magisk magiskhide exec"
+        fi
+    fi
+
+    CHECK_DIRS="/system /vendor /product /system_ext"
+    EXISTING_DIRS=""
+    for dir in $CHECK_DIRS; do
+        [ -d "$dir" ] && EXISTING_DIRS="$EXISTING_DIRS $dir"
+    done
+
+    if [ -n "$EXISTING_DIRS" ]; then
+        CFGS=$($CMDPREFIX find $EXISTING_DIRS -type f -name WCNSS_qcom_cfg.ini 2>/dev/null)
+    else
+        CFGS=""
+    fi
+
+    for CFG in $CFGS; do
+        [ -f "$CFG" ] || continue
+        dst="$MODPATH$CFG"
+        mkdir -p "$(dirname "$dst")"
+        log "Migrating $CFG"
+        $CMDPREFIX cp -af "$CFG" "$dst" 2>>"$SERVICES_LOGS"
+        log "Modifying $dst"
+        sed -i '/gChannelBondingMode24GHz=/d;/gChannelBondingMode5GHz=/d;/gForce1x1Exception=/d;/sae_enabled=/d;/BandCapability=/d;s/^END$/gChannelBondingMode24GHz=1\ngChannelBondingMode5GHz=1\ngForce1x1Exception=0\nsae_enabled=1\nBandCapability=0\nEND/g' "$dst"
+    done
+
+    if [ -z "$CFGS" ]; then
+        log "No WCNSS_qcom_cfg.ini found; skipping migration"
+    else
+        mkdir -p "$MODPATH/system"
+        mv -f "$MODPATH/vendor" "$MODPATH/system/vendor" 2>/dev/null
+        mv -f "$MODPATH/product" "$MODPATH/system/product" 2>/dev/null
+        mv -f "$MODPATH/system_ext" "$MODPATH/system/system_ext" 2>/dev/null
+    fi
+else
+    log "Non-Qualcomm chipset ($CHIPSET)"
+fi
 
 if [ -f "$MAIN_SERVICE" ]; then
     log "Running main service"

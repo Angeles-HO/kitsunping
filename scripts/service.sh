@@ -12,30 +12,48 @@ SERVICES_LOGS="$MODDIR/logs/services.log"
 # =============================================================================
 # Funcion: Espera a que el sistema finalice el arranque
 
+# Detectar chipset para limitar la ejecucion a Qualcomm
+CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
+is_qualcomm_chipset() {
+    echo "$1" | grep -qi 'qcom\|qualcomm\|msm\|sdm\|sm-'
+}
+
 # Utilidades comunes
 COMMON_UTIL="$MODDIR/addon/functions/utils/Kitsutils.sh"
 if [ -f "$COMMON_UTIL" ]; then
     . "$COMMON_UTIL"
 else
-    echo "[SYS][WARN]: No se pudo cargar $COMMON_UTIL" >> "$SERVICES_LOGS"
-    set_selinux_enforce() {
-        enforce_state="$1"
-        if [ "$(id -u)" -ne 0 ]; then
-            echo "[SYS][ERROR]: root requerido" >> "$SERVICES_LOGS"
-            return 1
-        fi
-        case "$enforce_state" in
-            0|1) :;;
-            *) echo "[SYS][ERROR]: Valor invalido: $enforce_state" >> "$SERVICES_LOGS"; return 2 ;;
-        esac
-        if setenforce "$enforce_state"; then
-            echo "[SYS][OK]: SELinux temporal: $(getenforce)" >> "$SERVICES_LOGS"
-        else
-            echo "[SYS][ERROR]: Fallo setenforce" >> "$SERVICES_LOGS"
-            return 3
-        fi
-        return 0
-    }
+    ALT_MODDIR="/data/adb/modules_update/${MODDIR##*/}"
+    ALT_COMMON="$ALT_MODDIR/addon/functions/utils/Kitsutils.sh"
+    if [ -f "$ALT_COMMON" ]; then
+        . "$ALT_COMMON"
+    else
+        echo "[SYS][WARN]: No se pudo cargar $COMMON_UTIL ni $ALT_COMMON" >> "$SERVICES_LOGS"
+        set_selinux_enforce() {
+            enforce_state="$1"
+            if [ "$(id -u)" -ne 0 ]; then
+                echo "[SYS][ERROR]: root requerido" >> "$SERVICES_LOGS"
+                return 1
+            fi
+            case "$enforce_state" in
+                0|1) :;;
+                *) echo "[SYS][ERROR]: Valor invalido: $enforce_state" >> "$SERVICES_LOGS"; return 2 ;;
+            esac
+            if setenforce "$enforce_state"; then
+                echo "[SYS][OK]: SELinux temporal: $(getenforce)" >> "$SERVICES_LOGS"
+            else
+                echo "[SYS][ERROR]: Fallo setenforce" >> "$SERVICES_LOGS"
+                return 3
+            fi
+            return 0
+        }
+    fi
+fi
+
+# Salir si el chipset es Qualcomm
+if is_qualcomm_chipset "$CHIPSET"; then
+    echo "[SYS][SERVICE][SKIP]: Chipset Qualcomm ('$CHIPSET'); omitiendo ajustes" >> "$SERVICES_LOGS"
+    exit 0
 fi
 
 # Opcional: asegurar permisos si no se fijaron en post-fs-data
