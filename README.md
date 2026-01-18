@@ -57,7 +57,7 @@ xychart-beta
   x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
   y-axis "Mbps"
   line "Before module" [36.26, 36.26, 36.26, 36.26, 36.26]
-  line "Download" [48.74, 48.80, 38.27, 23.38, 37.56]
+  line "With module" [48.74, 48.80, 38.27, 23.38, 37.56]
 ```
 
 Test depending on signal and network conditions; rerun if environment changes.
@@ -68,7 +68,7 @@ xychart-beta
   x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
   y-axis "Mbps"
   line "Before module" [8.12, 8.12, 8.12, 8.12, 8.12]
-  line "Upload" [32.14, 34.36, 28.46, 18.61, 21.97]
+  line "With module" [32.14, 34.36, 28.46, 18.61, 21.97]
 ```
 
 ```mermaid
@@ -77,7 +77,7 @@ xychart-beta
   x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
   y-axis "ms"
   line "Before module" [26, 26, 26, 26, 26]
-  line "Ping" [22, 22, 21, 22, 20]
+  line "With module" [22, 22, 21, 22, 20]
 ```
 
 - Best gains vs baseline: +35% download (48.80 Mbps), +323% upload (34.36 Mbps), -23% ping (20 ms).
