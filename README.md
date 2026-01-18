@@ -48,6 +48,9 @@ Magisk module that tunes radio/network properties based on detected carrier (MCC
 | Test 4   | 23.38           | 18.61         | 22        |
 | Test 5   | 37.56           | 21.97         | 20        |
 
+Line green = Whit module active.
+Line blue = Baseline without module.
+
 ```mermaid
 xychart-beta
   title "Download (Mbps)"
