@@ -2,10 +2,6 @@
 # MODDIR=${0%/*}
 # Funciones utiles para acortar el codigo y mejorar la legibilidad
 
-# ---------------------------------------------------------------------
-# actualizacion 1.7 solo la progress bar que andaba mal, muy mal
-# actualizacion 1.8 solo la progress bar que andaba mal
-# Check if util complemento exists
 verify_complemento() {
     local complemento="$1"
 
@@ -25,8 +21,6 @@ prop_or_default() {
   [ -n "$val" ] && echo "$val" || echo "$2"
 }
 
-
-# actualizacion 1.8 el script no tenia permisos....... . _  .
 set_permissions_module() {
     modpath="$1"
     log_file="$2"
@@ -59,7 +53,7 @@ set_permissions() {
 }
 
 progress_bar() {
-    local rueda='-\|/'  # Algo un poco mas atractivo
+    local rueda='-\|/'
     local progress=""
     local completed=0
 
@@ -71,7 +65,6 @@ progress_bar() {
         completed=$((completed+1))
     done
 }
-
 
 get_time_stamp() {
     date +"%Y-%m-%d-%H:%M:%S"
@@ -140,3 +133,12 @@ set_selinux_enforce() {
     return 0
 }
 
+is_qualcomm() {
+    local chipset
+    chipset=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
+    if echo "$chipset" | grep -qi 'qcom\|qualcomm\|msm\|sdm\|sm-'; then
+        return 0
+    else
+        return 1
+    fi
+} 

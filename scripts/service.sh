@@ -14,9 +14,6 @@ SERVICES_LOGS="$MODDIR/logs/services.log"
 
 # Detectar chipset para limitar la ejecucion a Qualcomm
 CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
-is_qualcomm_chipset() {
-    echo "$1" | grep -qi 'qcom\|qualcomm\|msm\|sdm\|sm-'
-}
 
 # Utilidades comunes
 COMMON_UTIL="$MODDIR/addon/functions/utils/Kitsutils.sh"
@@ -48,12 +45,6 @@ else
             return 0
         }
     fi
-fi
-
-# Salir si el chipset es Qualcomm
-if is_qualcomm_chipset "$CHIPSET"; then
-    echo "[SYS][SERVICE][SKIP]: Chipset Qualcomm ('$CHIPSET'); omitiendo ajustes" >> "$SERVICES_LOGS"
-    exit 0
 fi
 
 # Opcional: asegurar permisos si no se fijaron en post-fs-data

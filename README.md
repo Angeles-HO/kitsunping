@@ -2,6 +2,8 @@
 
 Magisk module that tunes radio/network properties based on detected carrier (MCC/MNC) and country, applies provider-specific DNS and ping targets, and calibrates RIL categories to improve stability and throughput on rooted Android devices.
 
+![License](https://img.shields.io/badge/license-MIT-green)
+
 ## Problem
 
 - Default radio/RIL properties are generic and often suboptimal for specific carriers and regions.

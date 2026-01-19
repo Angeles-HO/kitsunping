@@ -12,7 +12,7 @@ PROPFILE=true            # Cargar system.prop
 
 # --- Metadatos ---
 dte=$(date)
-improviserr="@heistomega | @angeles_ho"
+improviserr="@Angeles_ho"
 
 # --- Complementos ---
 complemento_kitsutils="addon/functions/utils/Kitsutils.sh"
@@ -72,7 +72,7 @@ log_info "  [Vol+] Fixed mode"
 log_info "  [Vol-] Automatic mode (~4 mins)"
 log_info "  [None] Automatic mode (~4 mins)"
 
-# Espera de entrada por 60s
+# Si se presiona Vol+ -> Modo Fijo
 if $VKSEL 60; then
     echo "=============================="
     MODE_SELECTION=0
@@ -90,6 +90,7 @@ if $VKSEL 60; then
 else
     MODE_SELECTION=1
 fi
+
 
 # --- Modo Automatico ---
 if [ "$MODE_SELECTION" -eq 1 ]; then
@@ -124,7 +125,7 @@ fi
 
 # --- Finalizacion ---
 progress_bar
-# Auto mode: aprox 215s (more calculation time for more accuracy)
+# Auto mode: aprox 410s (more calculation time for more accuracy)
 # Fixed mode: aprox 20s (static values + minimal processing)
 INSTALL_END_TIME=$(date +%s) 
 INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))

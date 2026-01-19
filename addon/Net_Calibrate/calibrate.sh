@@ -17,24 +17,24 @@ cache_dir="$data_dir/cache"
 
 check_and_detect_commands() {
     if [ -n "$PING_BIN" ]; then
-        log_debug "PING_BIN ya seteado en: $PING_BIN"
+        log_debug "PING_BIN already set: $PING_BIN"
     else 
         log_info "====================== check_and_detect_commands =========================" >> "$trace_log"
         local missing=0
         # Comandos esenciales
         for cmd in ip ndc resetprop awk; do
             if ! command_exists "$cmd"; then
-                log_error "Comando requerido '$cmd' no encontrado"
+                log_error "Required command '$cmd' not found"
                 missing=$((missing + 1))
             fi
         done
 
         if [ $missing -gt 0 ]; then
-            log_error "Faltan $missing dependencias esenciales"
+            log_error "Missing $missing essential dependencies, cannot proceed"
             return 1
         fi
 
-        # Buscar ping
+        # Search for ping binary
         PING_BIN=$(command -v ping 2>/dev/null)
         if [ -z "$PING_BIN" ] || [ ! -x "$PING_BIN" ]; then
             log_warning "Ping not found in PATH, scanning common locations..."
@@ -54,7 +54,7 @@ check_and_detect_commands() {
             return 1
         fi
 
-        # Verificar si ping es funcional
+        # Verify if ping is functional
         if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
             log_error "Ping available but not functional (check permissions, SELinux, network)"
             return 1
@@ -65,21 +65,22 @@ check_and_detect_commands() {
     return 0
 }
 
+# Main function to calibrate network settings
 calibrate_network_settings() {
     if [ -z "$1" ] || ! echo "$1" | grep -Eq '^[0-9]+$' || [ "$1" -lt 1 ]; then
-        log_error "calibrate_network_settings <delay_segundos>" >&2
+        log_error "calibrate_network_settings <delay_seconds>" >&2
         return 1
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log" 
     check_and_detect_commands
 
-    local delay=$1 # segundos
-    local config_json dns1 dns2 TEST_IP # variables locales sin asiganar
+    local delay=$1 # seconds
+    local config_json dns1 dns2 TEST_IP # unassigned local variables
 
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Execution trace, delay: $delay seconds" >> "$trace_log"
-    config_json=$(configure_network) # obtener configuracion de red
+    config_json=$(configure_network) # get network configuration
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Network configuration obtained (config_json): $config_json" >> "$trace_log"
 
@@ -134,7 +135,7 @@ calibrate_network_settings() {
     wait
 
     for prop in $NET_PROPERTIES_KEYS; do
-        # Leemos el mejor valor desde archivos TMPDIR/*.best
+        # Read the best value from TMPDIR/*.best files
         local best_file="$CACHE_DIR_cln/$prop.best"
         local best_val="1"
         [ -f "$best_file" ] && best_val=$(cat "$best_file")
@@ -142,18 +143,9 @@ calibrate_network_settings() {
         export "BEST_${prop//./_}=$best_val"
     done
 
-    #local current_iface=$($ipbin route | grep default | awk '{print $5}' | head -n1)
-#
-    #if echo "$current_iface" | grep -qiE 'rmnet|ccmni'; then
-    #    log_info "Modo Movil-datos: Calibracion extendida [detalle:${current_iface}]" >> "$trace_log"
-    #    calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
-    #else
-    #    log_info "Modo WIFI: Calibrando solo HSUPA/HSDPA [detalle:${current_iface}]" >> "$trace_log"
-    #fi
-
-    # Obtener la interfaz de red activa desde la ruta por defecto (todo dentro de su -c para evitar errores de awk/grep)
+    # Catch the active network interface from the default route (all within su -c to avoid awk/grep errors)
     local current_iface
-    # Detectar interfaz priorizando tráfico real: primero rmnet*, luego wlan*
+    # Detect interface prioritizing real traffic: first rmnet*, then wlan*
     current_iface=$(su -c "awk 'NR>2 {gsub(/:/,\"\",\$1); if (\$1 ~ /^rmnet/) {t=\$2+\$10; if (t>max_rm) {max_rm=t; dev_rm=\$1}} else if (\$1 ~ /^wlan/) {t=\$2+\$10; if (t>max_wl) {max_wl=t; dev_wl=\$1}}} END {if (dev_rm != \"\") print dev_rm; else if (dev_wl != \"\") print dev_wl;}' /proc/net/dev" 2>/dev/null)
 
     sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')

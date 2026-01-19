@@ -62,9 +62,10 @@ done
 
 log "System boot completed; running services"
 MAIN_SERVICE="$MODPATH/service.sh"
-BACKUP_SERVICE="/data/adb/modules/Kitsun_ping_backup/service.sh"
+BACKUP_SERVICE="/data/adb/modules/Kitsun_ping/service.sh"
 
-if echo "$CHIPSET" | grep -qi 'qcom\|qualcomm\|msm\|sdm\|sm-'; then
+
+if is_qualcomm; then
     log "Qualcomm detected ($CHIPSET): applying WCNSS_qcom_cfg.ini tweaks"
 
     CMDPREFIX=""
