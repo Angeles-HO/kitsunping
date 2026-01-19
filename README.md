@@ -88,9 +88,57 @@ xychart-beta
 
 ## Borrowed / Credits / External
 
-- Keycheck Info: [keycheck binary](/addon/Volume-Key-Selector/README.md#credits)
-  - [keycheck binary](/addon/Volume-Key-Selector/README.md#credits) compiled by [Zackptg5](/addon/Volume-Key-Selector/README.md#credits).
+This module includes or is inspired by external tools and resources:
+
+- **Keycheck binary**  
+  Source and credits:  
+  [/addon/Volume-Key-Selector/README.md#credits](/addon/Volume-Key-Selector/README.md#credits)  
+  Compiled by **Zackptg5**
+
+All credits belong to their respective authors.
+
+---
 
 ## Contributing
 
-Contributions are welcome: report bugs, open issues with questions or suggestions, and submit PRs if you want to improve the module.
+Contributions are welcome and appreciated.
+
+You can contribute in the following ways:
+
+- Report bugs or unexpected behavior
+- Open issues with suggestions or improvements
+- Share test results (before / after) for different carriers or regions
+- Contribute carrier/provider data (DNS, MCC/MNC mappings)
+- Submit pull requests with fixes, optimizations, or documentation improvements
+
+### Carrier / Provider Data
+
+Network behavior varies significantly by country and carrier.  
+If you want to help improve accuracy and stability, please open an **issue** with:
+
+- Country (ISO code)
+- Carrier name
+- MCC / MNC
+- Detected DNS (e.g. `getprop net.dns*`, or similar you can search on build.prop / system.prop with getprop)
+- Optional: before / after latency or throughput results
+
+All data sharing is **voluntary**.
+
+---
+
+## Privacy
+
+This module does **not** collect, transmit, or upload any user data.
+
+- No telemetry
+- No remote logging
+- No background uploads
+
+All logs and cache files remain local on the device unless the user chooses to share them manually.
+
+---
+
+## License
+
+This project is released under the MIT License.  
+See the `LICENSE` file for more details.
