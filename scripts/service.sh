@@ -8,15 +8,14 @@
 # =============================================================================
 MODDIR=${0%/*}
 # =============================================================================
+mkdir -p "$MODDIR/logs" 2>/dev/null
 SERVICES_LOGS="$MODDIR/logs/services.log"
 # =============================================================================
 # Funcion: Espera a que el sistema finalice el arranque
 
-# Detectar chipset para limitar la ejecucion a Qualcomm
-CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
-
 # Utilidades comunes
 COMMON_UTIL="$MODDIR/addon/functions/utils/Kitsutils.sh"
+
 if [ -f "$COMMON_UTIL" ]; then
     . "$COMMON_UTIL"
 else
@@ -54,12 +53,21 @@ fi
 # Funciones para aplicar configuraciones de red
 # =============================================================================
 
+# Normaliza valores de sysctl (convierte comas a espacios cuando aplica)
+normalize_sysctl_value() {
+    case "$1" in
+        *","*) echo "${1//,/ }" ;;
+        *) echo "$1" ;;
+    esac
+}
+
 # Actualizacion: Una funcion simple para agilizar el script y evitar la repeticion de codigo
 # └──Actualizacion: Cambie el nombre de la funcion a custom_write
 custom_write() {
     echo "[DEBUG]: Llamada a [custom_write()] con argumentos: ['$1'], ['$2'], ['$3']" >> "$SERVICES_LOGS"
 
     value="$1"
+    normalized_value=$(normalize_sysctl_value "$value")
     target_file="$2"
     log_text="$3"
 
@@ -90,20 +98,25 @@ custom_write() {
         /proc/sys/*)
             sysctl_param=${target_file#/proc/sys/}
             sysctl_param=$(echo "$sysctl_param" | tr '/' '.')
-            if /system/bin/sysctl -w "$sysctl_param=$value" >> "$SERVICES_LOGS" 2>&1; then
-                echo "[OK] $log_text (sysctl): $value" >> "$SERVICES_LOGS"
+            # Skip if not writable to avoid noisy errors on readonly tunables
+            if [ ! -w "$target_file" ]; then
+                echo "[SYS][SKIP]: '$target_file' no es escribible" >> "$SERVICES_LOGS"
+                return 0
+            fi
+            if /system/bin/sysctl -w "$sysctl_param=$normalized_value" >> "$SERVICES_LOGS" 2>&1; then
+                echo "[OK] $log_text (sysctl): $normalized_value" >> "$SERVICES_LOGS"
                 return 0
             fi
             echo "[SYS] [ERROR]: Fallo sysctl $sysctl_param" >> "$SERVICES_LOGS"
             ;;
     esac
 
-    printf "%s" "$value" > "$target_file" 2>> "$SERVICES_LOGS"
+    printf "%s" "$normalized_value" > "$target_file" 2>> "$SERVICES_LOGS"
     current_value=$(cat "$target_file" 2>/dev/null)
-    if [ "$current_value" = "$value" ]; then
-        echo "[OK] $log_text: $value" >> "$SERVICES_LOGS"
+    if [ "$current_value" = "$normalized_value" ]; then
+        echo "[OK] $log_text: $normalized_value" >> "$SERVICES_LOGS"
     else
-        echo "[SYS] [ERROR]: Valor escrito ($current_value) != esperado ($value) en $target_file" >> "$SERVICES_LOGS"
+        echo "[SYS] [ERROR]: Valor escrito ($current_value) != esperado ($normalized_value) en $target_file" >> "$SERVICES_LOGS"
         return 4
     fi
 
@@ -178,13 +191,13 @@ apply_tcp_settings() {
 1|/proc/sys/net/ipv4/tcp_sack|tcp_sack habilitado
 1|/proc/sys/net/ipv4/tcp_fack|tcp_fack habilitado
 1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling habilitado
-16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem ajustado
-16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem ajustado
-65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem ajustado
+16384 87380 26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem ajustado
+16384 87380 26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem ajustado
+65536 131072 262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem ajustado
 cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save habilitado
-bbr,cubic|/proc/sys/net/ipv4/tcp_allowed_congestion_control|tcp_allowed_congestion_control ajustado a bic y cubic
-bbr,cubic|/proc/sys/net/ipv4/tcp_available_congestion_control|tcp_available_congestion_control ajustado a bic y cubic
+ bbr cubic|/proc/sys/net/ipv4/tcp_allowed_congestion_control|tcp_allowed_congestion_control ajustado a bic y cubic
+ bbr cubic|/proc/sys/net/ipv4/tcp_available_congestion_control|tcp_available_congestion_control ajustado a bic y cubic
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen habilitado
 5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 ajustado
 5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 ajustado
@@ -230,7 +243,7 @@ apply_network_ipv4_settings() {
 1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority ajustado
 0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu deshabilitado
 1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing habilitado
-1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range ampliado para mas conexiones
+1024 65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range ampliado para mas conexiones
 0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc deshabilitado
 1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind habilitado para permitir mas conexiones
 1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start ajustado
@@ -240,13 +253,13 @@ apply_network_ipv4_settings() {
 0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval ajustado
 30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time ajustado
 1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux habilitado para procesamiento mas rapido
-131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem ajustado para mayor rendimiento
+131072 262144 524288|/proc/sys/net/ipv4/udp_mem|udp_mem ajustado para mayor rendimiento
 8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimizado
 8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimizado
 600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl ajustado
 120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl ajustado
 131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold ajustado para mas peers
-0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range ajustado
+0 2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range ajustado
 32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh ajustado
 EOF
 

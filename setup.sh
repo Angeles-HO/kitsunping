@@ -66,6 +66,12 @@ echo "${divider}"
 echo "❖ Installation in progress..."
 echo "${divider}"
 
+# ===================================
+# Posiblemente insertar logica de seleccion de modo de red
+# typos: speed, stable, gaming
+# ===================================
+
+
 # --- Mode selection ---
 log_info "Select operation mode:"
 log_info "  [Vol+] Fixed mode"

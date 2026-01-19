@@ -1,10 +1,35 @@
 #!/sbin/sh
 
-# --- Initialization ---
-umask 022
-PERSISTDIR="/sbin/.magisk/mirror/persist"
+# Flashable installer for the Kitsunping Magisk module.
+# - Prepares a temporary workspace via Magisk utilities.
+# - Extracts module files and runs setup.sh to stage assets.
+# - Copies service scripts, applies permissions, and cleans build-only files.
+# - Leaves a concise install log under /data/adb/logs.
 
+# --- Constants and defaults ---
+UMASK=022
+PERSISTDIR="/sbin/.magisk/mirror/persist"
+NVBASE="/data/adb"
+LOGDIR="$NVBASE/logs"
+
+umask "$UMASK"
+
+# --- Small helpers ---
 ui_print() { echo "$@"; }
+log_line() { [ -n "$LOGFILE" ] && echo "$1" | tee -a "$LOGFILE" || echo "$1"; }
+
+copy_file_if_exists() {
+  local src="$TMPDIR/scripts/$1"
+  local dest="$MODPATH/$1"
+
+  if [ -f "$src" ]; then
+    cp -af "$src" "$dest" || { log_line " [x] Error al copiar $1"; exit 1; }
+    log_line " [✓] Copiado: [$src] --> [$dest]"
+  else
+    log_line " [x] Archivo faltante: $1"
+    exit 1
+  fi
+}
 
 # --- Setup environment ---
 OUTFD="$2"
@@ -32,35 +57,29 @@ else
   MODDIRNAME="modules"
 fi
 
-NVBASE="/data/adb"
 MODID=$(grep_prop "id" "$TMPDIR/module.prop")
 MODNAME=$(grep_prop "name" "$TMPDIR/module.prop")
 MODVERS=$(grep_prop "version" "$TMPDIR/module.prop")
 MODULEROOT="$NVBASE/$MODDIRNAME"
 MODPATH="$MODULEROOT/$MODID"
 NEWMODPATH="$MODULEROOT/$MODID"
-LOGDIR="$NVBASE/logs"
 LOGFILE="$LOGDIR/${MODID}_up_binary.log"
 
 mkdir -p "$LOGDIR"
-
-log_line() { echo "$1" | tee -a "$LOGFILE"; }
 
 if [ -z "$MODID" ] || [ -z "$MODNAME" ] || [ -z "$MODVERS" ]; then
   log_line " [x] Error: Missing module information (ID, Name, Version)."
   exit 1
 fi
 
-# Limpia instalacion previa si existe
+# Clean up previous installation
 if [ -d "$MODPATH" ]; then
   log_line " [i] Previous installation detected, removing old module files..."
   rm -rf "$MODPATH" || { log_line " [SYS] [up-bi] Failed to remove old module files"; exit 1; }
 fi
 
-# Crear ruta de modulo
-mkdir -p "$MODPATH" 2>/dev/null
-
-if ! mkdir -p "$MODPATH"; then
+# Create module directory
+if ! mkdir -p "$MODPATH" 2>/dev/null; then
   log_line " [x] Failed to create directory $MODPATH"
   exit 1
 fi
@@ -85,30 +104,12 @@ else
   exit 1
 fi
 
-copy_file_if_exists() {
-  local SRC="$TMPDIR/scripts/$1"
-  local DEST="$MODPATH/$1"
-
-  if [ -f "$SRC" ]; then
-    cp -af "$SRC" "$DEST" || { log_line " [x] Error al copiar $1"; exit 1; }
-    log_line " [✓] Copiado: [$SRC] --> [$DEST]"
-  else
-    log_line " [x] Archivo faltante: $1"
-    exit 1
-  fi
-}
-
 copy_file_if_exists "service.sh"
 copy_file_if_exists "uninstall.sh"
 copy_file_if_exists "post-fs-data.sh"
 
-if [ "$DEBUG" = "true" ]; then
-  set -x
-fi
-
-if [ "$SKIPMOUNT" = "true" ]; then
-  touch "$MODPATH/skip_mount"
-fi
+[ "$DEBUG" = "true" ] && set -x
+[ "$SKIPMOUNT" = "true" ] && touch "$MODPATH/skip_mount"
 
 set_permissions
 
@@ -126,20 +127,29 @@ if [ -f "$MODPATH/sepolicy.rule" ]; then
   copy_sepolicy_rules
 fi
 
+# Clean build-only assets but keep addon/functions/{debug,utils}
 rm -rf "$MODPATH/scripts"
-rm -rf "$MODPATH/addon"
 rm -rf "$MODPATH/META-INF"
 rm -rf "$MODPATH/setup.sh"
 rm -rf "$MODPATH/net_profiles"
 rm -rf "$MODPATH/cache"
 rm -rf "$MODPATH/CHANGELOG.md"
 
+if [ -d "$MODPATH/addon" ]; then
+  # Drop top-level addon content except functions
+  find "$MODPATH/addon" -mindepth 1 -maxdepth 1 ! -path "$MODPATH/addon/functions" -exec rm -rf {} +
+  # Inside functions keep debug and utils
+  if [ -d "$MODPATH/addon/functions" ]; then
+    find "$MODPATH/addon/functions" -mindepth 1 -maxdepth 1 \
+      ! -path "$MODPATH/addon/functions/debug" \
+      ! -path "$MODPATH/addon/functions/utils" -exec rm -rf {} +
+  fi
+fi
+
 log_line " [i] Installation/update process completed"
 log_line " [i] You can now restart the device"
 
 cd /
-if [ "$BOOTMODE" != "true" ]; then
-  recovery_cleanup
-fi
+[ "$BOOTMODE" != "true" ] && recovery_cleanup
 
 exit 0
