@@ -21,3 +21,8 @@ kUtils.txt
 # IDE files
 .vscode/
 .idea/
+
+# Others
+
+# daemon process proposal
+DAEMON.md

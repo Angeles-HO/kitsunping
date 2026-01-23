@@ -1,6 +1,12 @@
 #!/system/bin/sh
 # =============================================================================
-# post-fs-data.sh: Script ejecutado despues del montaje del sistema de archivos
+# post-fs-data.sh:
+# This stage is BLOCKING. The boot process is paused before execution is done, or 40 seconds have passed.
+# Scripts run before any modules are mounted. This allows a module developer to dynamically adjust their modules before it gets mounted.
+# This stage happens before Zygote is started, which pretty much means everything in Android
+# WARNING: using setprop will deadlock the boot process! Please use resetprop -n <prop_name> <prop_value> instead.
+# Only run scripts in this mode if necessary.
+# ![Documentation oficial](https://topjohnwu.github.io/Magisk/guides.html#boot-scripts)
 # =============================================================================
 
 # Variables de entorno
@@ -52,13 +58,6 @@ set_permissions_module "$MODPATH" "$SERVICES_LOGS"
 # enforcing 1
 log "Setting SELinux to permissive temporarily"
 set_selinux_enforce 0 "$SERVICES_LOGS"
-
-log "Waiting for sys.boot_completed"
-while true; do
-    boot=$(getprop sys.boot_completed)
-    [ "$boot" = "1" ] && break
-    sleep 1
-done
 
 log "System boot completed; running services"
 MAIN_SERVICE="$MODPATH/service.sh"

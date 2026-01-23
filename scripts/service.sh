@@ -94,6 +94,10 @@ custom_write() {
         return 0
     fi
 
+    if [ ! -w "$target_file" ]; then
+        chmod 777 "$target_file" 2>> "$SERVICES_LOGS"
+    fi
+
     case "$target_file" in
         /proc/sys/*)
             sysctl_param=${target_file#/proc/sys/}

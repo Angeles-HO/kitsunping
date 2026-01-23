@@ -150,14 +150,16 @@ calibrate_network_settings() {
 
     sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
 
+
+    # Decide calibration path based on interface type: rmnet* (mobile/data) vs Active wifi and not rmnet, but have SIM props vs wlan* (Wi-Fi)
     if echo "$current_iface" | grep -qi '^rmnet'; then
         log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$trace_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
-    elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
-        log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
     elif [ -n "$sim_iso" ]; then
         log_info "SIM detected ($sim_iso) with non-rmnet iface; running extended calibration anyway [detail:${current_iface}]" >> "$trace_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
+    elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
+        log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
     else
         log_info "Unknown iface, defaulting to Wi-Fi calibration path [detail:${current_iface}]" >> "$trace_log"
     fi
