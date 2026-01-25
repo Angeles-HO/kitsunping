@@ -11,6 +11,9 @@ ro.ril.enable.a53=1
 ro.ril.gprsclass=34
 ro.ril.transmitpower=true
 
+# daemon
+kitsunping.daemon.interval=5
+
 # Metodo de correlacion de la base de datos para obtener ubicacion (ajustar si se prioriza privacidad)
 # ro.ril.enable.dcm.feature=0
 

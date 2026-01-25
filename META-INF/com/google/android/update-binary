@@ -132,19 +132,8 @@ rm -rf "$MODPATH/scripts"
 rm -rf "$MODPATH/META-INF"
 rm -rf "$MODPATH/setup.sh"
 rm -rf "$MODPATH/net_profiles"
-rm -rf "$MODPATH/cache"
 rm -rf "$MODPATH/CHANGELOG.md"
 
-if [ -d "$MODPATH/addon" ]; then
-  # Drop top-level addon content except functions
-  find "$MODPATH/addon" -mindepth 1 -maxdepth 1 ! -path "$MODPATH/addon/functions" -exec rm -rf {} +
-  # Inside functions keep debug and utils
-  if [ -d "$MODPATH/addon/functions" ]; then
-    find "$MODPATH/addon/functions" -mindepth 1 -maxdepth 1 \
-      ! -path "$MODPATH/addon/functions/debug" \
-      ! -path "$MODPATH/addon/functions/utils" -exec rm -rf {} +
-  fi
-fi
 
 log_line " [i] Installation/update process completed"
 log_line " [i] You can now restart the device"

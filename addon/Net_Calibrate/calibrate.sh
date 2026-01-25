@@ -14,6 +14,11 @@ ipbin="$NEWMODPATH/addon/ip/ip"
 data_dir="$NEWMODPATH/addon/Net_Calibrate/data"
 fallback_json="$data_dir/unknow.json"
 cache_dir="$data_dir/cache"
+CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
+CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
+
+date +%s > "$CALIBRATE_LAST_RUN" 2>/dev/null
+echo "running" > "$CALIBRATE_STATE_RUN"
 
 check_and_detect_commands() {
     if [ -n "$PING_BIN" ]; then
@@ -164,6 +169,7 @@ calibrate_network_settings() {
         log_info "Unknown iface, defaulting to Wi-Fi calibration path [detail:${current_iface}]" >> "$trace_log"
     fi
 
+    echo "cooling" > "$CALIBRATE_STATE_RUN"
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
     echo "BEST_ro_ril_hsupa_category=$BEST_ro_ril_hsupa_category"
     echo "BEST_ro_ril_hsdpa_category=$BEST_ro_ril_hsdpa_category"

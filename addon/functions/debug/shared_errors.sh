@@ -10,7 +10,7 @@ INFO="INFO"
 DEBUG="DEBUG"
 
 # Actualizacion: Nivel de logging por defecto INFO
-LOG_LEVEL=2
+LOG_LEVEL=3
 
 # Establecer nivel de logging
 # 0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG
@@ -46,6 +46,18 @@ log_info() {
 log_debug() {
   if [ $LOG_LEVEL -ge 3 ]; then
     echo -e "[$DEBUG] $1"
+  fi
+}
+
+log_daemon() {
+  if [ $LOG_LEVEL -ge 2 ]; then
+    echo -e "[DAEMON][$INFO] $1"
+  fi
+}
+
+log_policy() {
+  if [ $LOG_LEVEL -ge 2 ]; then
+    echo -e "[POLICY][$INFO] $1"
   fi
 }
 

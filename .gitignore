@@ -15,7 +15,6 @@ logs/*
 kUtils.txt
 
 # git
-.git*
 .git/
 
 # IDE files
@@ -26,3 +25,5 @@ kUtils.txt
 
 # daemon process proposal
 DAEMON.md
+addon/daemon/*
+addon/policy/*

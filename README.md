@@ -28,6 +28,31 @@ Magisk module that tunes radio/network properties based on detected carrier (MCC
 - SELinux handling: temporary permissive during early boot actions, restored after service completion.
 - Caching strategy: per-MCC/MNC cache file with provider/DNS/ping; skip recompute when cache is valid.
 
+## Network daemon (daemon.sh)
+
+- Purpose: monitors default interface and Wi‑Fi↔mobile transitions so `network_policy.sh` can pick speed/stable/gaming profiles based on connectivity.
+- Launch: started by `service.sh` after boot; pid stored in `cache/daemon.pid`.
+- Logs and state:
+  - `logs/daemon.log`: daemon stdout (primary log channel).
+  - `cache/daemon.state`: structured state with iface/transport plus `wifi.*` and `mobile.*` (link/ip/egress/score/reason); atomic writes.
+  - `cache/daemon.last` and `cache/event.last.json`: last emitted event (JSON includes iface, wifi_state, wifi_score).
+- Robustness:
+  - Fallback logger if `addon/functions/debug/shared_errors.sh` is missing.
+  - Debounce protects against clock-less boots; resolves `ping`/`ip` with absolute paths (busybox fallback).
+  - No GPS/location usage; only observes interface/link/IP/egress reported by the system.
+
+## Policy controller (addon/policy)
+
+- `network_policy.sh`: parses `daemon.state` with POSIX loops (no awk/sed) and picks a profile via `decide_profile.sh`/`pick_profile`.
+- Debounce: uses `daemon.last` to avoid reapplying profiles when the last event is too recent.
+- Target profile is persisted to `cache/policy.target`; executor reads it and writes `cache/policy.current` when applied.
+- Executor (`addon/policy/executor.sh`):
+  - Applies built-in profile tweaks (`apply_network_optimizations`) when available.
+  - Runs calibration conditionally using a low-score streak plus cooldown; supports `FORCE_CALIBRATE` override.
+  - Tracks calibration state/timestamp in `cache/calibrate.state` and `cache/calibrate.ts`; enforces timeout and cooling window to prevent thrash.
+  - Applies BEST_* results from `logs/results.env` via `resetprop` (non-empty values only); resets streak on success.
+  - Emits `cache/policy.event.json` with `calibrate_state` and `calibrate_ts` for the APK to poll.
+
 ## Build/Install Notes
 
 - Magisk module layout with `post-fs-data.sh` (early perms + service launch) and `service.sh` (late network tuning).
@@ -135,6 +160,7 @@ This module does **not** collect, transmit, or upload any user data.
 - No telemetry
 - No remote logging
 - No background uploads
+- No location/GPS access; only reads mcc/mnc from system properties
 
 All logs and cache files remain local on the device unless the user chooses to share them manually.
 
