@@ -22,5 +22,6 @@ kUtils.txt
 .idea/
 
 # Others
+results/
 
 # daemon process proposal

@@ -589,9 +589,11 @@ while true; do
             fi
 
             if echo "$signal_score" | grep -Eq '^[0-9]+$'; then
-                if [ "$signal_score" -lt 40 ]; then
+                if [ "$signal_score" -gt 0 ] && [ "$signal_score" -lt 40 ]; then
                     log_info "Poor signal detected ($signal_score), enabling conservative mode"
                     emit_event "$EVENT_SIGNAL_DEGRADED" "score=$signal_score iface=$mobile_iface"
+                else
+                    log_debug "signal_score ok ($signal_score); no degraded event"
                 fi
             else
                 log_debug "signal_score unavailable in signal_info"

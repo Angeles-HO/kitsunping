@@ -92,37 +92,60 @@ get_signal_quality() {
         printf '{"error":"dumpsys empty","quality_score":0,"timestamp":%s}\n' "$ts"
         return 1
     fi
- 
-    tech=$(printf '%s' "$dump" | grep "mDataConnectionTech" | head -1 | awk -F'=' '{print $2}' | tr -d '[:space:]')
+
+    # MTK-friendly parse: consolidated SignalStrength line carries LTE values
+    local mtk_line
+    mtk_line=$(printf '%s\n' "$dump" | grep -m1 'mSignalStrength=SignalStrength')
+
+    if [ -n "$mtk_line" ]; then
+        rsrp=$(printf '%s\n' "$mtk_line" | awk -F'rsrp=' '{print $2}' | awk '{print $1}')
+        rssi=$(printf '%s\n' "$mtk_line" | awk -F'rssi=' '{print $2}' | awk '{print $1}')
+        sinr=$(printf '%s\n' "$mtk_line" | awk -F'rssnr=' '{print $2}' | awk '{print $1}')
+    fi
+
+    # If still empty, fallback to legacy tech-specific parsing
+    tech=$(printf '%s' "$dump" | grep -m1 "mDataConnectionTech" | awk -F'=' '{print $2}' | tr -d '[:space:]')
 
     case "$tech" in
         *LTE*|*NR*)
-            local signal_line
-            signal_line=$(printf '%s' "$dump" | grep "mLteSignalStrength" | head -1)
-            if [ -n "$signal_line" ]; then
-                rsrp=$(echo "$signal_line" | awk '{print $(NF-2)}')
-                sinr=$(echo "$signal_line" | awk '{print $(NF-1)}')
+            if [ -z "$rsrp" ] || [ -z "$sinr" ]; then
+                local signal_line
+                signal_line=$(printf '%s' "$dump" | grep -m1 "mLteSignalStrength")
+                if [ -n "$signal_line" ]; then
+                    rsrp=$(echo "$signal_line" | awk '{print $(NF-2)}')
+                    sinr=$(echo "$signal_line" | awk '{print $(NF-1)}')
+                fi
             fi
             ;;
         *WCDMA*|*HSPAP*|*HSDPA*|*HSUPA*)
-            local signal_line
-            signal_line=$(printf '%s' "$dump" | grep "mSignalStrength" | head -1)
-            if [ -n "$signal_line" ]; then
-                rssi=$(echo "$signal_line" | awk '{print $3}')
-                [ "$rssi" = "-1" ] && rssi=$(echo "$signal_line" | awk '{print $4}')
+            if [ -z "$rssi" ]; then
+                local signal_line
+                signal_line=$(printf '%s' "$dump" | grep -m1 "mSignalStrength")
+                if [ -n "$signal_line" ]; then
+                    rssi=$(echo "$signal_line" | awk '{print $3}')
+                    [ "$rssi" = "-1" ] && rssi=$(echo "$signal_line" | awk '{print $4}')
+                fi
             fi
             ;;
         *GSM*|*EDGE*|*GPRS*)
-            local signal_line
-            signal_line=$(printf '%s' "$dump" | grep "mSignalStrength" | head -1)
-            if [ -n "$signal_line" ]; then
-                asu=$(echo "$signal_line" | awk '{print $2}')
-                if echo "$asu" | grep -Eq '^[0-9]+$' && [ "$asu" -ne 99 ]; then
-                    rssi=$(( -113 + (2 * asu) ))
+            if [ -z "$rssi" ]; then
+                local signal_line
+                signal_line=$(printf '%s' "$dump" | grep -m1 "mSignalStrength")
+                if [ -n "$signal_line" ]; then
+                    asu=$(echo "$signal_line" | awk '{print $2}')
+                    if echo "$asu" | grep -Eq '^[0-9]+$' && [ "$asu" -ne 99 ]; then
+                        rssi=$(( -113 + (2 * asu) ))
+                    fi
                 fi
             fi
             ;;
     esac
+
+    # Derive tech from display info if missing but LTE metrics were found
+    if [ -z "$tech" ] && { [ -n "$rsrp" ] || [ -n "$rssi" ]; }; then
+        tech=$(printf '%s' "$dump" | grep -m1 'network=LTE' | awk -F'[ ,]' '{print $1}')
+        [ -z "$tech" ] && tech="LTE"
+    fi
 
     if [ -n "$rsrp" ] && echo "$rsrp" | grep -Eq '^-?[0-9]+$' && [ "$rsrp" -ne -1 ] && [ "$rsrp" -ne 2147483647 ]; then
         if   [ "$rsrp" -ge -85 ];  then quality_score=100
