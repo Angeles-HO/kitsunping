@@ -20,31 +20,111 @@ prop_or_default() {
     local val="$(getprop "$1")"
   [ -n "$val" ] && echo "$val" || echo "$2"
 }
-
+ 
+## Set permissions function
+## Usage: set_permissions_module <modpath> [log_file]
+##  modpath: Path to the module installation directory
 set_permissions_module() {
     modpath="$1"
     log_file="$2"
-
+    # Optional third parameter: if set to "1" will attempt a last-resort chcon when no restorecon
+    # Usage: set_permissions_module <modpath> [log_file] [allow_chcon_last_resort]
+    last_resort_chcon="${3:-0}"
     [ -z "$modpath" ] && { [ -n "$log_file" ] && echo "[WARN] modpath vacio" >> "$log_file"; return 1; }
     [ ! -d "$modpath" ] && { [ -n "$log_file" ] && echo "[WARN] $modpath no existe" >> "$log_file"; return 1; }
 
+    # Preferir las funciones de Magisk si están disponibles (aplican SELinux context por defecto)
     if command -v set_perm_recursive >/dev/null 2>&1; then
         set_perm_recursive "$modpath" 0 0 0755 0644
         set_perm "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 0 0 0755
         set_perm "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 0 0 0755
         set_perm "$modpath/addon/jq/arm64/jq" 0 0 0755
         set_perm "$modpath/addon/ip/ip" 0 0 0755
+        set_perm "$modpath/addon/bc/arm/bc" 0 0 0755
+        set_perm "$modpath/addon/bc/arm64/bc" 0 0 0755
+        set_perm "$modpath/addon/daemon/daemon.sh" 0 0 0755
+        set_perm "$modpath/service.sh" 0 0 0755
+        set_perm "$modpath/post-fs-data.sh" 0 0 0755
+        set_perm "$modpath/addon/policy/executor.sh" 0 0 0755
+        set_perm "$modpath/addon/functions/utils/Kitsutils.sh" 0 0 0644
+        set_perm "$modpath/addon/functions/net_math.sh" 0 0 0644
+        set_perm "$modpath/addon/functions/core.sh" 0 0 0644
+        set_perm "$modpath/addon/daemon/iface_monitor.sh" 0 0 0755
     else
-        find "$modpath" -type d -exec chmod 0755 {} \;
-        find "$modpath" -type f -exec chmod 0644 {} \;
-        chmod 0755 "$modpath/service.sh" "$modpath/post-fs-data.sh" 2>/dev/null
-        chmod 0755 "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 2>/dev/null
-        chmod 0755 "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 2>/dev/null
-        chmod 0755 "$modpath/addon/jq/arm64/jq" 2>/dev/null
-        chmod 0755 "$modpath/addon/ip/ip" 2>/dev/null
+        # Fallback: attempt operations but avoid masking errors with '|| true'. Log failures to help debugging.
+        if ! chown -R 0:0 "$modpath" 2>/dev/null; then
+            [ -n "$log_file" ] && echo "[WARN] chown -R failed for $modpath" >> "$log_file"
+        fi
+
+        if ! find "$modpath" -type d -exec chmod 0755 {} \; 2>/dev/null; then
+            [ -n "$log_file" ] && echo "[WARN] chmod 0755 on directories failed in $modpath" >> "$log_file"
+        fi
+
+        if ! find "$modpath" -type f -exec chmod 0644 {} \; 2>/dev/null; then
+            [ -n "$log_file" ] && echo "[WARN] chmod 0644 on files failed in $modpath" >> "$log_file"
+        fi
+
+        # Ensure specific executables/scripts have executable permission and proper owner; log if any step fails.
+        for f in \
+            "$modpath/service.sh" \
+            "$modpath/post-fs-data.sh" \
+            "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" \
+            "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" \
+            "$modpath/addon/jq/arm64/jq" \
+            "$modpath/addon/ip/ip" \
+            "$modpath/addon/bc/arm/bc" \
+            "$modpath/addon/bc/arm64/bc" \
+            "$modpath/addon/daemon/daemon.sh" \
+            "$modpath/addon/daemon/iface_monitor.sh" \
+            "$modpath/addon/functions/net_math.sh" \
+            "$modpath/addon/functions/core.sh" \
+            "$modpath/addon/policy/executor.sh"; do
+            if [ -e "$f" ]; then
+                if ! chmod 0755 "$f" 2>/dev/null; then
+                    [ -n "$log_file" ] && echo "[WARN] chmod 0755 failed on $f" >> "$log_file"
+                fi
+                if ! chown 0:0 "$f" 2>/dev/null; then
+                    [ -n "$log_file" ] && echo "[WARN] chown failed on $f" >> "$log_file"
+                fi
+            fi
+        done
+
+        # Ensure Kitsutils.sh perms explicitly
+        kf="$modpath/addon/functions/utils/Kitsutils.sh"
+        if [ -e "$kf" ]; then
+            if ! chmod 0644 "$kf" 2>/dev/null; then
+                [ -n "$log_file" ] && echo "[WARN] chmod 0644 failed on $kf" >> "$log_file"
+            fi
+            if ! chown 0:0 "$kf" 2>/dev/null; then
+                [ -n "$log_file" ] && echo "[WARN] chown failed on $kf" >> "$log_file"
+            fi
+        fi
+
+        # Try to set SELinux context if possible. Prefer restorecon; chcon is last-resort and
+        # can be undesirable for Magisk modules (may not be ideal and can be ignored under enforcing).
+        if command -v restorecon >/dev/null 2>&1; then
+            if ! restorecon -R "$modpath" 2>/dev/null; then
+                [ -n "$log_file" ] && echo "[WARN] restorecon failed on $modpath" >> "$log_file"
+            fi
+        else
+            if [ "$last_resort_chcon" = "1" ]; then
+                if command -v chcon >/dev/null 2>&1; then
+                    [ -n "$log_file" ] && echo "[WARN] Applying generic SELinux context via chcon (last resort)" >> "$log_file"
+                    if ! chcon -R u:object_r:system_file:s0 "$modpath" 2>/dev/null; then
+                        [ -n "$log_file" ] && echo "[WARN] chcon failed on $modpath" >> "$log_file"
+                    fi
+                else
+                    [ -n "$log_file" ] && echo "[WARN] chcon not available; cannot apply SELinux context" >> "$log_file"
+                fi
+            else
+                [ -n "$log_file" ] && echo "[WARN] restorecon not available; skipping chcon (disabled by default)" >> "$log_file"
+            fi
+        fi
     fi
 
+    # Log success
     [ -n "$log_file" ] && echo "[OK] Permissions set in $modpath" >> "$log_file"
+    # end closing function no return data 
     return 0
 }
 

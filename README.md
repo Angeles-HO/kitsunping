@@ -45,7 +45,11 @@ Magisk module that tunes radio/network properties based on detected carrier (MCC
 
 - `network_policy.sh`: parses `daemon.state` with POSIX loops (no awk/sed) and picks a profile via `decide_profile.sh`/`pick_profile`.
 - Debounce: uses `daemon.last` to avoid reapplying profiles when the last event is too recent.
-- Target profile is persisted to `cache/policy.target`; executor reads it and writes `cache/policy.current` when applied.
+- Daemon writes the desired/selected profile to `cache/policy.request` (informational).
+- Executor (`addon/policy/executor.sh`) is the single-writer that:
+  - atomically writes the active target to `cache/policy.target` when triggered,
+  - and writes the applied profile to `cache/policy.current` once it has been successfully applied.
+  This separation avoids races: daemon decides, executor applies.
 - Executor (`addon/policy/executor.sh`):
   - Applies built-in profile tweaks (`apply_network_optimizations`) when available.
   - Runs calibration conditionally using a low-score streak plus cooldown; supports `FORCE_CALIBRATE` override.
@@ -121,6 +125,11 @@ This module includes or is inspired by external tools and resources:
   Source and credits:  
   [/addon/Volume-Key-Selector/README.md#credits](/addon/Volume-Key-Selector/README.md#credits)  
   Compiled by **Zackptg5**
+- **Static bc binary**
+  Source and credits:
+  [/addon/bc/README.md#credits](/addon/bc/README.md#credits)  
+  Compiled by **Zackptg5** 
+
 
 All credits belong to their respective authors.
 

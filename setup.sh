@@ -1,30 +1,31 @@
 #!/system/bin/sh
-
-# --- Configuracion inicial ---
+# SORRY FOR MUCH Logs AND COMMENTS, IT'S FOR DEBUGGING AND MAINTENANCE PURPOSES, im trying to make it easy to understand
+# --- Global Vars ---
 INSTALL_START_TIME=$(date +%s)
-SKIPMOUNT=false          # Default para instalador Magisk
-AUTOMOUNT=true           # Montaje automatico
-DEBUG=true               # Mostrar logs en archivo (futuro)
-POSTFSDATA=true          # Ejecutar post-fs-data
-LATESTARTSERVICE=true    # Ejecutar late_start service (service.sh)
-CLEANSERVICE=true        # Limpiar archivos previos si existen
-PROPFILE=true            # Cargar system.prop
+SKIPMOUNT=false          # Default for Magisk installer
+AUTOMOUNT=true           # Automatic mounting
+DEBUG=true               # Show logs in file (future)
+POSTFSDATA=true          # Execute early_start service (post-fs-data.sh)
+LATESTARTSERVICE=true    # Execute late_start service (service.sh)
+CLEANSERVICE=true        # Clean previous files if they exist
+PROPFILE=true            # Load system.prop
 
-# --- Metadatos ---
+# --- Metadata ---
 dte=$(date)
 improviserr="@Angeles_ho"
 
-# --- Complementos ---
+# --- Complements ---
 complemento_kitsutils="addon/functions/utils/Kitsutils.sh"
 complemento_debug="addon/functions/debug/shared_errors.sh"
 complemento_net_calibrate="addon/Net_Calibrate/calibrate.sh"
 complemento_VKS="addon/Volume-Key-Selector/utils.sh"
 
-# Cargar utilidades base y permisos
+# Load base utilities and permissions
 . "$NEWMODPATH/$complemento_kitsutils"
 set_permissions
+set_permissions_module "$NEWMODPATH" "/sdcard/kitsuneping_install_log.txt"
 
-# Verificacion y carga de complementos
+# Verification and loading of complements
 verify_complemento "$complemento_VKS"
 verify_complemento "$complemento_kitsutils"
 verify_complemento "$complemento_debug"
@@ -32,7 +33,7 @@ verify_complemento "$complemento_net_calibrate"
 
 divider="══════════════════════════════════════════════════"
 
-# Backup inicial (solo una vez)
+# Initial backup (only once)
 log_info "Creating backup of original settings..."
 create_backup
 log_info "Backup created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
@@ -66,31 +67,27 @@ echo "${divider}"
 echo "❖ Installation in progress..."
 echo "${divider}"
 
-# ===================================
-# Posiblemente insertar logica de seleccion de modo de red
-# typos: speed, stable, gaming
-# ===================================
-
-
 # --- Mode selection ---
 log_info "Select operation mode:"
 log_info "  [Vol+] Fixed mode"
 log_info "  [Vol-] Automatic mode (~4 mins)"
 log_info "  [None] Automatic mode (~4 mins)"
 
-# Si se presiona Vol+ -> Modo Fijo
+## If no key is pressed, default to automatic mode
+## if Vol + is pressed, fixed mode
+## if Vol - is pressed, automatic mode
 if $VKSEL 60; then
     echo "=============================="
     MODE_SELECTION=0
     log_info "Fixed mode selected"
 
-    # Valores fijos
+    # Fixed values
     echo "ro.ril.hsupa.category=6" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
     echo "ro.ril.hsdpa.category=24" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
     echo "ro.ril.lte.category=7" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
     echo "ro.ril.ltea.category=6" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
 
-    # Aplicar cambios a system.prop
+    # Apply changes to system.prop
     cat "$NEWMODPATH/configs/kitsuneping_static.conf" >> "$NEWMODPATH/system.prop"
     echo "=============================="
 else
@@ -98,9 +95,9 @@ else
 fi
 
 
-# --- Modo Automatico ---
+# --- Automatic Mode ---
 if [ "$MODE_SELECTION" -eq 1 ]; then
-    log_info "Modo Automatico seleccionado"
+    log_info "Automatic Mode selected"
     log_info "Starting network calibration..."
     log_info "This may take a while; ensure good connection and be patient"
     log_info "Backup already created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
@@ -129,9 +126,10 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     fi
 fi
 
-# --- Finalizacion ---
+# --- Finalization ---
 progress_bar
-# Auto mode: aprox 410s (more calculation time for more accuracy)
+# Auto mode but not have SIM card: 250s/280s
+# Auto mode with SIM card: aprox 4/6 mins (420s-512s)
 # Fixed mode: aprox 20s (static values + minimal processing)
 INSTALL_END_TIME=$(date +%s) 
 INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))

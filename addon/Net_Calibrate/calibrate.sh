@@ -1,18 +1,22 @@
 #!/system/bin/sh
+# Net Calibrate.sh Script
+# Version: 4.87
+# Description: This script calibrates network properties for optimal performance.
+# Status: Archived - 26/01/2026
 trace_log="/sdcard/trace_log.log"
-NET_PROPERTIES_KEYS="ro.ril.hsupa.category ro.ril.hsdpa.category" # Prioridad, para [subida y bajada] WIFI
-NET_OTHERS_PROPERTIES_KEYS="ro.ril.lte.category ro.ril.ltea.category ro.ril.nr5g.category" # Prioridad, para [LTE, LTEA, 5G] Datos
-NET_VAL_HSUPA="5 6 7 8 9 10 11 12 13 18" # Testeo de valores para mayor subida
-NET_VAL_HSDPA="9 12 15 18 21 34 36 38 41" # Testeo de valores para mayor bajada
-NET_VAL_LTE="5 6 7 8 9 10 11 12 13" # Testeo de valores para tecnologia de datos lte
-NET_VAL_LTEA="5 6 7 8 9 10 11 12 13" # Testeo de valores para tecnologia de datos ltea
-NET_VAL_5G="1 2 3 4 5" # Testeo de valores para tecnologia de datos 5G
+NET_PROPERTIES_KEYS="ro.ril.hsupa.category ro.ril.hsdpa.category" # Priority, for [upload and download] WIFI
+NET_OTHERS_PROPERTIES_KEYS="ro.ril.lte.category ro.ril.ltea.category ro.ril.nr5g.category" # Priority, for [LTE, LTEA, 5G] Data
+NET_VAL_HSUPA="5 6 7 8 9 10 11 12 13 18" # Testing values for higher upload
+NET_VAL_HSDPA="9 12 15 18 21 34 36 38 41" # Testing values for higher download
+NET_VAL_LTE="5 6 7 8 9 10 11 12 13" # Testing values for LTE data technology
+NET_VAL_LTEA="5 6 7 8 9 10 11 12 13" # Testing values for LTEA data technology
+NET_VAL_5G="1 2 3 4 5" # Testing values for 5G data technology
 NETMETER_FILE="$NEWMODPATH/logs/kitsunping.log"
 CACHE_DIR_cln="$NEWMODPATH/cache"
 jqbin="$NEWMODPATH/addon/jq/arm64/jq"
 ipbin="$NEWMODPATH/addon/ip/ip"
 data_dir="$NEWMODPATH/addon/Net_Calibrate/data"
-fallback_json="$data_dir/unknow.json"
+fallback_json="$data_dir/unknown.json"
 cache_dir="$data_dir/cache"
 CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
 CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
@@ -20,13 +24,15 @@ CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
 date +%s > "$CALIBRATE_LAST_RUN" 2>/dev/null
 echo "running" > "$CALIBRATE_STATE_RUN"
 
+# Description: Ensure core binaries (ping, resetprop, ip, ndc, awk) exist and that ping works.
+# Usage: check_and_detect_commands
 check_and_detect_commands() {
     if [ -n "$PING_BIN" ]; then
         log_debug "PING_BIN already set: $PING_BIN"
     else 
         log_info "====================== check_and_detect_commands =========================" >> "$trace_log"
         local missing=0
-        # Comandos esenciales
+        
         for cmd in ip ndc resetprop awk; do
             if ! command_exists "$cmd"; then
                 log_error "Required command '$cmd' not found"
@@ -60,8 +66,47 @@ check_and_detect_commands() {
         fi
 
         # Verify if ping is functional
+        # If ping fails, try to detect whether we're in an install/context where the
+        # daemon is not running (e.g. a module 'running' installation). In that case
+        # abort calibration quietly (return 0). Otherwise treat as fatal and return 1.
         if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+            # Check whether the daemon is already running (normal operation) using pidfile
+            # Prefer the same singleton check used by daemon.sh (pidfile at $MODDIR/cache/daemon.pid)
+            local old_pid
+            for pidfile in "${NEWMODPATH:-}/cache/daemon.pid" "${MODDIR:-}/cache/daemon.pid"; do
+                if [ -f "$pidfile" ]; then
+                    old_pid=$(cat "$pidfile" 2>/dev/null)
+                    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+                        log_error "Ping available but not functional (check permissions, SELinux, network)"
+                        log_error "Connectivity test failed using ping at: $PING_BIN while daemon is running (PID=$old_pid); aborting calibration."
+                        log_error "Please verify network connectivity and permissions."
+                        return 1
+                    else
+                        # Stale pidfile: remove
+                        rm -f "$pidfile" 2>/dev/null
+                    fi
+                fi
+            done
+
+            # Fallback: try to detect running process by name if no pidfile found
+            if pgrep -f '[k]itsunping' >/dev/null 2>&1; then
+                log_error "Ping available but not functional (check permissions, SELinux, network)"
+                log_error "Connectivity test failed using ping at: $PING_BIN while daemon process detected; aborting calibration."
+                log_error "Please verify network connectivity and permissions."
+                return 1
+            fi
+
+            # Detect common locations that indicate a module installation or "runin" workflow
+            # If such an installation is in progress, abort calibration without treating as error
+            if [ -d "/data/adb/modules/runin" ] || [ -d "/data/adb/modules/kitsunping" ] || [ -f "/data/adb/modules/.installed_runin" ]; then
+                log_info "Daemon not running and 'runin' / module-install detected; aborting calibration without error."
+                return 0
+            fi
+
+            # Default: treat as error
             log_error "Ping available but not functional (check permissions, SELinux, network)"
+            log_error "Connectivity test failed using ping at: $PING_BIN, cannot proceed, please check wifi/data status."
+            log_error "Please verify network connectivity and permissions."
             return 1
         fi
 
@@ -71,6 +116,8 @@ check_and_detect_commands() {
 }
 
 # Main function to calibrate network settings
+# Description: Orchestrate full calibration flow for radio properties using ping-based scoring.
+# Usage: calibrate_network_settings <delay_seconds>
 calibrate_network_settings() {
     if [ -z "$1" ] || ! echo "$1" | grep -Eq '^[0-9]+$' || [ "$1" -lt 1 ]; then
         log_error "calibrate_network_settings <delay_seconds>" >&2
@@ -178,37 +225,41 @@ calibrate_network_settings() {
     echo "BEST_ro_ril_nr5g_category=$BEST_ro_ril_nr5g_category"
 }
 
+# Description: Slice shared NET_PROPERTIES_VALUES based on PROP_OFFSETS for a given index.
+# Usage: get_values_for_prop <index>
 get_values_for_prop() {
     local index="$1"
     log_info "====================== get_values_for_prop =========================" >> "$trace_log"
     log_info "index: $index" >> "$trace_log"
 
-    # Almacenamos y obtenemos el offset inicial para la propiedad actual (ej. 0)
+    # Store and get the initial offset for the current property (e.g., 0)
     local start=$(echo "$PROP_OFFSETS" | cut -d' ' -f$index)
     log_info "PROP_OFFSETS: $PROP_OFFSETS" >> "$trace_log"
     log_info "start: $start" >> "$trace_log"
 
-    # Almacenamos y obtenemos el siguiente offset (si existe) para determinar el rango de valores  (ej. 6)
+    # Store and get the next offset (if it exists) to determine the range of values (e.g., 6)
     local end=$(echo "$PROP_OFFSETS" | cut -d' ' -f$((index + 1)) 2>/dev/null)
     log_info "PROP_OFFSETS: $PROP_OFFSETS" >> "$trace_log"
     log_info "end: $end" >> "$trace_log"
 
-    # Calcula el numero total de valores disponibles en NET_PROPERTIES_VALUES
+    # Calculate the total number of available values in NET_PROPERTIES_VALUES
     local total=$(echo "$NET_PROPERTIES_VALUES" | wc -w)
     log_info "PROP_OFFSETS: $NET_PROPERTIES_VALUES" >> "$trace_log"
     log_info "end: $total" >> "$trace_log"
 
-    # Extrae los valores correspondientes a la propiedad actual
+    # Extract the values corresponding to the current property
     if [ -z "$end" ]; then
-        # Si no hay un siguiente offset, toma todos los valores desde el offset actual hasta el final
+        # If there is no next offset, take all values from the current offset to the end
         echo "$NET_PROPERTIES_VALUES" | cut -d' ' -f$((start + 1))-"$total"
     else
-        # Si hay un siguiente offset, toma los valores entre el offset actual y el siguiente
-        # └── es decir que toma los del: 0 al 6
+        # If there is a next offset, take the values between the current offset and the next
+        # └── that is, take those from: 0 to 6
         echo "$NET_PROPERTIES_VALUES" | cut -d' ' -f$((start + 1))-"$end"
     fi
 }
 
+# Description: Iterate candidate values for a property, score them via ping, persist the best.
+# Usage: calibrate_property <property> "<candidates>" <delay_seconds> <best_file_path>
 calibrate_property() {
     local property="$1"
     local candidates="$2"
@@ -222,7 +273,8 @@ calibrate_property() {
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Properties: property: $property | candidates: $candidates | delay: $delay | best_file: $best_file" >> "$trace_log"
     log_info "best_val: $best_val" >> "$trace_log"
-    # Verificar permisos de escritura primero
+
+    # Verify write permissions first
     local write_test="${best_file}.test"
     log_info "write_test: $write_test" >> "$trace_log"
     if ! touch "$write_test" 2>/dev/null; then
@@ -259,13 +311,13 @@ calibrate_property() {
         fi
     done
     
-    # Crear directorio con verificación de errores
+    # Create directory with error checking
     if ! mkdir -p "$(dirname "$best_file")"; then
         log_error "Could not create directory: $(dirname "$best_file")"
         return 1
     fi
     
-    # Escribir archivo con verificación
+    # Write file with verification
     if ! echo "$best_val" > "$best_file"; then
         log_error "Error writing to: $best_file"
         return 1
@@ -274,6 +326,8 @@ calibrate_property() {
     return 0
 }
 
+# Description: Compute quality score from ping metrics (avg RTT, jitter/variance, loss).
+# Usage: extract_scores "<avg> <jitter> <loss>"
 extract_scores() {
     local current_ping=$(echo "$1" | awk '{print $1}')
     local current_jitter=$(echo "$1" | awk '{print $2}')
@@ -282,13 +336,13 @@ extract_scores() {
     log_info "props before verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$trace_log"
     
     
-    # Validación básica
+    # Validation and defaulting
     [ -z "$current_ping" ] && current_ping="-1"
     [ -z "$current_jitter" ] && current_jitter="-1"
     [ -z "$current_loss" ] && current_loss="100"
     log_info "props after verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$trace_log"
 
-    # Cálculo del score con validación numérica
+    # Score calculation with numeric validation
     if ! echo "$current_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || \
        ! echo "$current_jitter" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || \
        ! echo "$current_loss" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
@@ -296,7 +350,7 @@ extract_scores() {
         return 1
     fi
 
-    # Cálculo seguro con awk
+    # Safe calculation with awk
     echo "$current_ping $current_jitter $current_loss" | awk '
     {
         p = $1; j = $2; l = $3
@@ -306,7 +360,7 @@ extract_scores() {
             exit
         }
         
-        # Fórmula simplificada
+        # Simplified formula
         base = 100 - (p / 2)
         score = base - (j * 0.5) - (l * 0.8)
         
@@ -317,7 +371,8 @@ extract_scores() {
     }'
 }
 
-
+# Description: Resolve provider/dns/ping from SIM MCC/MNC JSON or fallback, apply DNS.
+# Usage: configure_network
 configure_network() {
     local country_code mcc_raw mnc_raw mcc mnc json_file cache_file cache_ok
     local raw provider dns_list ping dns_json
@@ -359,7 +414,8 @@ configure_network() {
         cache_file="$cache_dir/${mcc}_${mnc}.conf"
     fi
 
-    # Comprobacion de locos para evitar posibles errores comunes y poco comunes
+    # Hardcore validations
+    [ -f "$jqbin" ] || { log_error "jq not found"; return 1; }
     [ -x "$jqbin" ] || { log_error "jq is not executable"; return 1; }
     [ -f "$json_file" ] || json_file="$fallback_json"
     [ -f "$json_file" ] || { log_error "JSON not found"; return 1; }
@@ -402,9 +458,9 @@ configure_network() {
         dns_list=$(echo "$raw" | "$jqbin" -r '.dns[]?' | paste -sd " ")
         ping=$(echo "$raw" | "$jqbin" -r '.ping // "8.8.8.8"')
 
-        log_info "Configuracion de red obtenida (ping): $ping" >> "$trace_log"
-        log_info "Configuracion de red obtenida (dns_list): $dns_list" >> "$trace_log"
-        log_info "Configuracion de red obtenida (provider): $provider" >> "$trace_log"
+        log_info "Network configuration obtained (ping): $ping" >> "$trace_log"
+        log_info "Network configuration obtained (dns_list): $dns_list" >> "$trace_log"
+        log_info "Network configuration obtained (provider): $provider" >> "$trace_log"
 
         [ -z "$dns_list" ] && dns_list="8.8.8.8 1.1.1.1"
         [ -z "$ping" ] && ping="8.8.8.8"
@@ -421,7 +477,7 @@ EOF
             [ -z "$PING" ] && PING="8.8.8.8"
 
     for iface in $($ipbin -o link show | awk -F': ' '{print $2}' | grep -E 'rmnet|wlan|eth|ccmni|usb'); do
-        log_info "Configurando DNS en interfaz: $iface" >> "$trace_log"
+        log_info "Configuring DNS on interface: $iface" >> "$trace_log"
       ndc resolver setifacedns "$iface" "" $DNS_LIST >/dev/null 2>&1
     done
 
@@ -435,7 +491,8 @@ EOF
       '{provider: $provider, dns: $dns, ping: $ping}'
 }
 
-
+# Description: Calibrate LTE/LTEA/5G properties when mobile path is active.
+# Usage: calibrate_secondary_network_settings <delay_seconds> <cache_dir>
 calibrate_secondary_network_settings() {
     delay=$1
     CACHE_DIR="$2"
@@ -456,37 +513,31 @@ calibrate_secondary_network_settings() {
                     vals="$NET_VAL_5G"
                     ;;
                 *)
-                    vals="9" # Valor por defecto
+                    vals="9" # Default fallback value
                     ;;
             esac
-            log_info "Calibrando $prop con valores: $vals" >> "$trace_log"
+            log_info "Calibrating $prop with values: $vals" >> "$trace_log"
             calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR/$prop.best"
         ) &
     done
     wait
 
-    # Exportar resultados
+    # Export results
     for prop in $NET_OTHERS_PROPERTIES_KEYS; do
         best_file="$CACHE_DIR/$prop.best"
         if [ -f "$best_file" ]; then
             best_val=$(cat "$best_file")
-            log_info "Mejor valor para $prop: $best_val" >> "$trace_log"
+            log_info "Best value for $prop: $best_val" >> "$trace_log"
             exp_name=$(echo "$prop" | tr '.' '_')
             export "BEST_${exp_name}=$best_val"
         else
-            log_info "Mejor valor para $prop: (no encontrado)" >> "$trace_log"
+            log_info "Best value for $prop: (not found)" >> "$trace_log"
         fi
     done
 }
 
-
-guardar_cache() {
-    local contenido="$1"
-    local archivo="$2"
-    echo "$contenido" >> "$archivo"
-}
-
-
+# Description: Apply a property candidate and measure connectivity quality via ping.
+# Usage: test_configuration <property> <candidate> <delay_seconds>
 test_configuration() {
     log_info "====================== test_configuration =========================" >> "$trace_log"
     local property="$1" 
@@ -501,8 +552,11 @@ test_configuration() {
     resetprop "$property" "$candidate" >/dev/null 2>&1 || { echo "9999 9999 100"; return 1; }
     sleep 1
 
-    # Ejecutar ping con formato consistente
-    # Binario -c 10 (10 paquetes), -i 0.5 (intervalo 500ms), -W 0.9 (timeout por paquete) 
+    # Warm-up pings to avoid skewed first samples
+    $PING_BIN -c 3 -W 1 "$TEST_IP" >/dev/null 2>&1
+
+    # Execute ping with consistent format
+    # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 0.9 (timeout per packet) 
     output=$($PING_BIN -c "$delay" -i 0.5 -W 0.9 "$TEST_IP" 2>&1)
     [ $? -ne 0 ] && { echo "9999 9999 100"; return 2; }
 
@@ -511,7 +565,8 @@ test_configuration() {
     parse_ping "$output"
 }
 
-
+# Description: Parse ping output to extract avg RTT, jitter (mdev), variance (max-min), and loss.
+# Usage: parse_ping "$(ping ... output)"
 parse_ping() {
     local input="$1"
     log_info "====================== parse_ping =========================" >> "$trace_log"
@@ -520,12 +575,15 @@ parse_ping() {
         return 1
     fi
 
-    # Variables por defecto
+    # Default variables
     local avg_ping="-1"
     local jitter="-1"
+    local min_ping="-1"
+    local max_ping="-1"
+    local variance="-1"
     local packet_loss="100"
 
-    # Extraer pérdida de paquetes
+    # Extract packet loss
     packet_loss=$(echo "$input" | awk '
         /packet loss|perdida/ {
             for (i=1; i<=NF; i++) {
@@ -539,18 +597,41 @@ parse_ping() {
         END { print "0" }')
     log_info "packet_loss: $packet_loss" >> "$trace_log"
 
-    # Extraer estadísticas RTT
+    # Extract RTT statistics
     local rtt_line
     rtt_line=$(echo "$input" | grep -E "rtt min/avg/max/mdev|round-trip min/avg/max|tiempo mínimo/máximo/promedio")
     log_info "rtt_line: $rtt_line" >> "$trace_log"
     if [ -n "$rtt_line" ]; then
-        avg_ping=$(echo "$rtt_line" | awk -F'=' '{print $2}' | awk -F'/' '{print $2}')
-        jitter=$(echo "$rtt_line" | awk -F'=' '{print $2}' | awk -F'/' '{print $4}' | awk '{print $1}')
+        local rtt_stats
+        # Normalize spacing to avoid parsing failures when there are extra blanks
+        rtt_stats=$(echo "$rtt_line" | awk -F'=' '{print $2}' | tr -s ' ' | sed 's/^ *//')
+        min_ping=$(echo "$rtt_stats" | awk -F'/' '{print $1}')
+        avg_ping=$(echo "$rtt_stats" | awk -F'/' '{print $2}')
+        max_ping=$(echo "$rtt_stats" | awk -F'/' '{print $3}')
+        jitter=$(echo "$rtt_stats" | awk -F'/' '{print $4}' | awk '{print $1}')
     fi
 
     [ -z "$avg_ping" ] && avg_ping="-1"
     [ -z "$jitter" ] && jitter="-1"
+    [ -z "$min_ping" ] && min_ping="-1"
+    [ -z "$max_ping" ] && max_ping="-1"
     [ -z "$packet_loss" ] && packet_loss="100"
 
-    echo "${avg_ping} ${jitter} ${packet_loss}"
+    if echo "$min_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$' && \
+       echo "$max_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+        variance=$(awk "BEGIN {print $max_ping - $min_ping}")
+    fi
+
+    # Adjust jitter penalizing more when variance (max-min) is greater
+    local adjusted_jitter="$jitter"
+    if echo "$variance" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+        if ! echo "$adjusted_jitter" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || \
+           awk "BEGIN {exit !($variance > $adjusted_jitter)}"; then
+            adjusted_jitter="$variance"
+        fi
+    fi
+
+    log_info "rtt_min: $min_ping | rtt_max: $max_ping | variance: $variance | jitter_final: $adjusted_jitter" >> "$trace_log"
+
+    echo "${avg_ping} ${adjusted_jitter} ${packet_loss}"
 }

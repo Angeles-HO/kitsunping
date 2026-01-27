@@ -1,0 +1,12 @@
+# This file is user to set propierties and priorities for the Kitsunping target
+
+# Set the priority of the target
+# Prioriry: low, medium, high (all similar to 1, i dont have how to separate them yet, for now they are the same)
+# Profile = gamer,speed,stable (i have logic to separate them but this is a templeate for future use)
+# app name = priority
+
+# Example:
+# com.instragram.android = speed, low
+# com.warzone.mobile= high,gamer
+# com.spotify.music = medium, stable
+# com.kitsunping.app = high, stable

@@ -24,6 +24,3 @@ kUtils.txt
 # Others
 
 # daemon process proposal
-DAEMON.md
-addon/daemon/*
-addon/policy/*

@@ -11,8 +11,24 @@ ro.ril.enable.a53=1
 ro.ril.gprsclass=34
 ro.ril.transmitpower=true
 
-# daemon
-kitsunping.daemon.interval=5
+# ====== Daemon Kitsunping ======
+# interval of check for the daemon in seconds (default value: 10 seconds)
+kitsunping.daemon.interval=10
+
+
+# LLM / Sigmoide / Exponential / Lineal 
+# kitsunping.daemon.algorithm=sigmoid
+
+# values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
+# kitsunping.daemon.sigmoid.alpha=0.5
+# kitsunping.daemon.sigmoid.beta=0.1
+# kitsunping.daemon.sigmoid.gamma=0.1
+#
+# Here's in case the user added a value but then replaced it with " ", to clear it, getprop can retrieve the valid value. 
+# Therefore, modify the daemon so that if an empty value is detected, it detects it as use_daemon_local_vars, 
+# since some don't know how to delete values ​​from build.prop and it may persist but not its assigned value.
+# ====== Fin Daemon Kitsunping ======
+
 
 # Metodo de correlacion de la base de datos para obtener ubicacion (ajustar si se prioriza privacidad)
 # ro.ril.enable.dcm.feature=0

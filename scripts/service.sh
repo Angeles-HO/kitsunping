@@ -6,20 +6,23 @@
 # optimizaciones de red.
 # /data/adb/modules/Kitsun_ping/logs/services.log
 # =============================================================================
-MODDIR=${0%/*}
+MODDIR="${0%/*}" # policy dir llamdo  si se llama desde daemon.sh
+ADDON_DIR="${MODDIR%/policy}"    # kitsunping/addon
+SCRIPT_DIR="${ADDON_DIR%/addon}" # kitsunping (raíz del módulo)
 # =============================================================================
-mkdir -p "$MODDIR/logs" 2>/dev/null
-SERVICES_LOGS="$MODDIR/logs/services.log"
+mkdir -p "$SCRIPT_DIR/logs" 2>/dev/null
+SERVICES_LOGS="$SCRIPT_DIR/logs/services.log"
+SERVICES_LOGS_CALLED_BY_DAEMON="$SCRIPT_DIR/logs/services_daemon.log"
 # =============================================================================
 # Funcion: Espera a que el sistema finalice el arranque
 
 # Utilidades comunes
-COMMON_UTIL="$MODDIR/addon/functions/utils/Kitsutils.sh"
+COMMON_UTIL="$SCRIPT_DIR/addon/functions/utils/Kitsutils.sh"
 
 if [ -f "$COMMON_UTIL" ]; then
     . "$COMMON_UTIL"
 else
-    ALT_MODDIR="/data/adb/modules_update/${MODDIR##*/}"
+    ALT_MODDIR="/data/adb/modules_update/${SCRIPT_DIR##*/}"
     ALT_COMMON="$ALT_MODDIR/addon/functions/utils/Kitsutils.sh"
     if [ -f "$ALT_COMMON" ]; then
         . "$ALT_COMMON"
@@ -46,8 +49,25 @@ else
     fi
 fi
 
-# Opcional: asegurar permisos si no se fijaron en post-fs-data
-#set_permissions_module "$MODDIR" "$SERVICES_LOGS"
+# Optional: ensure only necessary binaries/scripts are executable.
+# DO NOT change ownership, contexts, or perform massive permission changes here (runs every boot).
+for f in \
+    "$MODDIR/addon/daemon/daemon.sh" \
+    "$MODDIR/service.sh" \
+    "$MODDIR/post-fs-data.sh" \
+    "$MODDIR/addon/jq/arm64/jq" \
+    "$MODDIR/addon/ip/ip" \
+    "$MODDIR/addon/Volume-Key-Selector/tools/arm/keycheck" \
+    "$MODDIR/addon/Volume-Key-Selector/tools/x86/keycheck" \
+    "$MODDIR/addon/policy/executor.sh"; do
+    if [ -e "$f" ] && [ ! -x "$f" ]; then
+        if chmod 0755 "$f" 2>>"$SERVICES_LOGS"; then
+            echo "[OK] Made executable: $f" >> "$SERVICES_LOGS"
+        else
+            echo "[WARN] Failed to chmod executable: $f" >> "$SERVICES_LOGS"
+        fi
+    fi
+done
 
 # =============================================================================
 # Funciones para aplicar configuraciones de red
@@ -67,7 +87,7 @@ custom_write() {
     echo "[DEBUG]: Llamada a [custom_write()] con argumentos: ['$1'], ['$2'], ['$3']" >> "$SERVICES_LOGS"
 
     value="$1"
-    normalized_value=$(normalize_sysctl_value "$value")
+    normalized_value=$(normalize_sysctl_value "$value") # 
     target_file="$2"
     log_text="$3"
 
@@ -95,7 +115,7 @@ custom_write() {
     fi
 
     if [ ! -w "$target_file" ]; then
-        chmod 777 "$target_file" 2>> "$SERVICES_LOGS"
+        chmod 0777 "$target_file" 2>> "$SERVICES_LOGS"
     fi
 
     case "$target_file" in
@@ -191,29 +211,29 @@ EOF
 apply_tcp_settings() {
     echo "[Aplicando configuraciones [ IPV4/TCP ]...]"  >> "$SERVICES_LOGS"
     apply_param_set <<'EOF'
-1|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn deshabilitado
-1|/proc/sys/net/ipv4/tcp_sack|tcp_sack habilitado
-1|/proc/sys/net/ipv4/tcp_fack|tcp_fack habilitado
-1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling habilitado
-16384 87380 26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem ajustado
-16384 87380 26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem ajustado
-65536 131072 262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem ajustado
-cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic
+1|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn deshabilitado 
+1|/proc/sys/net/ipv4/tcp_sack|tcp_sack habilitado 
+1|/proc/sys/net/ipv4/tcp_fack|tcp_fack habilitado 
+1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling habilitado 
+16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem ajustado 
+16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem ajustado 
+65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem ajustado 
+cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic 
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save habilitado
- bbr cubic|/proc/sys/net/ipv4/tcp_allowed_congestion_control|tcp_allowed_congestion_control ajustado a bic y cubic
- bbr cubic|/proc/sys/net/ipv4/tcp_available_congestion_control|tcp_available_congestion_control ajustado a bic y cubic
-3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen habilitado
-5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 ajustado
-5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 ajustado
-2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes ajustado
-3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries ajustado
-512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog ajustado
-32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans ajustado
-10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout ajustado
-35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time ajustado
-10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl ajustado
-3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes ajustado
-1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies habilitado
+bbr,cubic|/proc/sys/net/ipv4/tcp_allowed_congestion_control|tcp_allowed_congestion_control ajustado a bic y cubic 
+bbr,cubic|/proc/sys/net/ipv4/tcp_available_congestion_control|tcp_available_congestion_control ajustado a bic y cubic 
+3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen habilitado 
+5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 ajustado 
+5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 ajustado 
+2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes ajustado 
+3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries ajustado 
+512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog ajustado 
+32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans ajustado 
+10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout ajustado 
+35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time ajustado 
+10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl ajustado 
+3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes ajustado 
+1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies habilitado 
 EOF
 
     echo "[Configuraciones TCP completadas]"  >> "$SERVICES_LOGS"
@@ -224,47 +244,47 @@ apply_network_ipv4_settings() {
     echo "[Aplicando configuraciones [ IPV4/OTHERS ]...]"  >> "$SERVICES_LOGS"
 
     apply_param_set <<'EOF'
-1|/proc/sys/net/ipv4/conf/default/rp_filter|rp_filter configurado en modo estricto
-0|/proc/sys/net/ipv4/conf/default/accept_redirects|accept_redirects deshabilitado
-0|/proc/sys/net/ipv4/conf/default/accept_source_route|accept_source_route deshabilitado
-1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect habilitado
-0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all deshabilitado
-1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts habilitado
-0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr deshabilitado
-1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses habilitado
-100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimizado
-5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimizado
-500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimizado para menor latencia
-6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask ajustado
-1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports habilitado
-50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships ajustado para mayor eficiencia
-20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf ajustado
-2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv ajustado
-64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl ajustado
-0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr deshabilitado
-1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux habilitado para procesamiento mas rapido
-0|/proc/sys/net/ipv4/ip_forward|ip_forward deshabilitado para reducir el overhead
-1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority ajustado
-0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu deshabilitado
-1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing habilitado
-1024 65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range ampliado para mas conexiones
-0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc deshabilitado
-1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind habilitado para permitir mas conexiones
-1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start ajustado
-4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh ajustado para mayor buffer
-3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh ajustado
-64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist ajustado
-0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval ajustado
-30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time ajustado
-1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux habilitado para procesamiento mas rapido
-131072 262144 524288|/proc/sys/net/ipv4/udp_mem|udp_mem ajustado para mayor rendimiento
-8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimizado
-8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimizado
-600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl ajustado
-120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl ajustado
-131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold ajustado para mas peers
-0 2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range ajustado
-32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh ajustado
+1|/proc/sys/net/ipv4/conf/default/rp_filter|rp_filter configurado en modo estricto 
+0|/proc/sys/net/ipv4/conf/default/accept_redirects|accept_redirects deshabilitado 
+0|/proc/sys/net/ipv4/conf/default/accept_source_route|accept_source_route deshabilitado 
+1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect habilitado 
+0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all deshabilitado 
+1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts habilitado 
+0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr deshabilitado 
+1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses habilitado 
+100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimizado 
+5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimizado 
+500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimizado para menor latencia 
+6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask ajustado 
+1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports habilitado 
+50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships ajustado para mayor eficiencia 
+20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf ajustado 
+2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv ajustado 
+64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl ajustado 
+0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr deshabilitado 
+1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux habilitado para procesamiento mas rapido 
+0|/proc/sys/net/ipv4/ip_forward|ip_forward deshabilitado para reducir el overhead 
+1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority ajustado 
+0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu deshabilitado 
+1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing habilitado 
+1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range ampliado para mas conexiones 
+0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc deshabilitado 
+1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind habilitado para permitir mas conexiones 
+1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start ajustado 
+4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh ajustado para mayor buffer 
+3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh ajustado 
+64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist ajustado 
+0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval ajustado 
+30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time ajustado 
+1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux habilitado para procesamiento mas rapido 
+131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem ajustado para mayor rendimiento 
+8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimizado 
+8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimizado 
+600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl ajustado 
+120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl ajustado 
+131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold ajustado para mas peers 
+0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range ajustado 
+32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh ajustado 
 EOF
 
     echo "[Configuraciones de red optimizadas completadas]"  >> "$SERVICES_LOGS"
@@ -301,8 +321,40 @@ EOF
     echo "[Configuraciones de red IPv6 completadas]"  >> "$SERVICES_LOGS"
 }
 
+run_profile_script() {
+    profile_name="$1"
+    profile_script=""
+
+    case "$profile_name" in
+        speed) profile_script="$MODDIR/net_profiles/speed_profile.sh" ;;
+        stable) profile_script="$MODDIR/net_profiles/stable_profile.sh" ;;
+        gaming) profile_script="$MODDIR/net_profiles/gaming_profile.sh" ;;
+        *) echo "[SYS][SERVICE][WARN] Perfil desconocido: $profile_name" >> "$SERVICES_LOGS_CALLED_BY_DAEMON"; return 1 ;;
+    esac
+
+    if [ ! -f "$profile_script" ]; then
+        echo "[SYS][SERVICE][WARN] Script de perfil no encontrado: $profile_script" >> "$SERVICES_LOGS_CALLED_BY_DAEMON"
+        return 1
+    fi
+
+    echo "[SYS][SERVICE] Aplicando perfil: $profile_name ($profile_script)" >> "$SERVICES_LOGS_CALLED_BY_DAEMON"
+    . "$profile_script" >>"$SERVICES_LOGS_CALLED_BY_DAEMON" 2>&1 || {
+        echo "[SYS][SERVICE][ERROR] Fallo al aplicar perfil: $profile_name" >> "$SERVICES_LOGS_CALLED_BY_DAEMON"
+        return 1
+    }
+
+    return  0
+}
+
 apply_network_optimizations() {
-    echo "[SYS][SERVICE] Iniciando la aplicacion de todas las configuraciones..." >> "$SERVICES_LOGS" 
+    profile_arg="$1"
+
+    # Si se pidió un perfil explícito, aplica solo ese perfil y sal
+    if [ -n "$profile_arg" ]; then
+        run_profile_script "$profile_arg"
+    fi
+
+    echo "[SYS][SERVICE] Iniciando la aplicacion de todas las configuraciones..." >> "$SERVICES_LOGS"
     apply_core_settings || echo "[SYS][SERVICE] Error al aplicar configuraciones [CORE]" >> "$SERVICES_LOGS"
     apply_tcp_settings || echo "[SYS][SERVICE] Error al aplicar configuraciones [CORE]" >> "$SERVICES_LOGS"
     apply_network_ipv4_settings || echo "[SYS][SERVICE] Error al aplicar configuraciones [CORE]" >> "$SERVICES_LOGS"
@@ -311,14 +363,33 @@ apply_network_optimizations() {
     echo "[SYS][SERVICE] Todas las configuraciones se han aplicado correctamente" >> "$SERVICES_LOGS"
 }
 
-set_selinux_enforce 0
-while true
-do boot=$(getprop sys.boot_completed)
-if [ "$boot" = 1 ]; then
-    apply_network_optimizations
-    set_selinux_enforce 1
-    exit
+# Permite reutilizar funciones sin ejecutar el flujo principal
+if [ "$SKIP_SERVICE_MAIN" = "1" ]; then
+    return 0 2>/dev/null || exit 0
 fi
-sleep 1
+
+set_selinux_enforce 0
+
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 1
 done
+
+echo "[SYS][SERVICE] Boot completado, aplicando configuraciones..." >> "$SERVICES_LOGS"
+
+
+apply_network_optimizations  || echo "[SYS][SERVICE] Error al aplicar optimizaciones base" >> "$SERVICES_LOGS"
+
+DAEMON_SH="$MODDIR/addon/daemon/daemon.sh"
+if [ -x "$DAEMON_SH" ]; then
+    echo "[SYS][SERVICE] Iniciando daemon de red" >> "$SERVICES_LOGS"
+    sh "$DAEMON_SH" \
+        >>"$MODDIR/logs/daemon.log" \
+        2>>"$MODDIR/logs/daemon.err" &
+else
+    echo "[SYS][WARN] daemon no encontrado o no ejecutable: $DAEMON_SH" >> "$SERVICES_LOGS"
+fi
+
+
+set_selinux_enforce 1
+
 exit 0

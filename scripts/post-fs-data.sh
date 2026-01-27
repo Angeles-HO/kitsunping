@@ -8,8 +8,9 @@
 # Only run scripts in this mode if necessary.
 # ![Documentation oficial](https://topjohnwu.github.io/Magisk/guides.html#boot-scripts)
 # =============================================================================
-
-# Variables de entorno
+# Ensure SELinux is restored on exit
+trap 'set_selinux_enforce 1' EXIT INT TERM
+# Global vars and paths
 MODDIR=${0%/*}
 MODPATH="$MODDIR"
 LOGS_DIR="$MODPATH/logs"
@@ -51,7 +52,7 @@ fi
 CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
 
 # Set permissions
-set_permissions_module "$MODPATH" "$SERVICES_LOGS"
+set_permissions_module "$MODDIR" "" 0
 
 # SELinux 
 # permissive 0 
