@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Minimal daemon: log interface and Wi-Fi/mobile transitions (MVP, no calibration)
+# Minimal daemon: log interface and Wi-Fi/mobile transitions
 # ============== TODO Sec ==============
 # - TODO: agregar métricas de ping y latencia para evaluar calidad de conexión
 # - TODO: agregar soporte para múltiples interfaces Wi-Fi (si el dispositivo lo soporta)
@@ -453,7 +453,7 @@ last_mobile_ip=0
 last_mobile_egress=0
 last_mobile_score=0
 
-log_info "daemon start (MVP: monitor iface and wifi->mobile transitions)"
+log_info "daemon start (DAEMON: monitor iface and wifi->mobile transitions)"
 
 loop_count=0
 signal_loop_count=0
