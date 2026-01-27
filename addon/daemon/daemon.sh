@@ -568,10 +568,11 @@ while true; do
 
             # Allow policy script to override/select profile if available
             if [ -f "$POLICY_DIR/decide_profile.sh" ]; then
-                # shellcheck disable=SC1090
-                . "$POLICY_DIR/decide_profile.sh"
-                # call pick_profile(wifi_state, iface, details, wifi_details, last_event)
-                policy_choice=$(pick_profile "$wifi_state" "$WIFI_IFACE" "$wifi_reason" "$wifi_details" "${LAST_EVENT_FILE}")
+                # Execute policy script in a subshell to avoid polluting daemon variables
+                # (prevents decide_profile.sh from clobbering mobile_reason, etc.)
+                policy_choice=$(
+                    ( . "$POLICY_DIR/decide_profile.sh" && pick_profile "$wifi_state" "$WIFI_IFACE" "$wifi_reason" "$wifi_details" "${LAST_EVENT_FILE}" ) 2>/dev/null
+                )
                 # if policy returns non-empty, prefer it
                 [ -n "$policy_choice" ] && profile="$policy_choice"
                 # policy target will be handled by executor (PROFILE_CHANGED event)

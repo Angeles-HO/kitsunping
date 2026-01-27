@@ -144,7 +144,52 @@ calibrate_network_settings() {
 
     dns1=$(echo "$config_json" | "$jqbin" -r '.dns[0] // "8.8.8.8"')
     dns2=$(echo "$config_json" | "$jqbin" -r '.dns[1] // "8.8.4.4"')
-    TEST_IP=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
+    PING_VAL=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
+
+    # If JSON provides an IP for ping, probe both the IP and a geo-aware
+    # hostname (so DNS resolution uses the provider DNS we just configured)
+    # and choose the target with lower RTT.
+    country_code=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$country_code" ] && country_code="global"
+
+    if echo "$PING_VAL" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+        ORIGINAL_IP="$PING_VAL"
+        HOSTNAME="${country_code}.pool.ntp.org"
+        log_info "Ping field is IP; probing ORIGINAL_IP=$ORIGINAL_IP and HOSTNAME=$HOSTNAME" >> "$trace_log"
+
+        # Probe ORIGINAL IP
+        out_ip=$($PING_BIN -c 3 -W 2 "$ORIGINAL_IP" 2>&1 || true)
+        avg_ip=$(parse_ping "$out_ip" | awk '{print $1}')
+
+        # Probe HOSTNAME (this exercises DNS configured above)
+        out_host=$($PING_BIN -c 3 -W 2 "$HOSTNAME" 2>&1 || true)
+        avg_host=$(parse_ping "$out_host" | awk '{print $1}')
+
+        # Extract resolved IP for logging (if present in ping output)
+        resolved_host_ip=$(echo "$out_host" | awk -F'[()]' 'NR==1{print $2}')
+        [ -z "$resolved_host_ip" ] && resolved_host_ip="(unresolved)"
+
+        # Decide: prefer numeric smaller RTT; handle non-numeric gracefully
+        choice=$(awk -v a="$avg_ip" -v b="$avg_host" 'BEGIN {
+            isnum = "^-?[0-9]+(\.[0-9]+)?$"
+            if (a ~ isnum && b ~ isnum) {
+                if (a <= 0 && b <= 0) { print "host"; exit }
+                if (a <= 0) { print "host"; exit }
+                if (b <= 0) { print "ip"; exit }
+                if (a <= b) print "ip"; else print "host"
+            } else if (a ~ isnum) print "ip"; else print "host"
+        }')
+
+        if [ "$choice" = "ip" ]; then
+            TEST_IP="$ORIGINAL_IP"
+            log_info "Chose ORIGINAL_IP ($avg_ip ms) over HOSTNAME ($avg_host ms)" >> "$trace_log"
+        else
+            TEST_IP="$HOSTNAME"
+            log_info "Chose HOSTNAME $HOSTNAME -> $resolved_host_ip ($avg_host ms) over ORIGINAL_IP ($avg_ip ms)" >> "$trace_log"
+        fi
+    else
+        TEST_IP="$PING_VAL"
+    fi
 
     log_info "DNS1: $dns1, DNS2: $dns2, TEST_IP: $TEST_IP" >> "$trace_log"
     log_info "Checking connectivity..."  >> "$trace_log"
