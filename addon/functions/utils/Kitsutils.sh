@@ -49,7 +49,7 @@ set_permissions_module() {
         set_perm "$modpath/addon/functions/utils/Kitsutils.sh" 0 0 0644
         set_perm "$modpath/addon/functions/net_math.sh" 0 0 0644
         set_perm "$modpath/addon/functions/core.sh" 0 0 0644
-        set_perm "$modpath/addon/daemon/iface_monitor.sh" 0 0 0755
+        set_perm "$modpath/addon/daemon/iface_monitor.sh" 0 0 0644
     else
         # Fallback: attempt operations but avoid masking errors with '|| true'. Log failures to help debugging.
         if ! chown -R 0:0 "$modpath" 2>/dev/null; then

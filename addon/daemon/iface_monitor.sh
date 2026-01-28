@@ -93,9 +93,22 @@ get_signal_quality() {
         return 1
     fi
 
-    # MTK-friendly parse: consolidated SignalStrength line carries LTE values
+    # Prefer the phone block that currently has data connected (mDataConnectionState=2)
+    local preferred_phone=""
+    preferred_phone=$(printf '%s\n' "$dump" | awk '
+        match($0,/Phone Id=([0-9]+)/,a){phone=a[1]}
+        /mDataConnectionState=2/ {print phone; exit}
+    ')
+
+    # MTK/Qualcomm consolidated SignalStrength line (lte fields inline)
     local mtk_line
-    mtk_line=$(printf '%s\n' "$dump" | grep -m1 'mSignalStrength=SignalStrength')
+    mtk_line=$(printf '%s\n' "$dump" | awk -v target="$preferred_phone" '
+        match($0,/Phone Id=([0-9]+)/,a){phone=a[1]}
+        /mSignalStrength=SignalStrength/ {
+            if (target=="" || phone==target) {print; exit}
+        }
+    ')
+    [ -z "$mtk_line" ] && mtk_line=$(printf '%s\n' "$dump" | grep -m1 'mSignalStrength=SignalStrength')
 
     if [ -n "$mtk_line" ]; then
         rsrp=$(printf '%s\n' "$mtk_line" | awk -F'rsrp=' '{print $2}' | awk '{print $1}')

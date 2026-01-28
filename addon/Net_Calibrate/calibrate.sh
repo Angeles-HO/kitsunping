@@ -355,6 +355,12 @@ calibrate_property() {
             best_val="$candidate"
         fi
     done
+
+    # Re-apply the best value so the system stays on the winning candidate
+    if [ -n "$best_val" ]; then
+        resetprop "$property" "$best_val" >/dev/null 2>&1 || log_error "Failed to set best $property=$best_val"
+        log_info "applied best candidate: $property=$best_val (score=$best_score)" >> "$trace_log"
+    fi
     
     # Create directory with error checking
     if ! mkdir -p "$(dirname "$best_file")"; then

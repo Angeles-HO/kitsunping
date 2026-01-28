@@ -548,6 +548,12 @@ while true; do
                 sinr_score=$(score_sinr_cached "$sinr")
             fi
 
+            # Hard penalty when SINR is negative to reflect unstable radio
+            if printf '%s' "$sinr" | grep -Eq '^-?[0-9]+$' && [ "$sinr" -lt 0 ]; then
+                log_debug "SINR negative (${sinr} dB), applying penalty to sinr_score=${sinr_score}"
+                sinr_score=$(awk -v s="$sinr_score" 'BEGIN{p=s-10; if(p<0)p=0; printf "%.2f", p}')
+            fi
+
             # Performance proxy: use mobile_score (0..100) as initial Performance_score
             performance_score="$mobile_score"
 
@@ -576,10 +582,10 @@ while true; do
                 # if policy returns non-empty, prefer it
                 [ -n "$policy_choice" ] && profile="$policy_choice"
                 # policy target will be handled by executor (PROFILE_CHANGED event)
-            fi
+            fi  
 
             # Persist desired profile request (daemon is NOT the applier)
-            # The executor is responsible for writing `cache/policy.target` and `cache/policy.current`.
+            # The executor is responsible for writing `cache/policy.target` and `cache/policy.current`. 
             POLICY_REQUEST_FILE="$MODDIR/cache/policy.request"
             prev_profile=""
             [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
@@ -588,15 +594,26 @@ while true; do
                 emit_event "PROFILE_CHANGED" "from=$prev_profile to=$profile composite=$composite ema=$composite_ema_val rsrp=$rsrp rsrp_score=$rsrp_score sinr=$sinr sinr_score=$sinr_score"
             fi
 
-            if echo "$signal_score" | grep -Eq '^[0-9]+$'; then
-                if [ "$signal_score" -gt 0 ] && [ "$signal_score" -lt 40 ]; then
-                    log_info "Poor signal detected ($signal_score), enabling conservative mode"
-                    emit_event "$EVENT_SIGNAL_DEGRADED" "score=$signal_score iface=$mobile_iface"
-                else
-                    log_debug "signal_score ok ($signal_score); no degraded event"
+            degraded_reason=""
+
+            # Use composite to catch SINR-driven degradations; fallback to raw quality_score
+            if printf '%s' "$composite" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+                if awk -v v="$composite" 'BEGIN{exit !(v>0 && v<40)}'; then
+                    degraded_reason="composite"
                 fi
+            fi
+
+            if [ -z "$degraded_reason" ] && echo "$signal_score" | grep -Eq '^[0-9]+$'; then
+                if [ "$signal_score" -gt 0 ] && [ "$signal_score" -lt 40 ]; then
+                    degraded_reason="rsrp"
+                fi
+            fi
+
+            if [ -n "$degraded_reason" ]; then
+                log_info "Poor signal detected ($degraded_reason) comp=$composite rsrp=$rsrp sinr=$sinr"
+                emit_event "$EVENT_SIGNAL_DEGRADED" "reason=$degraded_reason comp=$composite rsrp=$rsrp sinr=$sinr iface=$mobile_iface"
             else
-                log_debug "signal_score unavailable in signal_info"
+                log_debug "signal ok comp=$composite ema=$composite_ema_val rsrp_score=$rsrp_score sinr_score=$sinr_score"
             fi
         fi
     else
