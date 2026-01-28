@@ -14,7 +14,7 @@ NET_VAL_5G="1 2 3 4 5" # Testing values for 5G data technology
 NETMETER_FILE="$NEWMODPATH/logs/kitsunping.log"
 CACHE_DIR_cln="$NEWMODPATH/cache"
 jqbin="$NEWMODPATH/addon/jq/arm64/jq"
-ipbin="$NEWMODPATH/addon/ip/ip"
+ipbin="$NEWMODPATH/addon/ip/ip" # TODO: search a another binary, this depends of libandroid-support.so
 data_dir="$NEWMODPATH/addon/Net_Calibrate/data"
 fallback_json="$data_dir/unknown.json"
 cache_dir="$data_dir/cache"
@@ -69,6 +69,8 @@ check_and_detect_commands() {
         # If ping fails, try to detect whether we're in an install/context where the
         # daemon is not running (e.g. a module 'running' installation). In that case
         # abort calibration quietly (return 0). Otherwise treat as fatal and return 1.
+
+        # TODO: need more logs for depuration and calibration
         if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
             # Check whether the daemon is already running (normal operation) using pidfile
             # Prefer the same singleton check used by daemon.sh (pidfile at $MODDIR/cache/daemon.pid)
@@ -520,7 +522,7 @@ EOF
 
             [ -z "$DNS_LIST" ] && DNS_LIST="8.8.8.8 1.1.1.1"
             [ -z "$PING" ] && PING="8.8.8.8"
-
+    # TODO: Need add a ndc binary for many architectures and compatibility
     for iface in $($ipbin -o link show | awk -F': ' '{print $2}' | grep -E 'rmnet|wlan|eth|ccmni|usb'); do
         log_info "Configuring DNS on interface: $iface" >> "$trace_log"
       ndc resolver setifacedns "$iface" "" $DNS_LIST >/dev/null 2>&1
@@ -602,7 +604,9 @@ test_configuration() {
 
     # Execute ping with consistent format
     # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 0.9 (timeout per packet) 
-    output=$($PING_BIN -c "$delay" -i 0.5 -W 0.9 "$TEST_IP" 2>&1)
+    # TODO: delete $delay and user less time than 10, can be 5, 10 is good but slow
+    
+    local output=$($PING_BIN -c "$delay" -i 0.5 -W 0.9 "$TEST_IP" 2>&1)
     [ $? -ne 0 ] && { echo "9999 9999 100"; return 2; }
 
     log_info "Ping output: $output" >> "$trace_log"
