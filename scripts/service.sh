@@ -57,6 +57,7 @@ for f in \
     "$MODDIR/post-fs-data.sh" \
     "$MODDIR/addon/jq/arm64/jq" \
     "$MODDIR/addon/ip/ip" \
+    "$MODDIR/addon/ping/ping" \
     "$MODDIR/addon/Volume-Key-Selector/tools/arm/keycheck" \
     "$MODDIR/addon/Volume-Key-Selector/tools/x86/keycheck" \
     "$MODDIR/addon/policy/executor.sh"; do

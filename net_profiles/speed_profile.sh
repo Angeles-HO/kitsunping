@@ -12,5 +12,5 @@ bbr|/proc/sys/net/ipv4/tcp_congestion_control|Algoritmo BBR para máxima velocid
 1|/proc/sys/net/ipv4/tcp_mtu_probing|Detección automática de MTU para evitar fragmentación
 16384|/proc/sys/net/core/netdev_max_backlog|Cola larga para evitar pérdida en descargas pesadas
 EOF
-
+ 
 echo "[PROFILE] speed done" >> "$LOG_OUT"

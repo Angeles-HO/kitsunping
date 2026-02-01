@@ -29,7 +29,7 @@ else
 fi
 
 now_epoch() {
-	date +%s 2>/dev/null || busybox date +%s 2>/dev/null || echo 0
+	date +%s 2>/dev/null 2>/dev/null || echo 0
 }
 
 read_state() {

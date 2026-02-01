@@ -30,7 +30,7 @@ command -v atomic_write >/dev/null 2>&1 || atomic_write() {
 
 # Epoch helper
 command -v now_epoch >/dev/null 2>&1 || now_epoch() {
-    date +%s 2>/dev/null || busybox date +%s 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0
+    date +%s 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0
 }
 
 # portable rounding helper
@@ -39,3 +39,8 @@ command -v to_int >/dev/null 2>&1 || to_int() {
     v="${1:-0}"
     printf '%s' "$(printf '%s' "$v" | awk '{ if ($0=="" ) {print 0; exit} if ($0+0==$0) { if($0>=0) printf("%d", ($0+0.5)); else printf("%d", ($0-0.5)); } else {print 0} }')"
 }
+
+# Source Kitsutils for shared utilities
+if [ -f "$MODDIR/addon/functions/utils/Kitsutils.sh" ]; then
+    . "$MODDIR/addon/functions/utils/Kitsutils.sh"
+fi

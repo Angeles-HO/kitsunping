@@ -57,7 +57,7 @@ fi
 RESETPROP_BIN=""
 if command_exists resetprop; then
     RESETPROP_BIN="$(command -v resetprop 2>/dev/null)"
-    log_policy "resetprop resolved to $RESETPROP_BIN"
+    #log_policy "resetprop resolved to $RESETPROP_BIN"
 fi
 
 # Load functions without executing main flow
@@ -126,7 +126,7 @@ force_calibrate="${FORCE_CALIBRATE:-0}"
 
 # --- calibrate gating logic ---
 run_calibrate=0
-now_ts=$(date +%s 2>/dev/null || busybox date +%s 2>/dev/null || echo 0)
+now_ts=$(date +%s 2>/dev/null 2>/dev/null || echo 0)
 last_calib=$(cat "$CALIBRATE_TS_FILE" 2>/dev/null || echo 0)
 calib_state=$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")
 elapsed=$((now_ts - last_calib))
@@ -220,7 +220,7 @@ fi
 if [ $run_calibrate -eq 1 ] && [ -f "$CALIBRATE_SH" ]; then
     log_policy "Starting calibration (delay=$calibrate_delay, timeout=${CALIBRATE_TIMEOUT}s) profile=$target_profile"
 
-    now_ts=$(date +%s 2>/dev/null || busybox date +%s 2>/dev/null || echo 0)
+    now_ts=$(date +%s 2>/dev/null 2>/dev/null || echo 0)
     echo "$now_ts" > "$CALIBRATE_TS_FILE"
     echo "running" > "$CALIBRATE_STATE_FILE"
     rm -f "$CALIBRATE_OUT"
@@ -286,7 +286,7 @@ else
 fi
 
 # Emit simple JSON event for the APK (polling-friendly)
-ts_now=$(date +%s 2>/dev/null || busybox date +%s 2>/dev/null || echo 0)
+ts_now=$(date +%s 2>/dev/null 2>/dev/null || echo 0)
 calib_state_out=$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "unknown")
 calib_ts_out=$(cat "$CALIBRATE_TS_FILE" 2>/dev/null || echo 0)
 cat <<EOF | atomic_write "$POLICY_EVENT_JSON"

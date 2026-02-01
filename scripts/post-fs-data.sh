@@ -135,4 +135,5 @@ log "Restoring SELinux enforcing"
 set_selinux_enforce 1 "$SERVICES_LOGS"
 
 log "Execution completed"
-exit 0
+# Exit 0 for no whait 40s to this script finish default by magisk
+exit 0 
