@@ -117,6 +117,97 @@ xychart-beta
 - Average over 5 runs vs baseline: +9% download (39.35 Mbps), +234% upload (27.11 Mbps), -18% ping (21.4 ms).
 - Expect variance: signal and network conditions will influence results; rerun if environment changes.
 
+## New tests
+
+- Version: 4.89 (Magisk module), calibration mode: automatic, 5 post-install runs via Speedtest.net (alternate airplane mode toggles and wait 5 times).
+- Baseline (before module original): 36.26 Mbps down / 8.12 Mbps up / 26 ms ping.
+- Method: same device, location, and carrier; airplane mode toggled between runs to reset radio state.
+
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
+| -------- | --------------- | ------------- | --------- |
+| Baseline | 36.26           | 8.12          | 26        |
+| Test 1   | 47.25           | 28.05         | 26        |
+| Test 2   | 48.71           | 32.01         | 22        |
+| Test 3   | 47.30           | 28.30         | 21        |
+| Test 4   | 55.00           | 29.71         | 20        |
+| Test 5   | 48.63           | 26.45         | 21        |
+
+Line green = With module active.
+Line blue = Baseline (without module).
+
+```mermaid
+xychart-beta
+  title "Download (Mbps)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "Mbps"
+  line "Before module" [36.26, 36.26, 36.26, 36.26, 36.26]
+  line "With module" [47.25, 48.71, 47.30, 55.00, 48.63]
+```
+
+```mermaid
+xychart-beta
+  title "Upload (Mbps)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "Mbps"
+  line "Before module" [8.12, 8.12, 8.12, 8.12, 8.12]
+  line "With module" [28.05, 32.01, 28.30, 29.71, 26.45]
+```
+
+```mermaid
+xychart-beta
+  title "Ping (ms)"
+  x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+  y-axis "ms"
+  line "Before module" [26, 26, 26, 26, 26]
+  line "With module" [26, 22, 21, 20, 21]
+```
+
+> Lower values indicate better latency.
+
+- Best gains vs baseline: +51% download (55.00 Mbps), +294% upload (32.01 Mbps), -23% ping (20 ms).
+- Average over 5 runs vs baseline: +29% download (49.38 Mbps), +246% upload (28.90 Mbps), -15% ping (22 ms).
+- Expect variance: signal and network conditions will influence results; rerun if environment changes.
+
+# Compare whit version 4.85 results.
+
+- Version: 4.89 (Magisk module), calibration mode: automatic, 5 post-install runs via Speedtest.net (alternate airplane mode toggles and wait 5 times).
+- Method: same device, location, and carrier; airplane mode toggled between runs to reset radio state.
+- Compare results between version 4.85 and 4.89.
+- Expect variance: signal and network conditions will influence results; rerun if environment changes.
+
+> Version 4.85 results
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
+| -------- | --------------- | ------------- | --------- |
+| Baseline | 36.26           | 8.12          | 26        |
+| Test 1   | 48.74           | 32.14         | 22        |
+| Test 2   | 48.80           | 34.36         | 22        |
+| Test 3   | 38.27           | 28.46         | 21        |
+| Test 4   | 23.38           | 18.61         | 22        |
+| Test 5   | 37.56           | 21.97         | 20        |
+ 
+> Version 4.89 results
+
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
+| -------- | --------------- | ------------- | --------- |
+| Baseline | 36.26           | 8.12          | 26        |
+| Test 1   | 47.25           | 28.05         | 26        |
+| Test 2   | 48.71           | 32.01         | 22        |
+| Test 3   | 47.30           | 28.30         | 21        |
+| Test 4   | 55.00           | 29.71         | 20        |
+| Test 5   | 48.63           | 26.45         | 21        |
+
+Results comparison observations:
+- Download speeds are comparable between versions, with version 4.89 showing a higher peak (55.00 Mbps) compared to version 4.85 (48.80 Mbps).
+- Upload speeds in version 4.85 reached a higher maximum (34.36 Mbps) compared to version 4.89 (32.01 Mbps), but version 4.89 had more consistent upload speeds across tests.
+- Ping times are similar across both versions, with both achieving a low of 20 ms.
+
+Conclusion:
+- Both versions demonstrate significant improvements over the baseline.
+- Version 4.89 shows a higher peak download speed, while version 4.85 has a slightly better peak upload speed.
+- Overall performance is comparable, with minor variations likely due to network conditions during testing.
+  
+---
+
 ## Borrowed / Credits / External
 
 This module includes or is inspired by external tools and resources:

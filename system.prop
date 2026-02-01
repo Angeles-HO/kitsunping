@@ -11,12 +11,16 @@ ro.ril.enable.a53=1
 ro.ril.gprsclass=34
 ro.ril.transmitpower=true
 
-# ====== Daemon Kitsunping ======
+# ====== Daemon / Kitsunping ======
 # interval of check for the daemon in seconds (default value: 10 seconds)
 kitsunping.daemon.interval=10
 
+# Debug mode (0: disable | 1: enable), reduce time instalalation size for better logging, not for normal use
+persist.kitsunping.debug=1
+persist.kitsunping.ping_timeout=7
 
-# LLM / Sigmoide / Exponential / Lineal 
+
+# LLM / Sigmoide / Exponential / Lineal  (default: sigmoid and unique)
 # kitsunping.daemon.algorithm=sigmoid
 
 # values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
