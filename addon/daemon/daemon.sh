@@ -27,22 +27,48 @@ EVENTS_DIR="$MODDIR/cache/events"
 LAST_EVENT_JSON="$MODDIR/cache/event.last.json"
 shared_errors="$MODDIR/addon/functions/debug/shared_errors.sh"
 EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
+# Commands (to be detected)
 IP_BIN=""
 PING_BIN=""
 RESET_PROP_BIN=""
 JQ_BIN=""
-EVENT_WIFI_LEFT="WIFI_LEFT"
-EVENT_WIFI_JOINED="WIFI_JOINED"
-EVENT_IFACE_CHANGED="IFACE_CHANGED"
-EVENT_SIGNAL_DEGRADED="SIGNAL_DEGRADED"
+BC_BIN=""
+
+# Validate EVENT_DEBOUNCE_SEC
+EVENT_DEBOUNCE_SEC="${EVENT_DEBOUNCE_SEC:-5}"
+
+# =================== Events/
+# External / trigger events
+EV_WIFI_LEFT="WIFI_LEFT"            
+EV_WIFI_JOINED="WIFI_JOINED"        
+EV_IFACE_CHANGED="IFACE_CHANGED"      
+EV_SIGNAL_DEGRADED="SIGNAL_DEGRADED"
+EV_TIMER_WAKE="TIMER_WAKE"
+EV_WAKE="WAKE"
+
+# Internal / state events
+ST_SLEEPING="SLEEPING"
+ST_AWAKE="AWAKE"
+ST_EVALUATING="EVALUATING"
+ST_CALIBRATING="CALIBRATING"
+ST_SUSPENDED="SUSPENDED"
+
+# Network quality states
+NET_NONE="NONE"
+NET_GOOD="GOOD"
+NET_LIMBO="LIMBO"
+NET_BAD="BAD"
+
+# Configurable parameters
 EVENT_DEBOUNCE_SEC=3 # seconds (debounce time for events)
-DAEMON_INTERVAL=10 # seconds (default polling interval)
+DAEMON_INTERVAL="${DAEMON_INTERVAL:-10}" # seconds (default polling interval)
 LAST_TS_WIFI_LEFT=0
 LAST_TS_WIFI_JOINED=0
 LAST_TS_IFACE_CHANGED=0
 INTERVAL_DEFAULT=10 # seconds
 INTERVAL="$INTERVAL_DEFAULT"
 SIGNAL_POLL_INTERVAL=5 # poll signal quality every N loops when on mobile
+interval_prop="$(getprop kitsunping.daemon.interval)"
 CONF_ALPHA=$(getprop kitsunping.sigmoid.alpha)
 CONF_BETA=$(getprop kitsunping.sigmoid.beta)
 CONF_GAMMA=$(getprop kitsunping.sigmoid.gamma)
@@ -81,9 +107,13 @@ log_error() { printf '[DAEMON][ERROR] %s\n' "$*" >&2; }
 log_policy() { printf '[POLICY] %s\n' "$*" >&2; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+
 # Source modular components (if installed)
 if [ -f "$MODDIR/addon/functions/core.sh" ]; then
     . "$MODDIR/addon/functions/core.sh"
+fi
+if [ -f "$MODDIR/addon/functions/utils/env_detect.sh" ]; then
+    . "$MODDIR/addon/functions/utils/env_detect.sh"
 fi
 if [ -f "$MODDIR/addon/functions/net_math.sh" ]; then
     . "$MODDIR/addon/functions/net_math.sh"
@@ -91,6 +121,24 @@ fi
 if [ -f "$MODDIR/addon/daemon/iface_monitor.sh" ]; then
     . "$MODDIR/addon/daemon/iface_monitor.sh"
 fi
+
+# Source Kitsutils for shared utilities
+if [ -f "$MODDIR/addon/functions/utils/Kitsutils.sh" ]; then
+    . "$MODDIR/addon/functions/utils/Kitsutils.sh"
+fi
+
+# Ensure network_utils.sh is sourced for shared functions
+if [ -f "$MODDIR/addon/functions/network_utils.sh" ]; then
+    . "$MODDIR/addon/functions/network_utils.sh"
+fi
+
+if [ -f "$shared_errors" ]; then 
+    . "$shared_errors"
+    command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@";  } 
+else
+    log_warning "Shared_errors no encontrado: $shared_errors (usando logger interno)"
+fi
+
 
 # ============= Event Writing And Regex ==============
 ## JSON escape helper
@@ -119,10 +167,11 @@ atomic_write() {
 }
 
 ## Write event to JSON file
-## Usage: write_event_json "event_name" timestamp "details"
+## Usage: write_event_json $1 = "event_name" $2 = "timestamp" $3 = "details"
 ## e.g., write_event_json "WIFI_LEFT" 1620000000 "iface=wlan0 link=DOWN ip=0 egress=0 reason=link_down"
 write_event_json() {
     local name="$1" ts="$2" details jsonfile="$LAST_EVENT_JSON"
+    local details
     details="$(json_escape "$3")"
 
     cat <<EOF | atomic_write "$jsonfile"
@@ -130,24 +179,22 @@ write_event_json() {
 EOF
 }
 
-## Source shared_error.sh if exists (for better logging)
-if [ -f "$shared_errors" ]; then . "$shared_errors"
-    ## Override log_info with log_daemon if available
-    command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@";  } 
-else
-    log_warning "Shared_errors no encontrado: $shared_errors (usando logger interno)"
-fi
+# ============= Signal Handling ==============
+# Handle TERM/INT signals to cleanup pidfile
+trap 'log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
 
 # ============== Singleton Enforcement ==============
 ## Ensure only one instance of the daemon is running 
 ## On TERM or INT, log stop and remove pidfile
 ## Usage: ensure_singleton
-trap 'log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
-
 ## Ensure singleton instance of daemon 
 ensure_singleton() {
+    log_info "ensuring singleton daemon instance"
+
     ## Create pidfile dir if not exists
-    mkdir -p "${PID_FILE%/*}" 2>/dev/null
+    if [ ! -d "${PID_FILE%/*}" ]; then
+        mkdir -p "${PID_FILE%/*}" 2>/dev/null || log_warning "could not create pidfile dir"
+    fi
 
     ## Check for existing pidfile
     if [ -f "$PID_FILE" ]; then
@@ -157,10 +204,11 @@ ensure_singleton() {
         old_pid=$(cat "$PID_FILE" 2>/dev/null)
         ## Check if process with old_pid is running
         if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-            log_warning "daemon already running with PID $old_pid; exiting for no conflict/duplication"
+            log_warning "daemon already running with PID $old_pid; exiting for no kill/duplicate main process"
             exit 0
         fi
-        ## Cleanup stale pidfile
+
+        ## If not running, cleanup stale pidfile
         rm -f "$PID_FILE" 2>/dev/null
     fi
     ## Write current pid to pidfile
@@ -172,72 +220,25 @@ ensure_singleton() {
 ## Results in stdout: epoch seconds (e.g., 1620000000)
 now_epoch() {
     # Try toybox/GNU date, fallback to busybox, then POSIX awk systime
-    date +%s 2>/dev/null || busybox date +%s 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0 
+    date +%s 2>/dev/null 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0 
 }
+
 # ============== Command Checks ==============
 ## Check for required commands and set global vars
 ## Usage: check_and_detect_commands
 ## Sets global vars: IP_BIN, PING_BIN, RESET_PROP_BIN
 check_and_detect_commands() {
-    # Detect ip
-    if command_exists ip; then
-        IP_BIN=$(command -v ip 2>/dev/null)
-    elif [ -x "$MODDIR/addon/ip/ip" ]; then
-        IP_BIN="$MODDIR/addon/ip/ip"
-    fi
+    check_core_commands ip resetprop awk || { log_error "Missing core commands"; exit 1; }
+    detect_ip_binary || { log_error "ip binary not found"; exit 1; }
+    detect_ping_binary "$MODDIR/addon/ping" || log_warning "ping binary not found; skipping ping-based checks"
 
-    # Validate ip binary found
-    if [ -z "$IP_BIN" ]; then
-        log_error "ip binary not found"
-        exit 1
-    fi
-
-    # Detect ping binary 
-    if command_exists ping; then
-        PING_BIN=$(command -v ping 2>/dev/null)
-    elif command_exists busybox; then
-        local bb
-        bb=$(command -v busybox 2>/dev/null)
-        PING_BIN="$bb ping"
-    elif [ -x "/system/bin/ping" ]; then
-        PING_BIN="/system/bin/ping"
-    fi
- 
-    # Log detected binaries
-    if [ -z "$PING_BIN" ]; then
-        log_warning "ping binary not found; skipping ping-based checks"
-    else
-        log_debug "PING_BIN resolved to: $PING_BIN"
-    fi
-
-    # Detect resetprop binary
     if command_exists resetprop; then
         RESET_PROP_BIN=$(command -v resetprop 2>/dev/null)
-        log_debug "resetprop resolved to: $RESET_PROP_BIN"
+        # log_debug "resetprop resolved to: $RESET_PROP_BIN"
     fi
 
-    # Detect jq (prefer bundled)
-    if [ -x "$MODDIR/addon/jq/arm64/jq" ]; then
-        JQ_BIN="$MODDIR/addon/jq/arm64/jq"
-    elif command_exists jq; then
-        JQ_BIN=$(command -v jq 2>/dev/null)
-    fi
-    [ -n "$JQ_BIN" ] && log_debug "jq resolved to: $JQ_BIN" || log_warning "jq not found; falling back to awk for signal parsing"
-
-    # Detect bc (prefer bundled in addon if present)
-    BC_BIN=""
-    if command_exists bc; then
-        BC_BIN=$(command -v bc 2>/dev/null)
-    elif [ -x "$MODDIR/addon/bc/arm64/bc" ]; then
-        BC_BIN="$MODDIR/addon/bc/arm64/bc"
-    fi
-    if [ -n "$BC_BIN" ]; then
-        log_debug "bc resolved to: $BC_BIN"
-    else
-        log_warning "bc not found; using tier fallbacks for sigmoid scoring"
-    fi
-
-    log_debug "IP_BIN resolved to: $IP_BIN"
+    detect_jq_binary
+    detect_bc_binary
 }
 
 # ============== Main Functions ==============
@@ -245,20 +246,27 @@ check_and_detect_commands() {
 ## Usage: should_emit_event "event_name"
 ## Returns 0 (true) if event should be emitted, 1 (false) otherwise
 should_emit_event() {
-    # Check last emitted timestamp for event
     local name="$1" now last_var last_ts diff
     now=$(now_epoch)
 
-    # If no name provided, do not emit
-    [ -z "$name" ] && return 1 
+    # Validate event name
+    case "$name" in
+        WIFI_*|IFACE_*|SIGNAL_*|TIMER_*|WAKE)
+            ;;
+        *)
+            log_error "Invalid event name: $name"
+            return 1
+            ;;
+    esac
 
-    # If now is 0 (error), do not emit
-    [ "$now" -eq 0 ] && return 1
+    # If no name provided, do not emit
+    [ -z "$name" ] && return 1
+
+    # If now is 0 (error), log and do not emit
+    [ "$now" -eq 0 ] && log_error "now_epoch failed" && return 1
 
     # Check last emitted timestamp
     last_var="LAST_TS_${name}"
-
-    # Get last timestamp value
     eval "last_ts=\${${last_var}:-0}"
 
     # Calculate time difference since last event
@@ -279,21 +287,22 @@ should_emit_event() {
 ## Usage: emit_event "event_name" "details"
 ## e.g., emit_event "WIFI_LEFT" "iface=wlan0 link=DOWN ip=0 egress=0 reason=link_down"
 emit_event() {
-    # Local vars
     local name="$1" details="$2" now
-    now=$(now_epoch) # Get current epoch time
+    now=$(now_epoch)
 
-    # Validate event name
     [ -z "$name" ] && log_warning "emit_event called with empty name" && return 1
 
-    # Check debounce and emit event 
     if should_emit_event "$name"; then
-        # Emit event
-        log_info "EVENT $name ts=$now $details" # Log event
-        write_event_json "$name" "$now" "$details" # Write event to JSON
-        # Write last event to LAST_EVENT_FILE
-        printf '%s %s %s\n' "$name" "$now" "$details" | atomic_write "$LAST_EVENT_FILE"
-        # Execute policy executor script if exists and is executable
+        EVENT_SEQ=$((EVENT_SEQ + 1))
+        export EVENT_SEQ
+
+        log_info "EVENT #$EVENT_SEQ $name ts=$now $details"
+        write_event_json "$name" "$now" "$details"
+
+        if ! printf '%s %s %s\n' "$name" "$now" "$details" | atomic_write "$LAST_EVENT_FILE"; then
+            log_error "Failed to write LAST_EVENT_FILE"
+        fi
+
         if [ -x "$EXECUTOR_SH" ]; then
             EVENT_NAME="$name" \
             EVENT_TS="$now" \
@@ -306,17 +315,14 @@ emit_event() {
         fi
         # TODO: send broadcast to APK with action com.kitsunping.ACTION_UPDATE including 'event' and 'ts'
     else
-        log_debug "EVENT debounce $name"
+        log_debug "EVENT suppressed by debounce: $name"
     fi
 }
 
 # Initial delay to allow system to stabilize
-sleep 10
+sleep 5
 check_and_detect_commands
 ensure_singleton
-
-# Configure interval from system.prop or environment variable e. g., kitsunping.daemon.interval = 10 seconds
-interval_prop="$(getprop kitsunping.daemon.interval 2>/dev/null)"
 
 # Fallback to env var if prop not set
 [ -z "$interval_prop" ] && interval_prop="$DAEMON_INTERVAL"
@@ -340,84 +346,6 @@ if [ "$INTERVAL" -gt "$EVENT_DEBOUNCE_SEC" ]; then
     EVENT_DEBOUNCE_SEC="$INTERVAL"
 fi
 
-get_default_iface() {
-    # Some Android devices do not list 0.0.0.0/0; prioritize route get and use show default as fallback
-    local via_default
-
-    via_default=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
-    if [ -n "$via_default" ]; then
-        echo "$via_default"
-        return
-    fi
-
-    "$IP_BIN" route show default 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
-}
-
-get_wifi_status() {
-    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 dhcp_ip reason
-
-    link_state=$("$IP_BIN" link show "$wifi_iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    if "$IP_BIN" addr show "$wifi_iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    dhcp_ip=$(getprop dhcp.${wifi_iface}.ipaddress 2>/dev/null)
-    [ -n "$dhcp_ip" ] && has_ip=1
-
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $wifi_iface"; then
-        def_route=1
-    fi
-
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
-                reason="usable_route"
-            else
-                reason="no_egress"
-            fi
-        else
-            reason="no_ip"
-        fi
-    fi
-
-    echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
-}
-
-get_mobile_status() {
-    local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
-
-    [ -z "$iface" ] && iface="none"
-    [ "$iface" = "none" ] && { echo "iface=none link=DOWN ip=0 egress=0 reason=not_found"; return; }
-
-    link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    if "$IP_BIN" addr show "$iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $iface"; then
-        def_route=1
-    fi
-
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
-                reason="usable_route"
-            else
-                reason="no_egress"
-            fi
-        else
-            reason="no_ip"
-        fi
-    fi
-
-    echo "iface=$iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
-}
 
 get_score() {
     local link_state="$1" has_ip="$2" egress="$3" score=0
@@ -440,7 +368,7 @@ get_reason_from_score() {
 }
 
 WIFI_IFACE="$(getprop wifi.interface 2>/dev/null)"
-[ -z "$WIFI_IFACE" ] && WIFI_IFACE="wlan0"
+[ -z "$WIFI_IFACE" ] && WIFI_IFACE="wlan0" && echo "WIFI_IFACE not found; defaulting to wlan0"
 
 last_iface=""
 last_wifi_state="unknown"
@@ -611,7 +539,7 @@ while true; do
 
             if [ -n "$degraded_reason" ]; then
                 log_info "Poor signal detected ($degraded_reason) comp=$composite rsrp=$rsrp sinr=$sinr"
-                emit_event "$EVENT_SIGNAL_DEGRADED" "reason=$degraded_reason comp=$composite rsrp=$rsrp sinr=$sinr iface=$mobile_iface"
+                emit_event "$EV_SIGNAL_DEGRADED" "reason=$degraded_reason comp=$composite rsrp=$rsrp sinr=$sinr iface=$mobile_iface"
             else
                 log_debug "signal ok comp=$composite ema=$composite_ema_val rsrp_score=$rsrp_score sinr_score=$sinr_score"
             fi
@@ -624,7 +552,7 @@ while true; do
 
     if [ "$current_iface" != "$last_iface" ]; then
         log_info "iface_changed: $last_iface -> $current_iface"
-        emit_event "$EVENT_IFACE_CHANGED" "from=$last_iface to=$current_iface"
+        emit_event "$EV_IFACE_CHANGED" "from=$last_iface to=$current_iface"
         last_iface="$current_iface"
     fi
 
@@ -632,9 +560,9 @@ while true; do
         log_info "wifi_state_changed: $last_wifi_state -> $wifi_state ($wifi_details)"
         if [ "$last_wifi_state" = "connected" ] && [ "$wifi_state" = "disconnected" ]; then
             log_info "event: wifi_left -> assume mobile priority"
-            emit_event "$EVENT_WIFI_LEFT" "iface=$current_iface $wifi_details"
+            emit_event "$EV_WIFI_LEFT" "iface=$current_iface $wifi_details"
         elif [ "$last_wifi_state" = "disconnected" ] && [ "$wifi_state" = "connected" ]; then
-            emit_event "$EVENT_WIFI_JOINED" "iface=$current_iface $wifi_details"
+            emit_event "$EV_WIFI_JOINED" "iface=$current_iface $wifi_details"
         fi
         last_wifi_state="$wifi_state"
     fi

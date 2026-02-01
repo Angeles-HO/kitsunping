@@ -14,108 +14,77 @@ NET_VAL_5G="1 2 3 4 5" # Testing values for 5G data technology
 NETMETER_FILE="$NEWMODPATH/logs/kitsunping.log"
 CACHE_DIR_cln="$NEWMODPATH/cache"
 jqbin="$NEWMODPATH/addon/jq/arm64/jq"
-ipbin="$NEWMODPATH/addon/ip/ip" # TODO: search a another binary, this depends of libandroid-support.so
+ipbin="$NEWMODPATH/addon/ip/ip" 
+pingbin="$NEWMODPATH/addon/ping"
 data_dir="$NEWMODPATH/addon/Net_Calibrate/data"
 fallback_json="$data_dir/unknown.json"
 cache_dir="$data_dir/cache"
 CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
 CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
+ping_count="$(getprop persist.kitsunping.ping_timeout)"
+
+# Shared env helpers
+ENV_HELPER="$NEWMODPATH/addon/functions/utils/env_detect.sh"
+if [ -f "$ENV_HELPER" ]; then
+    . "$ENV_HELPER"
+else
+    echo "[ERROR] Shared env_detect.sh not found at: $ENV_HELPER" >> "$trace_log"
+    exit 1
+fi
+
+# Network helpers (test_ping_target/test_dns_ip)
+NET_UTILS="$NEWMODPATH/addon/functions/network_utils.sh"
+if [ -f "$NET_UTILS" ]; then
+    . "$NET_UTILS"
+else
+    log_warning "network_utils.sh not found at: $NET_UTILS" >> "$trace_log"
+fi
 
 date +%s > "$CALIBRATE_LAST_RUN" 2>/dev/null
 echo "running" > "$CALIBRATE_STATE_RUN"
 
-# Description: Ensure core binaries (ping, resetprop, ip, ndc, awk) exist and that ping works.
-# Usage: check_and_detect_commands
+# Description: Ensure core binaries exist and ping works.
+
 check_and_detect_commands() {
-    if [ -n "$PING_BIN" ]; then
-        log_debug "PING_BIN already set: $PING_BIN"
-    else 
-        log_info "====================== check_and_detect_commands =========================" >> "$trace_log"
-        local missing=0
-        
-        for cmd in ip ndc resetprop awk; do
-            if ! command_exists "$cmd"; then
-                log_error "Required command '$cmd' not found"
-                missing=$((missing + 1))
-            fi
-        done
+    log_info "====================== check_and_detect_commands =========================" >> "$trace_log"
 
-        if [ $missing -gt 0 ]; then
-            log_error "Missing $missing essential dependencies, cannot proceed"
+    check_core_commands ip ndc resetprop awk || return 1
+    detect_ip_binary || return 1
+    ipbin="$IP_BIN"
+
+    check_and_prepare_ping "$pingbin"
+    rc=$?
+
+    case "$rc" in
+        0)
+            log_debug "Ping binary functional: $PING_BIN" >> "$trace_log"
+            return 0
+            ;;
+        1)
+            log_error "Ping binary not found" >> "$trace_log"
             return 1
-        fi
+            ;;
+        2)
+            log_warning "Ping binary detected but not functional" >> "$trace_log"
 
-        # Search for ping binary
-        PING_BIN=$(command -v ping 2>/dev/null)
-        if [ -z "$PING_BIN" ] || [ ! -x "$PING_BIN" ]; then
-            log_warning "Ping not found in PATH, scanning common locations..."
-            for path in /system/bin /system/xbin /vendor/bin /data/adb/magisk /data/data/com.termux/files/usr/bin; do
-                if [ -x "$path/ping" ]; then
-                    PING_BIN="$path/ping"
-                    log_warning "Ping binary found at: $PING_BIN" >> "$trace_log"
-                    log_warning "Using detected ping binary..." >> "$trace_log"
-                    break
-                fi
-                log_warning "Ping not found in: $path" >> "$trace_log"
-            done
-        fi
-
-        if [ -z "$PING_BIN" ]; then
-            log_error "Ping not available on the system"
-            return 1
-        fi
-
-        # Verify if ping is functional
-        # If ping fails, try to detect whether we're in an install/context where the
-        # daemon is not running (e.g. a module 'running' installation). In that case
-        # abort calibration quietly (return 0). Otherwise treat as fatal and return 1.
-
-        # TODO: need more logs for depuration and calibration
-        if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-            # Check whether the daemon is already running (normal operation) using pidfile
-            # Prefer the same singleton check used by daemon.sh (pidfile at $MODDIR/cache/daemon.pid)
-            local old_pid
-            for pidfile in "${NEWMODPATH:-}/cache/daemon.pid" "${MODDIR:-}/cache/daemon.pid"; do
-                if [ -f "$pidfile" ]; then
-                    old_pid=$(cat "$pidfile" 2>/dev/null)
-                    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-                        log_error "Ping available but not functional (check permissions, SELinux, network)"
-                        log_error "Connectivity test failed using ping at: $PING_BIN while daemon is running (PID=$old_pid); aborting calibration."
-                        log_error "Please verify network connectivity and permissions."
-                        return 1
-                    else
-                        # Stale pidfile: remove
-                        rm -f "$pidfile" 2>/dev/null
-                    fi
-                fi
-            done
-
-            # Fallback: try to detect running process by name if no pidfile found
-            if pgrep -f '[k]itsunping' >/dev/null 2>&1; then
-                log_error "Ping available but not functional (check permissions, SELinux, network)"
-                log_error "Connectivity test failed using ping at: $PING_BIN while daemon process detected; aborting calibration."
-                log_error "Please verify network connectivity and permissions."
+            if is_install_context; then
+                log_info "Install context detected; skipping calibration." >> "$trace_log"
                 return 1
-            fi
+            elif  is_daemon_running; then
+                log_error "Ping not functional while daemon is running" >> "$trace_log"
+                log_error "Check SELinux, permissions, or network state" >> "$trace_log"
 
-            # Detect common locations that indicate a module installation or "runin" workflow
-            # If such an installation is in progress, abort calibration without treating as error
-            if [ -d "/data/adb/modules/runin" ] || [ -d "/data/adb/modules/kitsunping" ] || [ -f "/data/adb/modules/.installed_runin" ]; then
-                log_info "Daemon not running and 'runin' / module-install detected; aborting calibration without error."
-                return 0
+                if command -v getenforce >/dev/null 2>&1 && getenforce | grep -q Enforcing; then
+                    log_warning "SELinux enforcing mode may block ping (CAP_NET_RAW)" >> "$trace_log"
+                fi
+            else
+                log_error "Ping not functional; check connectivity or permissions" >> "$trace_log"
             fi
-
-            # Default: treat as error
-            log_error "Ping available but not functional (check permissions, SELinux, network)"
-            log_error "Connectivity test failed using ping at: $PING_BIN, cannot proceed, please check wifi/data status."
-            log_error "Please verify network connectivity and permissions."
             return 1
-        fi
-
-        export PING_BIN
-    fi
-    return 0
+            ;;
+    esac
 }
+
 
 # Main function to calibrate network settings
 # Description: Orchestrate full calibration flow for radio properties using ping-based scoring.
@@ -127,7 +96,7 @@ calibrate_network_settings() {
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log" 
-    check_and_detect_commands
+    check_and_detect_commands || return 1
 
     local delay=$1 # seconds
     local config_json dns1 dns2 TEST_IP # unassigned local variables
@@ -148,6 +117,21 @@ calibrate_network_settings() {
     dns2=$(echo "$config_json" | "$jqbin" -r '.dns[1] // "8.8.4.4"')
     PING_VAL=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
 
+    test_dns_ip "$dns1" "$dns2" "$PING_VAL"
+    status=$?
+
+    case "$status" in
+        0) log_info "Provider FULL_OK" ;;
+        2) log_warning "Provider DNS_ONLY_OK (ping target no metrics; DNS usable for metrics)" ;;
+        3) log_warning "Provider PING_ONLY_OK (ping target usable; DNS not usable for metrics)" ;;
+        1)
+            # No abort here: we can still try hostname fallback for metrics.
+            log_warning "Provider UNUSABLE for metrics; trying fallback targets" >> "$trace_log"
+            ;;
+    esac
+
+    
+
     # If JSON provides an IP for ping, probe both the IP and a geo-aware
     # hostname (so DNS resolution uses the provider DNS we just configured)
     # and choose the target with lower RTT.
@@ -159,13 +143,28 @@ calibrate_network_settings() {
         HOSTNAME="${country_code}.pool.ntp.org"
         log_info "Ping field is IP; probing ORIGINAL_IP=$ORIGINAL_IP and HOSTNAME=$HOSTNAME" >> "$trace_log"
 
-        # Probe ORIGINAL IP
-        out_ip=$($PING_BIN -c 3 -W 2 "$ORIGINAL_IP" 2>&1 || true)
-        avg_ip=$(parse_ping "$out_ip" | awk '{print $1}')
+        # Probe ORIGINAL IP and HOSTNAME.
+        # IMPORTANT: Only targets that return RTT stats are usable for calibration.
+        avg_ip="9999"
+        avg_host="9999"
 
-        # Probe HOSTNAME (this exercises DNS configured above)
-        out_host=$($PING_BIN -c 3 -W 2 "$HOSTNAME" 2>&1 || true)
-        avg_host=$(parse_ping "$out_host" | awk '{print $1}')
+        test_ping_target "$ORIGINAL_IP"
+        rc_ip=$?
+        out_ip="$PROBE_LAST_OUTPUT"
+        if [ $rc_ip -eq 0 ]; then
+            avg_ip="$PROBE_RTT_MS"
+        else
+            log_debug "Discarding ORIGINAL_IP for calibration (no metrics): rc=$rc_ip" >> "$trace_log"
+        fi
+
+        test_ping_target "$HOSTNAME"
+        rc_host=$?
+        out_host="$PROBE_LAST_OUTPUT"
+        if [ $rc_host -eq 0 ]; then
+            avg_host="$PROBE_RTT_MS"
+        else
+            log_debug "Discarding HOSTNAME for calibration (no metrics): rc=$rc_host" >> "$trace_log"
+        fi
 
         # Extract resolved IP for logging (if present in ping output)
         resolved_host_ip=$(echo "$out_host" | awk -F'[()]' 'NR==1{print $2}')
@@ -379,6 +378,11 @@ extract_scores() {
     local current_ping=$(echo "$1" | awk '{print $1}')
     local current_jitter=$(echo "$1" | awk '{print $2}')
     local current_loss=$(echo "$1" | awk '{print $3}')
+
+    # Locale guard: allow decimals written with comma (e.g. 37,182)
+    current_ping=$(echo "$current_ping" | tr ',' '.')
+    current_jitter=$(echo "$current_jitter" | tr ',' '.')
+    current_loss=$(echo "$current_loss" | tr ',' '.')
     log_info "====================== extract_scores =========================" >> "$trace_log"
     log_info "props before verify: current_ping: $current_ping | current_jitter: $current_jitter | current_loss: $current_loss " >> "$trace_log"
     
@@ -603,13 +607,20 @@ test_configuration() {
     $PING_BIN -c 3 -W 1 "$TEST_IP" >/dev/null 2>&1
 
     # Execute ping with consistent format
-    # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 0.9 (timeout per packet) 
-    # TODO: delete $delay and user less time than 10, can be 5, 10 is good but slow
-    
-    local output=$($PING_BIN -c "$delay" -i 0.5 -W 0.9 "$TEST_IP" 2>&1)
+    # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 1 
+
+    [ -z "$ping_count" ] && ping_count="7"
+
+    case "$ping_count" in
+        ''|*[!0-9]*)
+        ping_count=7
+        ;;
+    esac
+    local output 
+    output="$($PING_BIN -c "$ping_count" -i 0.5 -W 1 "$TEST_IP" 2>&1)"
     [ $? -ne 0 ] && { echo "9999 9999 100"; return 2; }
 
-    log_info "Ping output: $output" >> "$trace_log"
+    log_debug "Ping output: $output" >> "$trace_log"
 
     parse_ping "$output"
 }
@@ -617,70 +628,66 @@ test_configuration() {
 # Description: Parse ping output to extract avg RTT, jitter (mdev), variance (max-min), and loss.
 # Usage: parse_ping "$(ping ... output)"
 parse_ping() {
-    local input="$1"
+    local ping_output="$1"
     log_info "====================== parse_ping =========================" >> "$trace_log"
-    if [ -z "$input" ]; then
-        echo "-1 -1 100"
+    log_info "Raw ping output: $ping_output" >> "$trace_log"
+
+    # Keep outputs consistent with extract_scores(): "<avg_ms> <jitter_ms> <loss_percent>"
+    # Defaults represent a failed/invalid measurement.
+    if [ -z "$ping_output" ]; then
+        echo "9999 9999 100"
         return 1
     fi
 
-    # Default variables
-    local avg_ping="-1"
-    local jitter="-1"
-    local min_ping="-1"
-    local max_ping="-1"
-    local variance="-1"
+    local avg_ping="9999"
+    local jitter="9999"
     local packet_loss="100"
 
-    # Extract packet loss
-    packet_loss=$(echo "$input" | awk '
-        /packet loss|perdida/ {
+    # Extract packet loss percentage (works for: "0% packet loss" / Spanish variants)
+    packet_loss=$(echo "$ping_output" | awk '
+        /packet loss|perdida|p[eé]rdida/ {
             for (i=1; i<=NF; i++) {
-                if ($i ~ /^[0-9]+%$/) {
+                if ($i ~ /^[0-9]+(\.[0-9]+)?%$/) {
                     gsub(/%/, "", $i)
                     print $i
+                    found=1
                     exit
                 }
             }
         }
-        END { print "0" }')
+        END {
+            if (!found) print "100"
+        }
+    ')
+    packet_loss=$(echo "$packet_loss" | awk '{gsub(/[^0-9.]/, ""); print}')
+    [ -z "$packet_loss" ] && packet_loss="100"
     log_info "packet_loss: $packet_loss" >> "$trace_log"
 
-    # Extract RTT statistics
-    local rtt_line
-    rtt_line=$(echo "$input" | grep -E "rtt min/avg/max/mdev|round-trip min/avg/max|tiempo mínimo/máximo/promedio")
+    # Extract RTT stats line (supports multiple ping variants/locales)
+    local rtt_line stats
+    rtt_line=$(echo "$ping_output" | awk '
+        /rtt min\/avg\/max\/mdev/ {print; exit}
+        /round-trip min\/avg\/max/ {print; exit}
+        /min\/avg\/max\/stddev/ {print; exit}
+    ')
     log_info "rtt_line: $rtt_line" >> "$trace_log"
+
     if [ -n "$rtt_line" ]; then
-        local rtt_stats
-        # Normalize spacing to avoid parsing failures when there are extra blanks
-        rtt_stats=$(echo "$rtt_line" | awk -F'=' '{print $2}' | tr -s ' ' | sed 's/^ *//')
-        min_ping=$(echo "$rtt_stats" | awk -F'/' '{print $1}')
-        avg_ping=$(echo "$rtt_stats" | awk -F'/' '{print $2}')
-        max_ping=$(echo "$rtt_stats" | awk -F'/' '{print $3}')
-        jitter=$(echo "$rtt_stats" | awk -F'/' '{print $4}' | awk '{print $1}')
+        stats=$(echo "$rtt_line" | awk -F'=' 'NF>=2 {gsub(/^[ \t]+/, "", $2); print $2}')
+        # stats should look like: min/avg/max/mdev ms or min/avg/max/stddev ms
+        avg_ping=$(echo "$stats" | awk -F'/' '{print $2}')
+        jitter=$(echo "$stats" | awk -F'/' '{print $4}')
+
+        # Locale guard: allow decimals written with comma (37,182)
+        avg_ping=$(echo "$avg_ping" | tr ',' '.' | awk '{gsub(/[^0-9.]/, ""); print}')
+        jitter=$(echo "$jitter" | tr ',' '.' | awk '{gsub(/[^0-9.]/, ""); print}')
+
+        # Some ping variants output only min/avg/max (no 4th field); treat jitter as 0
+        [ -z "$jitter" ] && jitter="0"
+        [ -z "$avg_ping" ] && avg_ping="9999"
     fi
 
-    [ -z "$avg_ping" ] && avg_ping="-1"
-    [ -z "$jitter" ] && jitter="-1"
-    [ -z "$min_ping" ] && min_ping="-1"
-    [ -z "$max_ping" ] && max_ping="-1"
-    [ -z "$packet_loss" ] && packet_loss="100"
+    log_info "avg_ping: $avg_ping | jitter: $jitter | packet_loss: $packet_loss" >> "$trace_log"
 
-    if echo "$min_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$' && \
-       echo "$max_ping" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
-        variance=$(awk "BEGIN {print $max_ping - $min_ping}")
-    fi
-
-    # Adjust jitter penalizing more when variance (max-min) is greater
-    local adjusted_jitter="$jitter"
-    if echo "$variance" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
-        if ! echo "$adjusted_jitter" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || \
-           awk "BEGIN {exit !($variance > $adjusted_jitter)}"; then
-            adjusted_jitter="$variance"
-        fi
-    fi
-
-    log_info "rtt_min: $min_ping | rtt_max: $max_ping | variance: $variance | jitter_final: $adjusted_jitter" >> "$trace_log"
-
-    echo "${avg_ping} ${adjusted_jitter} ${packet_loss}"
+    echo "$avg_ping $jitter $packet_loss"
 }

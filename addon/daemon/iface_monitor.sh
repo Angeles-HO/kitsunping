@@ -1,15 +1,10 @@
 #!/system/bin/sh
-# Network interrogators: get_signal_quality, get_wifi_status, get_mobile_status, get_default_iface
+# Network interrogators: get_signal_quality, get_wifi_status
 
-get_default_iface() {
-    local via_default
-    via_default=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
-    if [ -n "$via_default" ]; then
-        echo "$via_default"
-        return
-    fi
-    "$IP_BIN" route show default 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
-}
+# Ensure network_utils.sh is sourced for shared functions
+if [ -f "$MODDIR/addon/functions/network_utils.sh" ]; then
+    . "$MODDIR/addon/functions/network_utils.sh"
+fi
 
 get_wifi_status() {
     local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 dhcp_ip reason
@@ -42,39 +37,6 @@ get_wifi_status() {
     fi
 
     echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
-}
-
-get_mobile_status() {
-    local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
-
-    [ -z "$iface" ] && iface="none"
-    [ "$iface" = "none" ] && { echo "iface=none link=DOWN ip=0 egress=0 reason=not_found"; return; }
-
-    link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    if "$IP_BIN" addr show "$iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $iface"; then
-        def_route=1
-    fi
-
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
-                reason="usable_route"
-            else
-                reason="no_egress"
-            fi
-        else
-            reason="no_ip"
-        fi
-    fi
-
-    echo "iface=$iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
 }
 
 get_signal_quality() {
