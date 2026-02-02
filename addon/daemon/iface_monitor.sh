@@ -1,54 +1,34 @@
 #!/system/bin/sh
-# Network interrogators: get_signal_quality, get_wifi_status
+# Network interrogators: get_signal_quality
 
 # Ensure network_utils.sh is sourced for shared functions
 if [ -f "$MODDIR/addon/functions/network_utils.sh" ]; then
     . "$MODDIR/addon/functions/network_utils.sh"
 fi
-
-get_wifi_status() {
-    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 dhcp_ip reason
-
-    link_state=$("$IP_BIN" link show "$wifi_iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    if "$IP_BIN" addr show "$wifi_iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    dhcp_ip=$(getprop dhcp.${wifi_iface}.ipaddress 2>/dev/null)
-    [ -n "$dhcp_ip" ] && has_ip=1
-
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $wifi_iface"; then
-        def_route=1
-    fi
-
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
-                reason="usable_route"
-            else
-                reason="no_egress"
-            fi
-        else
-            reason="no_ip"
-        fi
-    fi
-
-    echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
-}
-
+# get_signal_quality - Get mobile network signal quality and technology
+# Returns JSON with fields:
+# - technology: network technology (e.g., LTE, NR, WCDMA, GSM, unknown)
+# - rsrp_dbm: RSRP in dBm (or - if unavailable)
+# - rssi_dbm: RSSI in dBm (or - if unavailable)
+# - sinr_db: SINR in dB (or - if unavailable)
+# - asu: ASU value (or - if unavailable)
+# - quality_score: 0-100 signal quality score
+# - timestamp: Unix timestamp of measurement
 get_signal_quality() {
+    # Local vars
     local dump tech rsrp="" rssi="" asu="" sinr="" quality_score=0 ts
+    local disp_network="" disp_override="" ril_data_tech="" reg_tech=""
 
+    # time stamp
     ts=$(date +%s 2>/dev/null || echo 0)
 
+    # Check dumpsys availability
     if ! command_exists dumpsys; then
         printf '{"error":"dumpsys not available","quality_score":0,"timestamp":%s}\n' "$ts"
         return 1
     fi
 
+    # Get telephony registry dump (for signal strength info, no collective logs/data)
     dump=$(dumpsys telephony.registry 2>/dev/null)
     if [ -z "$dump" ]; then
         printf '{"error":"dumpsys empty","quality_score":0,"timestamp":%s}\n' "$ts"
@@ -78,8 +58,74 @@ get_signal_quality() {
         sinr=$(printf '%s\n' "$mtk_line" | awk -F'rssnr=' '{print $2}' | awk '{print $1}')
     fi
 
-    # If still empty, fallback to legacy tech-specific parsing
-    tech=$(printf '%s' "$dump" | grep -m1 "mDataConnectionTech" | awk -F'=' '{print $2}' | tr -d '[:space:]')
+    # Better detection (Qualcomm/MTK friendly)
+    # In TelephonyDisplayInfo (often present in "local logs")
+    # Example: TelephonyDisplayInfo {network=LTE, overrideNetwork=NR_NSA, ...}
+
+    # so, here we extract:
+    # Displayed network type
+    # Example: network=LTE
+    disp_network=$(printf '%s\n' "$dump" | awk '
+        match($0,/TelephonyDisplayInfo \{network=([^,}]+),/,a){net=a[1]}
+        END{if(net!="") print net}
+    ' | tail -n 1)
+
+    # Displayed override network type
+    # Example: overrideNetwork=NR_NSA
+    disp_override=$(printf '%s\n' "$dump" | awk '
+        match($0,/overrideNetwork=([^,}]+)[,}]/,a){ov=a[1]}
+        END{if(ov!="") print ov}
+    ' | tail -n 1)
+
+    # RIL data radio technology (present in ServiceState)
+    # Example: getRilDataRadioTechnology=14(LTE)
+    ril_data_tech=$(printf '%s\n' "$dump" | awk '
+        match($0,/getRilDataRadioTechnology=[0-9]+\(([^)]+)\)/,a){t=a[1]}
+        END{if(t!="") print t}
+    ' | tail -n 1)
+
+    # NetworkRegistrationInfo accessNetworkTechnology can be IWLAN/UNKNOWN as well.
+    # Prefer WWAN (mobile data) tech, and ignore placeholders.
+    # Example lines:
+    #   transportType=WWAN ... accessNetworkTechnology=LTE
+    #   transportType=WLAN ... accessNetworkTechnology=IWLAN
+    reg_tech=$(printf '%s\n' "$dump" | awk '
+        /transportType=WWAN/ && match($0,/accessNetworkTechnology=([A-Z0-9_]+)/,a) {
+            t=a[1]
+            if (t != "UNKNOWN" && t != "IWLAN") { print t; exit }
+        }
+        match($0,/accessNetworkTechnology=([A-Z0-9_]+)/,a) {
+            t=a[1]
+            if (t != "UNKNOWN" && t != "IWLAN") last=t
+        }
+        END{ if (last != "") print last }
+    ' | tail -n 1)
+
+    # Decide tech with priority:
+    # - If overrideNetwork indicates NR (NR_NSA/NR_SA/NR_ADVANCED), expose NR.
+    # - Else use display network if present.
+    # - Else use RIL/reg tech.
+    tech=""
+    case "$disp_override" in
+        NR*|*NR*) tech="NR" ;;
+    esac
+    if [ -z "$tech" ] && [ -n "$disp_network" ] && [ "$disp_network" != "UNKNOWN" ]; then
+        tech="$disp_network"
+    fi
+    if [ -z "$tech" ] && [ -n "$ril_data_tech" ] && [ "$ril_data_tech" != "Unknown" ] && [ "$ril_data_tech" != "UNKNOWN" ]; then
+        tech="$ril_data_tech"
+    fi
+    if [ -z "$tech" ] && [ -n "$reg_tech" ] && [ "$reg_tech" != "UNKNOWN" ] && [ "$reg_tech" != "IWLAN" ]; then
+        tech="$reg_tech"
+    fi
+
+    # Back-compat: some builds expose mDataConnectionTech
+    if [ -z "$tech" ]; then
+        tech=$(printf '%s' "$dump" | grep -m1 "mDataConnectionTech" | awk -F'=' '{print $2}' | tr -d '[:space:]')
+    fi
+
+    # Normalize UNKNOWN to "unknown" for output consistency
+    [ "$tech" = "UNKNOWN" ] && tech="unknown"
 
     case "$tech" in
         *LTE*|*NR*)
@@ -116,11 +162,8 @@ get_signal_quality() {
             ;;
     esac
 
-    # Derive tech from display info if missing but LTE metrics were found
-    if [ -z "$tech" ] && { [ -n "$rsrp" ] || [ -n "$rssi" ]; }; then
-        tech=$(printf '%s' "$dump" | grep -m1 'network=LTE' | awk -F'[ ,]' '{print $1}')
-        [ -z "$tech" ] && tech="LTE"
-    fi
+    # Avoid guessing LTE: if we don't know, keep "unknown".
+    # (Previously this forced LTE whenever rsrp/rssi existed, which can hide NR/UNKNOWN states.)
 
     if [ -n "$rsrp" ] && echo "$rsrp" | grep -Eq '^-?[0-9]+$' && [ "$rsrp" -ne -1 ] && [ "$rsrp" -ne 2147483647 ]; then
         if   [ "$rsrp" -ge -85 ];  then quality_score=100

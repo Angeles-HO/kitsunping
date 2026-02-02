@@ -12,7 +12,14 @@ PING_COUNT=${PING_COUNT:-3}
 PING_TIMEOUT=${PING_TIMEOUT:-2}
 MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
 
-# Get Wi-Fi status
+# Get Wi-Fi status with more detailed reason codes
+# Returns: iface=IFACE link=STATE ip=HAS_IP egress=DEF_ROUTE reason=REASON
+# Usage: get_wifi_status [IFACE]
+# Reason codes:
+# - link_down: interface is down
+# - no_ip: interface is up but has no IP address
+# - no_default_route: interface is up with IP but not default route
+# - usable_route: interface is up with IP and is default route
 get_wifi_status() {
     local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 dhcp_ip reason
 
@@ -32,15 +39,31 @@ get_wifi_status() {
 
     reason="link_down"
     if [ $link_up -eq 1 ]; then
-        reason="link_up"
+        if [ $has_ip -eq 1 ]; then
+            if [ $def_route -eq 1 ]; then
+                reason="usable_route"
+            else
+                reason="no_default_route"
+            fi
+        else
+            reason="no_ip"
+        fi
     fi
 
     echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
 }
 
-# Get mobile network status
+# Get mobile network status with detailed reason codes
+# Returns: iface=IFACE link=STATE ip=HAS_IP egress=DEF_ROUTE reason=REASON
+# Reason codes:
+# - link_down: interface is down
+# - no_ip: interface is up but has no IP address
+# - no_default_route: interface is up with IP but not default route
+# - usable_route: interface is up with IP and is default route
 get_mobile_status() {
     local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
+
+    [ -z "$iface" ] && iface="none"
 
     link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
     [ "$link_state" = "UP" ] && link_up=1
@@ -55,10 +78,18 @@ get_mobile_status() {
 
     reason="link_down"
     if [ $link_up -eq 1 ]; then
-        reason="link_up"
+        if [ $has_ip -eq 1 ]; then
+            if [ $def_route -eq 1 ]; then
+                reason="usable_route"
+            else
+                reason="no_default_route"
+            fi
+        else
+            reason="no_ip"
+        fi
     fi
 
-    echo "iface=$iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
+    echo "iface=$iface link=${link_state:-DOWN} ip=$has_ip egress=$def_route reason=$reason"
 }
 
 # Get default network interface

@@ -20,6 +20,7 @@ LOG_DIR="$MODDIR/logs"
 LOG_FILE="$LOG_DIR/daemon.log"
 POLICY_DIR="$MODDIR/addon/policy"
 POLICY_LOG="$LOG_DIR/policy.log"
+GENERAL_DAEMON_LOG="$LOG_DIR/general_daemon.log"
 STATE_FILE="$MODDIR/cache/daemon.state"
 PID_FILE="$MODDIR/cache/daemon.pid"
 LAST_EVENT_FILE="$MODDIR/cache/daemon.last"
@@ -27,6 +28,8 @@ EVENTS_DIR="$MODDIR/cache/events"
 LAST_EVENT_JSON="$MODDIR/cache/event.last.json"
 shared_errors="$MODDIR/addon/functions/debug/shared_errors.sh"
 EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
+DEBUG_MODE="$(getprop persist.kitsunping.debug)"
+DEBUG_MODE="${DEBUG_MODE:-0}"
 # Commands (to be detected)
 IP_BIN=""
 PING_BIN=""
@@ -107,6 +110,30 @@ log_error() { printf '[DAEMON][ERROR] %s\n' "$*" >&2; }
 log_policy() { printf '[POLICY] %s\n' "$*" >&2; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+# Lightweight tracking log that survives restarts.
+# - Always logs INFO/WARN/ERROR events.
+# - Logs DEBUG only when DEBUG_MODE=1.
+_general_ts() {
+    # Prefer ISO timestamp if available
+    date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$(now_epoch)"
+}
+
+trace_general() {
+    # Usage: trace_general LEVEL MESSAGE...
+    # LEVEL: INFO|WARN|ERROR|DEBUG|STATE|EVENT
+    local level="$1"; shift
+    local msg="$*"
+
+    [ -z "$level" ] && level="INFO"
+    [ -z "$msg" ] && msg="(empty)"
+
+    if [ "$level" = "DEBUG" ] && [ "${DEBUG_MODE:-0}" != "1" ]; then
+        return 0
+    fi
+
+    printf '[%s][%s][pid=%s] %s\n' "$(_general_ts)" "$level" "$$" "$msg" >> "$GENERAL_DAEMON_LOG" 2>/dev/null || true
+}
+
 
 # Source modular components (if installed)
 if [ -f "$MODDIR/addon/functions/core.sh" ]; then
@@ -181,7 +208,7 @@ EOF
 
 # ============= Signal Handling ==============
 # Handle TERM/INT signals to cleanup pidfile
-trap 'log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
+trap 'trace_general INFO "daemon stopped"; log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
 
 # ============== Singleton Enforcement ==============
 ## Ensure only one instance of the daemon is running 
@@ -251,10 +278,11 @@ should_emit_event() {
 
     # Validate event name
     case "$name" in
-        WIFI_*|IFACE_*|SIGNAL_*|TIMER_*|WAKE)
+        WIFI_*|IFACE_*|SIGNAL_*|TIMER_*|WAKE|PROFILE_*)
             ;;
         *)
             log_error "Invalid event name: $name"
+            trace_general WARN "invalid_event_name name=$name"
             return 1
             ;;
     esac
@@ -297,6 +325,7 @@ emit_event() {
         export EVENT_SEQ
 
         log_info "EVENT #$EVENT_SEQ $name ts=$now $details"
+        trace_general EVENT "#$EVENT_SEQ name=$name ts=$now details=$details"
         write_event_json "$name" "$now" "$details"
 
         if ! printf '%s %s %s\n' "$name" "$now" "$details" | atomic_write "$LAST_EVENT_FILE"; then
@@ -316,6 +345,7 @@ emit_event() {
         # TODO: send broadcast to APK with action com.kitsunping.ACTION_UPDATE including 'event' and 'ts'
     else
         log_debug "EVENT suppressed by debounce: $name"
+        trace_general DEBUG "event_suppressed name=$name"
     fi
 }
 
@@ -382,6 +412,7 @@ last_mobile_egress=0
 last_mobile_score=0
 
 log_info "daemon start (DAEMON: monitor iface and wifi->mobile transitions)"
+trace_general INFO "daemon start" 
 
 loop_count=0
 signal_loop_count=0
@@ -443,6 +474,9 @@ while true; do
     elif [ "$mobile_egress" -eq 1 ]; then
         transport="mobile"
     fi
+
+    # General tracking line (STATE)
+    trace_general STATE "iface=$current_iface transport=$transport wifi.state=$wifi_state wifi.score=$wifi_score mobile.iface=$mobile_iface mobile.score=$mobile_score"
 
     # Poll radio signal only when mobile is the active/egress path; throttle by SIGNAL_POLL_INTERVAL
     if [ "$transport" = "mobile" ]; then

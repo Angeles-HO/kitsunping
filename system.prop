@@ -16,7 +16,7 @@ ro.ril.transmitpower=true
 kitsunping.daemon.interval=10
 
 # Debug mode (0: disable | 1: enable), reduce time instalalation size for better logging, not for normal use
-persist.kitsunping.debug=1
+persist.kitsunping.debug=0
 persist.kitsunping.ping_timeout=7
 
 
