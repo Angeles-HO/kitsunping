@@ -4,116 +4,55 @@
       "mcc": 334,
       "mnc": "020",
       "provider": "Telcel",
-      "dns": [
-        "200.55.216.2",
-        "200.55.216.3"
-      ],
-      "ping": "telcel.com"
-    },
-    {
-      "mcc": 334,
-      "mnc": "002",
-      "provider": "Telcel",
-      "dns": [
-        "200.55.216.2",
-        "200.55.216.3"
-      ],
-      "ping": "telcel.com"
+      "dns": ["8.8.8.8", "1.1.1.1", "200.55.216.2"],
+      "ping": "www.telcel.com"
     },
     {
       "mcc": 334,
       "mnc": "030",
       "provider": "Movistar",
-      "dns": [
-        "200.38.8.147",
-        "200.38.8.146"
-      ],
-      "ping": "movistar.com.mx"
-    },
-    {
-      "mcc": 334,
-      "mnc": "003",
-      "provider": "Movistar",
-      "dns": [
-        "200.38.8.147",
-        "200.38.8.146"
-      ],
-      "ping": "movistar.com.mx"
+      "dns": ["8.8.8.8", "1.1.1.1", "200.38.8.146"],
+      "ping": "www.movistar.com.mx"
     },
     {
       "mcc": 334,
       "mnc": "050",
-      "provider": "AT&T",
-      "dns": [
-        "200.76.64.5",
-        "200.76.64.6"
-      ],
-      "ping": "att.com.mx"
-    },
-    {
-      "mcc": 334,
-      "mnc": "050",
-      "provider": "AT&T",
-      "dns": [
-        "200.76.64.5",
-        "200.76.64.6"
-      ],
-      "ping": "att.com.mx"
+      "provider": "AT&T México",
+      "dns": ["8.8.8.8", "1.1.1.1", "200.76.64.5"],
+      "ping": "www.att.com.mx"
     },
     {
       "mcc": 334,
       "mnc": "140",
-      "provider": "ALTAN",
-      "dns": [
-        "200.1.1.139"
-      ],
-      "ping": "altanredes.com"
+      "provider": "ALTAN Redes",
+      "dns": ["8.8.8.8", "1.1.1.1", "200.1.1.139"],
+      "ping": "www.altanredes.com"
     },
     {
       "mcc": 334,
       "mnc": "070",
       "provider": "Unefon",
-      "dns": [
-        "200.33.158.10"
-      ],
-      "ping": "virginmobile.com.mx"
+      "dns": ["8.8.8.8", "1.1.1.1", "200.33.158.10"],
+      "ping": "www.unefon.com"
     },
     {
       "mcc": 334,
-      "mnc": "080",
-      "provider": "Unefon",
-      "dns": [
-        "200.33.158.10"
-      ],
-      "ping": "virginmobile.com.mx"
+      "mnc": "090",
+      "provider": "Weex",
+      "dns": ["8.8.8.8", "1.1.1.1"],
+      "ping": "weex.mx"
     },
     {
       "mcc": 334,
       "mnc": "299",
       "provider": "MVNOs",
-      "dns": [
-        "8.8.8.8",
-        "1.1.1.1"
-      ],
+      "dns": ["8.8.8.8", "1.1.1.1", "9.9.9.9"],
       "ping": "google.com"
-    },
-    {
-      "mcc": 334,
-      "mnc": "999",
-      "provider": "Telmex",
-      "dns": [
-        "200.33.146.252",
-        "200.33.146.253"
-      ],
-      "ping": "telmex.com"
     }
   ],
   "default": {
-    "provider": "google",
-    "dns": [
-      "8.8.8.8",
-      "1.1.1.1"
-    ],
+    "provider": "Ntp Pool México",
+    "dns": ["8.8.8.8", "1.1.1.1"],
     "ping": "mx.pool.ntp.org"
   }
 }

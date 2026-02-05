@@ -1,0 +1,45 @@
+{
+  "entries": [
+    {
+      "mcc": 732,
+      "mnc": "101",
+      "provider": "Claro Colombia",
+      "dns": ["8.8.8.8", "1.1.1.1", "181.64.1.10"],
+      "ping": "www.claro.com.co"
+    },
+    {
+      "mcc": 732,
+      "mnc": "001",
+      "provider": "Movistar Colombia",
+      "dns": ["8.8.8.8", "1.1.1.1", "200.33.120.10"],
+      "ping": "www.movistar.co"
+    },
+    {
+      "mcc": 732,
+      "mnc": "103",
+      "provider": "Tigo Colombia",
+      "dns": ["8.8.8.8", "1.1.1.1", "170.82.1.10"],
+      "ping": "www.tigo.com.co"
+    },
+    {
+      "mcc": 732,
+      "mnc": "130",
+      "provider": "Avantel",
+      "dns": ["8.8.8.8", "1.1.1.1"],
+      "ping": "www.tigo.com.co",
+      "status": "deprecated"
+    },
+    {
+      "mcc": 732,
+      "mnc": "154",
+      "provider": "Virgin Mobile Colombia",
+      "dns": ["8.8.8.8", "1.1.1.1", "170.82.1.10"],
+      "ping": "www.virginmobile.co"
+    }
+  ],
+  "default": {
+    "provider": "Ntp Pool Colombia",
+    "dns": ["8.8.8.8", "1.1.1.1"],
+    "ping": "co.pool.ntp.org"
+  }
+}

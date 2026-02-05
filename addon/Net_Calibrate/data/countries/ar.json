@@ -44,7 +44,7 @@
     }
   ],
   "default": {
-    "provider": "google",
+    "provider": "Ntp Pool Argentina",
     "dns": ["8.8.8.8", "1.1.1.1"],
     "ping": "ar.pool.ntp.org"
   }

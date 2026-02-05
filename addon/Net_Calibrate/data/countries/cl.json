@@ -66,8 +66,8 @@
     }
   ],
   "default": {
-    "provider": "google",
+    "provider": "Ntp Pool Chile",
     "dns": ["8.8.8.8", "8.8.4.4"],
-    "ping": "37.235.52.49"
+    "ping": "cl.pool.ntp.org"
   }
 }
