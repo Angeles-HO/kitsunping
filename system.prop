@@ -1,52 +1,63 @@
-# Configuracion optimizada para red en Samsung Galaxy As (puede ser inestable en otros dispositivos, proceder con precaucion)
+# Kitsunping - system.prop configuration
+# Configuration optimized for Samsung devices with MediaTek chipsets, but have a lot of compatibility with other brands and models.
+# These settings aim to improve network performance, connectivity, and overall user experience.
+# Configs with MTK may not be affected in non-MTK devices, others work on all devices.
 
 # --- Radio / RIL ---
-# Permite transferencia simultanea de voz y datos (0: deshabilitar | 1: habilitar si la red lo soporta)
+# Allow simultaneous voice and data transfer (0: disable | 1: enable if the network supports it)
 ro.ril.enable.dtm=1
 
-# Cifrado de trafico GSM/GPRS
+# GSM/GPRS traffic encryption (0: disable | 1: enable)
 ro.ril.enable.a51=1
 ro.ril.enable.a52=0
 ro.ril.enable.a53=1
+ro.ril.enable.a54=1
+ro.ril.enable.a55=1
 ro.ril.gprsclass=34
 ro.ril.transmitpower=true
 
 # ====== Daemon / Kitsunping ======
-# interval of check for the daemon in seconds (default value: 10 seconds)
+# This section is for the module Kitsunping, if you don't know what it is, leave it as is.
+#==================================
+# Interval of check for the daemon in seconds (default value: 10 seconds)
 kitsunping.daemon.interval=10
 
-# Debug mode (0: disable | 1: enable), reduce time instalalation size for better logging, not for normal use
+# Debug mode (0: disable | 1: enable), reduces installation size for better logging, not for normal use
 persist.kitsunping.debug=0
+
+# Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
 persist.kitsunping.ping_timeout=7
 
+# Increase or decrease time for "should_emit_event" function (default: 10 seconds), lower values can reduce time to detect changes in network status and emit events for policy evaluation
+# but can increase battery consumption/log size, so adjust it carefully. (TODO: delete when logs exceed 1MB in debug mode)
+persist.kitsunping.emit_events=10
 
-# LLM / Sigmoide / Exponential / Lineal  (default: sigmoid and unique)
+# This is for custom calibration of the daemon functions, if you don't know what it is, leave it as is.
+# LLM / Sigmoid / Exponential / Linear (default: sigmoid and unique)
 # kitsunping.daemon.algorithm=sigmoid
-
-# values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
+# Values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
 # kitsunping.daemon.sigmoid.alpha=0.5
 # kitsunping.daemon.sigmoid.beta=0.1
 # kitsunping.daemon.sigmoid.gamma=0.1
-#
-# Here's in case the user added a value but then replaced it with " ", to clear it, getprop can retrieve the valid value. 
-# Therefore, modify the daemon so that if an empty value is detected, it detects it as use_daemon_local_vars, 
-# since some don't know how to delete values ​​from build.prop and it may persist but not its assigned value.
-# ====== Fin Daemon Kitsunping ======
 
+# If an empty value is detected, use_daemon_local_vars will be applied.
+# Modify the daemon to handle empty values from build.prop correctly.
 
-# Metodo de correlacion de la base de datos para obtener ubicacion (ajustar si se prioriza privacidad)
+# ====== End of Daemon Kitsunping ======
+
+# Method of correlation of the database to obtain location (adjust if privacy is prioritized)
 # ro.ril.enable.dcm.feature=0
 
-# Configuracion de red predeterminada
-# 0: GSM/WCDMA (WCDMA preferido) 1: GSM 2: WCDMA 3: GSM/WCDMA (auto) 9: LTE/GSM/WCDMA 10: LTE 11: LTE/WCDMA 12: LTE/CDMA/EvDo
+# Configuration of default network
+# 0: GSM/WCDMA (WCDMA preferred) 1: GSM 2: WCDMA 3: GSM/WCDMA (auto) 9: LTE/GSM/WCDMA 10: LTE 11: LTE/WCDMA 12: LTE/CDMA/EvDo
 # 13: LTE/CDMA/EvDo/GSM/WCDMA 22: LTE/TDSCDMA/CDMA/EvDo/GSM/WCDMA
 ro.telephony.default_network=9
 
 # --- Wi-Fi ---
-wifi.interface=wlan0
+#wifi.interface=wlan0 (deprecated, uses a method to detect the main WiFi interface automatically)
 ro.wifi.direct.interface=p2p0
-wifi.tethering.interface=wlan0
-wifi.supplicant_scan_interval=0
+#wifi.tethering.interface=wlan0
+#wifi.supplicant_scan_interval=0 (deprecated, use 15 or higher values to reduce battery consumption)
 
 # --- VoLTE / VoWiFi ---
 persist.vendor.mtk.volte.enable=1
@@ -54,13 +65,12 @@ persist.vendor.volte_support=1
 persist.vendor.vowifi.enable=1
 persist.vendor.vowifi_support=1
 
-# --- Energia y otros ---
+# --- Energy and others ---
 persist.sys.vzw_wifi_running=true
 persist.radio.add_power_save=0
 ro.config.hw_power_saving=false
-ro.media.enc.jpeg.quality=100
 persist.audio.fluence.voicecall=true
 logcat.live=disable
 
-# Categoria Uplink-Downlink: HSPA+ (5.76 Mbps) | HSDA+ (42 Mbps) | RIL Settings (mejora de conectividad y señal) | hsxpa | hspa | lte | ltea |
-# Aca se agregaran los valores de las bandas soportadas por el dispositivo cuando termine de ejecutarse el script
+# Category Uplink-Downlink: HSPA+ (5.76 Mbps) | HSDA+ (42 Mbps) | RIL Settings (improvement of connectivity and signal) | hsxpa | hspa | lte | ltea |
+# Here the values of the bands supported by the device will be added when the script finishes executing
