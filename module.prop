@@ -1,7 +1,7 @@
 id=Kitsunping
 name=Kitsunping
-version=4.86
-versionCode=486
+version=5.0
+versionCode=500
 author=@Angeles_ho
 description=Improved data transfer over both Wi-Fi and mobile data. Network timeout has also been increased, so you can stay connected even in areas with weak signals. Stability improvements have also been made for a number of devices.
 updateJson=https://raw.githubusercontent.com/Angeles-HO/kitsunping/refs/heads/main/update.json
