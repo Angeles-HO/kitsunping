@@ -6,6 +6,23 @@ SINR_CACHE_FILE="${MODDIR}/cache/sinr_cache.db"
 COMPOSITE_EMA_FILE="${MODDIR}/cache/composite.ema"
 EMA_ALPHA=${EMA_ALPHA:-0.35}
 
+to_int() {
+    local val="$1"
+    # remove decimal part if any
+    val="${val%%.*}"
+    # also if another spain language uses comma
+    val="${val%%,*}"
+    # remove leading plus sign if any
+    val="${val#+}"
+
+    # validate int
+    if printf '%s\n' "$val" | grep -Eq '^-?[0-9]+$'; then
+        printf '%s' "$val"
+    else
+        printf '0'
+    fi
+}
+
 # lookup in cache file: key:value
 cache_lookup() {
     local file="$1" key="$2"
@@ -73,10 +90,10 @@ score_sinr_cached() {
 }
 
 composite_ema() {
-    local new="$1" prev tmp
+    local new="$1" ema_file="${2:-$COMPOSITE_EMA_FILE}" prev tmp
     prev=""
-    if [ -f "$COMPOSITE_EMA_FILE" ]; then
-        prev=$(cat "$COMPOSITE_EMA_FILE" 2>/dev/null || echo "")
+    if [ -f "$ema_file" ]; then
+        prev=$(cat "$ema_file" 2>/dev/null || echo "")
         prev=$(printf '%s' "$prev" | awk '/^-?[0-9]+([.][0-9]+)?$/ {print; exit}')
     fi
     if [ -z "$prev" ]; then
@@ -84,7 +101,7 @@ composite_ema() {
     else
         tmp=$(awk -v a="${EMA_ALPHA}" -v p="$prev" -v n="$new" 'BEGIN{printf "%.2f", a*n + (1-a)*p}')
     fi
-    printf '%s' "$tmp" > "$COMPOSITE_EMA_FILE" 2>/dev/null || true
+    printf '%s' "$tmp" > "$ema_file" 2>/dev/null || true
     printf '%s' "$tmp"
 }
 
@@ -92,7 +109,7 @@ composite_ema() {
 decide_profile() {
     local score="$1"
     if awk "BEGIN{exit !($score >= 80)}"; then
-        echo "gamer"
+        echo "gaming"
     elif awk "BEGIN{exit !($score >= 50)}"; then
         echo "stable"
     else

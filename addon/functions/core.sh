@@ -1,5 +1,18 @@
 #!/system/bin/sh
 # Core helper functions (safe: define only if missing)
+# NOTE: This file is frequently *sourced* by other scripts. Do not derive paths
+# from $0 unconditionally (when sourced, $0 is the caller).
+
+# Resolve module root without clobbering existing values.
+if [ -z "${MODDIR:-}" ] || [ ! -d "${MODDIR:-/}" ]; then
+    case "$0" in
+        */addon/*) MODDIR="${0%%/addon/*}" ;;
+        *) MODDIR="${0%/*}" ;;
+    esac
+fi
+
+: "${NEWMODPATH:=${MODDIR}}"
+: "${ADDON_DIR:=${MODDIR}/addon}"
 
 # logging helpers: define only if not already present
 command -v log_info >/dev/null 2>&1 || log_info() { printf '[DAEMON][INFO] %s\n' "$*" >&2; }
@@ -40,7 +53,7 @@ command -v to_int >/dev/null 2>&1 || to_int() {
     printf '%s' "$(printf '%s' "$v" | awk '{ if ($0=="" ) {print 0; exit} if ($0+0==$0) { if($0>=0) printf("%d", ($0+0.5)); else printf("%d", ($0-0.5)); } else {print 0} }')"
 }
 
-# Source Kitsutils for shared utilities
+# Source Kitsutils for shared utilities (optional)
 if [ -f "$MODDIR/addon/functions/utils/Kitsutils.sh" ]; then
     . "$MODDIR/addon/functions/utils/Kitsutils.sh"
 fi

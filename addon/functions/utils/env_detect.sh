@@ -1,5 +1,16 @@
 #!/system/bin/sh
 # Shared environment/binary detection helpers for Kitsunping
+# NOTE: This file is sourced by many entrypoints. When sourced, $0 points to the
+# caller script, not this file. So do not derive MODDIR assuming a fixed layout.
+
+if [ -z "${MODDIR:-}" ] || [ ! -d "${MODDIR:-/}" ]; then
+    case "$0" in
+        */addon/*) MODDIR="${0%%/addon/*}" ;;
+        *) MODDIR="${0%/*}" ;;
+    esac
+fi
+
+: "${NEWMODPATH:=${MODDIR}}"
 
 # Fallback loggers if not already defined
 command -v log_info >/dev/null 2>&1 || log_info() { printf '[INFO] %s\n' "$*" >&2; }
@@ -10,13 +21,26 @@ command -v command_exists >/dev/null 2>&1 || command_exists() { command -v "$1" 
 
 # Resolve addon dir (works for MODDIR or NEWMODPATH contexts)
 _kp_base_dir() {
-    if [ -n "$MODDIR" ]; then
+    if [ -n "${MODDIR:-}" ] && [ -d "${MODDIR:-/}" ]; then
         printf '%s' "$MODDIR"
-    elif [ -n "$NEWMODPATH" ]; then
-        printf '%s' "$NEWMODPATH"
-    else
-        printf '/data/adb/modules/kitsunping'
+        return 0
     fi
+    if [ -n "${NEWMODPATH:-}" ] && [ -d "${NEWMODPATH:-/}" ]; then
+        printf '%s' "$NEWMODPATH"
+        return 0
+    fi
+
+    # Last resort guesses (match current module id casing)
+    if [ -d /data/adb/modules/Kitsunping ]; then
+        printf '%s' /data/adb/modules/Kitsunping
+        return 0
+    fi
+    if [ -d /data/adb/modules_update/Kitsunping ]; then
+        printf '%s' /data/adb/modules_update/Kitsunping
+        return 0
+    fi
+
+    printf '%s' /data/adb/modules/Kitsunping
 }
 
 # Check required commands exist. Accepts a list; defaults to ip ndc resetprop awk.
@@ -113,6 +137,7 @@ ping_is_functional() {
 }
 
 check_and_prepare_ping() {
+    # 0 = OK, 1 = ping binary not found, 2 = ping not functional
     detect_ping_binary "$1" || return 1
     ping_is_functional || return 2
     # log_debug "Ping OK: $PING_BIN"

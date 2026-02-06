@@ -1,6 +1,14 @@
 #!/system/bin/sh
 # Network interrogators: get_signal_quality
 
+# Ensure MODDIR is set when sourced/ran standalone
+if [ -z "${MODDIR:-}" ] || [ ! -d "${MODDIR:-/}" ]; then
+    case "$0" in
+        */addon/*) MODDIR="${0%%/addon/*}" ;;
+        *) MODDIR="${0%/*}" ;;
+    esac
+fi
+
 # Ensure network_utils.sh is sourced for shared functions
 if [ -f "$MODDIR/addon/functions/network_utils.sh" ]; then
     . "$MODDIR/addon/functions/network_utils.sh"

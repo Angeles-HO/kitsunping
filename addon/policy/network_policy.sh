@@ -10,6 +10,9 @@ LOG_DIR="$MODDIR/logs"
 POLICY_LOG="$LOG_DIR/policy.log"
 STATE_FILE="$MODDIR/cache/daemon.state"
 LAST_EVENT_FILE="$MODDIR/cache/daemon.last"
+REQUEST_FILE="$MODDIR/cache/policy.request"
+CURRENT_FILE="$MODDIR/cache/policy.current"
+EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
 KITSUTILS_SH="$MODDIR/addon/functions/debug/shared_errors.sh"
 DECIDE_PROFILE_SH="$POLICY_DIR/decide_profile.sh"
 MIN_REAPPLY_SEC=20
@@ -20,8 +23,8 @@ mkdir -p "$LOG_DIR" 2>/dev/null
 if [ -f "$KITSUTILS_SH" ]; then
 	. "$KITSUTILS_SH"
 else
-	echo "[POLICY][ERROR] Kitsutils no encontrado: $KITSUTILS_SH" >> "$POLICY_LOG"
-	# Fallback básico de logging y utilidades cuando no hay Kitsutils
+	echo "[POLICY][ERROR] Kitsutils not found: $KITSUTILS_SH" >> "$POLICY_LOG"
+	# Basic fallback for logging and utilities when Kitsutils is not available
 	log_info() { printf '[POLICY][INFO] %s\n' "$*" >> "$POLICY_LOG"; }
 	log_debug() { printf '[POLICY][DEBUG] %s\n' "$*" >> "$POLICY_LOG"; }
 	log_error() { printf '[POLICY][ERROR] %s\n' "$*" >> "$POLICY_LOG"; }
@@ -32,9 +35,20 @@ now_epoch() {
 	date +%s 2>/dev/null 2>/dev/null || echo 0
 }
 
+atomic_write() {
+	local target="$1" tmp
+	tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
+	if cat - > "$tmp" 2>/dev/null; then
+		mv "$tmp" "$target" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+		return 0
+	fi
+	rm -f "$tmp" 2>/dev/null
+	return 1
+}
+
 read_state() {
 	iface="none"; wifi_state="unknown"; wifi_details=""; transport="none"; wifi_egress=0
-	[ ! -f "$STATE_FILE" ] && log_debug "[POLICY] state ausente; usando perfil por defecto" && return
+	[ ! -f "$STATE_FILE" ] && log_debug "[POLICY] state file missing; using default profile" && return
 
 	while IFS= read -r line; do
 		case "$line" in
@@ -89,11 +103,23 @@ else
 	profile="stable"
 fi 
 
-# Escribir el perfil decidido en el archivo target para que el executor lo aplique
-tmp="$MODDIR/cache/policy.target.$$" # archivo temporal seguro
-# Logging básico del perfil decidido
-log_info "[POLICY] profile=$profile wifi=$wifi_state iface=$iface event=$last_event" >> "$POLICY_LOG"
-# Escribir el perfil en un archivo temporal y luego renombrarlo para evitar condiciones de carrera
-echo "$profile" > "$tmp" && mv "$tmp" "$MODDIR/cache/policy.target" 
+# Log + persist desired profile as a request (informational)
+log_info "[POLICY] decided profile=$profile wifi=$wifi_state iface=$iface event=$last_event"
+printf '%s' "$profile" | atomic_write "$REQUEST_FILE" || true
+
+# Delegate applying to the executor (single-writer for policy.target/policy.current)
+current_profile=""
+[ -f "$CURRENT_FILE" ] && current_profile="$(cat "$CURRENT_FILE" 2>/dev/null)"
+
+if [ -x "$EXECUTOR_SH" ]; then
+	EVENT_NAME="PROFILE_CHANGED" \
+	EVENT_TS="${now:-0}" \
+	EVENT_DETAILS="from=${current_profile:-} to=$profile policy=network_policy" \
+	LOG_DIR="$LOG_DIR" \
+	POLICY_LOG="$POLICY_LOG" \
+	"$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
+else
+	log_error "[POLICY] executor not executable: $EXECUTOR_SH"
+fi
 
 exit 0

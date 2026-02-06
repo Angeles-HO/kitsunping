@@ -2,12 +2,12 @@
 
 # Network utility functions
 
-# Return codes (para que el código sea legible)
-PING_USABLE=0       # usable para métricas (C=true)
-PING_RESPONDS=1     # responde pero sin métricas útiles (A=true, B=false)
-PING_NO_RESP=2      # no responde / error (A=false)
+# Return codes
+PING_USABLE=0       # Can be used for metrics (C=true)
+PING_RESPONDS=1     # responds but without useful metrics (A=true, B=false)
+PING_NO_RESP=2      # no response / error (A=false)
 
-# Configurables (se pueden exportar desde el entorno)
+# Configurables (can be exported from the environment)
 PING_COUNT=${PING_COUNT:-3}
 PING_TIMEOUT=${PING_TIMEOUT:-2}
 MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
@@ -21,17 +21,21 @@ MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
 # - no_default_route: interface is up with IP but not default route
 # - usable_route: interface is up with IP and is default route
 get_wifi_status() {
-    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 dhcp_ip reason
+    # vars
+    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
 
+    # detect wifi interface if not specified
+    if [ -z "$wifi_iface" ]; then
+        wifi_iface=$("$IP_BIN" link show | awk -F: '/wl|wifi/ {gsub(/ /,"",$2); print $2; exit}')
+        [ -z "$wifi_iface" ] && wifi_iface="none"
+    fi
+    
     link_state=$("$IP_BIN" link show "$wifi_iface" 2>/dev/null | awk '/state/ {print $9; exit}')
     [ "$link_state" = "UP" ] && link_up=1
 
     if "$IP_BIN" addr show "$wifi_iface" 2>/dev/null | grep -q "inet "; then
         has_ip=1
     fi
-
-    dhcp_ip=$(getprop dhcp.${wifi_iface}.ipaddress 2>/dev/null)
-    [ -n "$dhcp_ip" ] && has_ip=1
 
     if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $wifi_iface"; then
         def_route=1
@@ -53,7 +57,10 @@ get_wifi_status() {
     echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
 }
 
-# Get mobile network status with detailed reason codes
+# get_mobile_status:
+#   Pure diagnostic function. Does not detect or select interfaces.
+#   The caller must pass the interface name (e.g., rmnet_data0).
+#
 # Returns: iface=IFACE link=STATE ip=HAS_IP egress=DEF_ROUTE reason=REASON
 # Reason codes:
 # - link_down: interface is down
@@ -61,25 +68,34 @@ get_wifi_status() {
 # - no_default_route: interface is up with IP but not default route
 # - usable_route: interface is up with IP and is default route
 get_mobile_status() {
+    # Vars
     local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
 
-    [ -z "$iface" ] && iface="none"
+    # If iface is empty/none, exit fast (diagnostic only; no autodetect)
+    if [ -z "$iface" ] || [ "$iface" = "none" ]; then
+        echo "iface=none link=DOWN ip=0 egress=0 reason=link_down"
+        return 0
+    fi
 
+    # Query link state
     link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
     [ "$link_state" = "UP" ] && link_up=1
 
+    # Check for IP address
     if "$IP_BIN" addr show "$iface" 2>/dev/null | grep -q "inet "; then
         has_ip=1
     fi
 
+    # Check for default route
     if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $iface"; then
         def_route=1
     fi
 
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
+    # This section determines the reason code in if cases
+    reason="link_down" # Default reason
+    if [ $link_up -eq 1 ]; then # Interface is up
+        if [ $has_ip -eq 1 ]; then # Has IP address
+            if [ $def_route -eq 1 ]; then # Is default route
                 reason="usable_route"
             else
                 reason="no_default_route"
@@ -89,41 +105,95 @@ get_mobile_status() {
         fi
     fi
 
+    # Output result
     echo "iface=$iface link=${link_state:-DOWN} ip=$has_ip egress=$def_route reason=$reason"
 }
 
-# Get default network interface
-get_default_iface() {
-    local via_default
-    via_default=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
-    if [ -n "$via_default" ]; then
-        echo "$via_default"
+# get_current_iface:
+#   Resolves which interface is currently active according to routing policy.
+#
+# Output: interface name (e.g., wlan0, rmnet_data0) or "" if none found.
+# Usage: get_current_iface
+get_current_iface() {
+    local via_route
+    via_route=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+    if [ -n "$via_route" ]; then
+        echo "$via_route"
         return
     fi
-    "$IP_BIN" route show default 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
+    echo ""
+}
+
+# Get Wi-Fi RSSI in dBm (best-effort)
+# Usage: get_wifi_rssi_dbm [IFACE]
+# Output: integer RSSI (e.g., -55) or empty if unavailable
+get_wifi_rssi_dbm() {
+    local wifi_iface="${1:-$WIFI_IFACE}" rssi=""
+
+    # Fast path: kernel wireless stats (if present)
+    if [ -r /proc/net/wireless ]; then
+        rssi=$(awk -v dev="${wifi_iface}:" '$1==dev {print $4; exit}' /proc/net/wireless 2>/dev/null)
+        rssi=$(printf '%s' "$rssi" | awk '{gsub(/[^0-9-]/,"",$0); if($0!="") print $0; }')
+
+        # Some kernels/drivers expose signal level as an unsigned byte (0..255)
+        # or as a positive magnitude (e.g., 54 meaning -54). Normalize to dBm-like negative values.
+        if printf '%s' "$rssi" | grep -Eq '^[0-9]+$'; then
+            if [ "$rssi" -ge 128 ] && [ "$rssi" -le 255 ]; then
+                # 8-bit two's complement (e.g., 198 -> -58)
+                rssi=$((rssi - 256))
+            elif [ "$rssi" -gt 0 ] && [ "$rssi" -le 127 ]; then
+                rssi=$(( -1 * rssi ))
+            fi
+        fi
+    fi
+
+    # Fallback: dumpsys wifi (heavier)
+    if [ -z "$rssi" ] && command_exists dumpsys; then
+        rssi=$(dumpsys wifi 2>/dev/null | awk '
+            /rssi=/ {
+                if (match($0, /rssi=-?[0-9]+/)) {
+                    s=substr($0, RSTART, RLENGTH)
+                    sub(/rssi=/, "", s)
+                    print s
+                    exit
+                }
+            }
+            /RSSI:/ {
+                if (match($0, /RSSI:[[:space:]]*-?[0-9]+/)) {
+                    s=substr($0, RSTART, RLENGTH)
+                    sub(/RSSI:[[:space:]]*/, "", s)
+                    print s
+                    exit
+                }
+            }
+        ')
+        rssi=$(printf '%s' "$rssi" | awk '{gsub(/[^0-9-]/,"",$0); if($0!="") print $0; }')
+    fi
+
+    printf '%s' "$rssi"
 }
 
 
-# | Estado       | Significado (para calibración / métricas)                         |
+# | State       | Description (for calibration / metrics)                         |
 # | ------------ | ------------------------------------------------------------------ |
-# | FULL_OK      | Ping target usable (con RTT stats) + al menos 1 DNS usable también |
-# | DNS_ONLY_OK  | Ping target no usable, pero al menos 1 DNS sí es usable            |
-# | PING_ONLY_OK | Ping target usable, pero DNS no usable                             |
-# | UNUSABLE     | Nada es usable para métricas (no hay RTT stats)                    |
+# | FULL_OK      | Ping target usable (with RTT stats) +  more a 1 DNS usable also |
+# | DNS_ONLY_OK  | Ping target not usable, but at least 1 DNS is usable            |
+# | PING_ONLY_OK | Ping target usable, but DNS not usable                             |
+# | UNUSABLE     | Nothing is usable for metrics (no RTT stats)                    |
 # test_ping_target
-# Separa 3 conceptos (A/B/C) en una sola decisión clara.
+# Divide 3 concepts (A/B/C) into a single clear decision.
 #
-# A) Reachability: ¿hay respuesta ICMP (o al menos salida de respuesta)?
-# B) Metric capability: ¿la salida trae estadísticas (rtt min/avg/max...)?
-# C) Usabilidad para calibración: depende de B, NO de A.
+# A) Reachability: Is there an ICMP response (or at least some response output)?
+# B) Metric capability: Does the output include statistics (rtt min/avg/max...)?
+# C) Usability for calibration: depends on B, NOT on A.
 #
 # Return codes:
-# 0 → usable para métricas (C=true)
-# 1 → responde pero sin métricas (A=true, B=false, C=false)
-# 2 → no responde / error (A=false, B=false, C=false)
+# 0 →  for metrics (C=true)
+# 1 → responds but without metrics (A=true, B=false, C=false)
+# 2 → no response / error (A=false, B=false, C=false)
 #
 # Side effects:
-# - PROBE_LAST_OUTPUT queda con la salida completa del ping (para parsear avg/jitter/loss si hace falta)
+# - PROBE_LAST_OUTPUT  with the complete output of the ping (to parse avg/jitter/loss if needed)
 test_ping_target() {
     local target="$1" out rc count timeout min_ok replies
 
@@ -225,12 +295,12 @@ test_dns_ip() {
     local dns1="$1" dns2="$2" ping_ip="$3"
     local dns_usable=0 ping_usable=0
 
-    # DNS servers: solo cuentan si son usables para métricas (C depende de B)
+    # DNS servers: only count if usable for metrics (C depends on B)
     if [ -n "$dns1" ]; then
         test_ping_target "$dns1"
         case $? in
             0) dns_usable=$((dns_usable + 1)) ;;
-            1) : ;; # reachability sin métricas → no sirve para calibración
+            1) : ;; # reachability without metrics → not useful for calibration
             2) : ;;
         esac
     fi
