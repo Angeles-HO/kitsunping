@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # executor.sh - executes network profile changes
 # Part of Kitsunping - daemon.sh
-# TODO: refactor common functions with daemon.sh
-# TODO: improve logging consistency with daemon.sh
+# TODO: refactor common functions with daemon.sh (50% - 100%)
+# TODO: improve logging consistency with daemon.sh 
 # TODO: move atomic_write/command detection/now_epoch to shared helper sourced by daemon/executor/policy
 # TODO: refine pick_score to prefer wifi vs mobile based on transport/event and handle missing daemon.state explicitly
 # TODO: add concurrency guard (lock/PID) to prevent overlapping calibrations and consider daemon activity window
@@ -22,7 +22,9 @@ MODDIR="${ADDON_DIR%/addon}"     # kitsunping (root of the module)
 
 TARGET_FILE="$MODDIR/cache/policy.target"
 CURRENT_FILE="$MODDIR/cache/policy.current"
-KITSUTILS_SH="$MODDIR/addon/functions/debug/shared_errors.sh"
+REQUEST_FILE="$MODDIR/cache/policy.request"
+SRD_ERRORS="$MODDIR/addon/functions/debug/shared_errors.sh"
+KITSUTILS_SH="$MODDIR/addon/functions/utils/Kitsutils.sh"
 CALIBRATE_SH="$MODDIR/addon/Net_Calibrate/calibrate.sh"
 CALIBRATE_OUT="$MODDIR/logs/results.env"
 POLICY_EVENT_JSON="$MODDIR/cache/policy.event.json"
@@ -39,19 +41,30 @@ log_policy() { printf '[%s][POLICY] %s\n' "$(date +%s)" "$*" >> "$POLICY_LOG"; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-# atomic write helper
-atomic_write() {
-    local target="$1" tmp
-    tmp="${target}.$$.$RANDOM.tmp"
-    cat - > "$tmp" 2>/dev/null && mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-}
-
 # Prefer Kitsutils logging if available
+if [ -f "$SRD_ERRORS" ]; then
+    . "$SRD_ERRORS"
+    # Re-map to log_policy for consistency
+    log_policy() { log_info "$@"; }
+fi
+
 if [ -f "$KITSUTILS_SH" ]; then
     . "$KITSUTILS_SH"
     # Re-map to log_policy for consistency
     log_policy() { log_info "$@"; }
 fi
+
+# Ensure atomic_write exists even if Kitsutils couldn't be sourced.
+command -v atomic_write >/dev/null 2>&1 || atomic_write() {
+    local target="$1" tmp
+    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
+    if cat - > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$target" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+        return 0
+    fi
+    rm -f "$tmp" 2>/dev/null
+    return 1
+}
 
 # Detect resetprop
 RESETPROP_BIN=""
@@ -61,31 +74,40 @@ if command_exists resetprop; then
 fi
 
 # Load functions without executing main flow
-SKIP_SERVICE_MAIN=1
-. "$MODDIR/service.sh" >>"$POLICY_LOG" 2>&1
+. "$SCRIPT_DIR/profile_runner.sh" >>"$POLICY_LOG" 2>&1
 
 # If daemon passed event via env, log it (not essential, but useful for logs)
 if [ -n "${EVENT_NAME:-}" ]; then
     log_policy "ctx EVENT_NAME=${EVENT_NAME} EVENT_TS=${EVENT_TS:-} DETAILS=${EVENT_DETAILS:-}"
 fi
 
-# If the daemon signalled a profile change, prefer that value and let executor
-# own writing the target file. EVENT_DETAILS expected like "from=x to=y ...".
-if [ "${EVENT_NAME:-}" = "PROFILE_CHANGED" ] && [ -n "${EVENT_DETAILS:-}" ]; then
-    policy_to=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
-    if [ -n "$policy_to" ]; then
-        printf '%s' "$policy_to" > "$TARGET_FILE" 2>/dev/null || true
-        log_policy "PROFILE_CHANGED event -> wrote target_profile=$policy_to"
-    fi
+# Determine desired target profile.
+desired_profile="${TARGET_PROFILE:-}"
+
+# Prefer PROFILE_CHANGED event details when present (expected: "from=x to=y ...").
+if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "PROFILE_CHANGED" ] && [ -n "${EVENT_DETAILS:-}" ]; then
+    desired_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
 fi
 
-if [ ! -f "$TARGET_FILE" ]; then
+# Otherwise, use existing target file.
+if [ -z "$desired_profile" ] && [ -f "$TARGET_FILE" ]; then
+    desired_profile="$(cat "$TARGET_FILE" 2>/dev/null)"
+fi
+
+# Fallback: if only policy.request exists, treat it as the desired target.
+if [ -z "$desired_profile" ] && [ -f "$REQUEST_FILE" ]; then
+    desired_profile="$(cat "$REQUEST_FILE" 2>/dev/null)"
+    [ -n "$desired_profile" ] && log_policy "Using policy.request as target_profile=$desired_profile"
+fi
+
+if [ -z "$desired_profile" ]; then
     log_policy "No target profile; nothing to do"
     exit 0
 fi
 
-# Read target profile
-target_profile="$(cat "$TARGET_FILE" 2>/dev/null)"
+# Persist target (single-writer) and use it for this run.
+printf '%s' "$desired_profile" | atomic_write "$TARGET_FILE" || true
+target_profile="$desired_profile"
 
 # Validate target profile
 [ -z "$target_profile" ] && exit 0
@@ -103,17 +125,26 @@ log_policy "Switching profile: $current_profile -> $target_profile"
 applied_profile=0
 props_applied=0
 
-# If apply_network_optimizations exists, try it first (it might set props)
-if command_exists apply_network_optimizations; then
+# Apply profile: prefer net_profiles scripts via run_profile_script.
+if command -v run_profile_script >/dev/null 2>&1; then
+    log_policy "Applying profile script: $target_profile"
+    if run_profile_script "$target_profile" >> "$POLICY_LOG" 2>&1; then
+        applied_profile=1
+        printf '%s' "$target_profile" | atomic_write "$CURRENT_FILE" || true
+    else
+        log_policy "run_profile_script failed"
+    fi
+elif command -v apply_network_optimizations >/dev/null 2>&1; then
+    # Back-compat fallback
     log_policy "Applying built-in profile: $target_profile"
     if apply_network_optimizations "$target_profile" >> "$POLICY_LOG" 2>&1; then
         applied_profile=1
-        echo "$target_profile" > "$CURRENT_FILE"
+        printf '%s' "$target_profile" | atomic_write "$CURRENT_FILE" || true
     else
         log_policy "apply_network_optimizations failed"
     fi
 else
-    log_policy "apply_network_optimizations not available"
+    log_policy "No profile applier available (missing run_profile_script/apply_network_optimizations)"
 fi
 
 # calibrate policy: gated by cooldown + low-score streak
@@ -217,24 +248,24 @@ if [ "$current_state" = "running" ]; then
 fi
 # TODO: prevent calibrate during daemon activity
 ## 
-if [ $run_calibrate -eq 1 ] && [ -f "$CALIBRATE_SH" ]; then
+if [ "$run_calibrate" -eq 1 ] && [ -f "$CALIBRATE_SH" ]; then
     log_policy "Starting calibration (delay=$calibrate_delay, timeout=${CALIBRATE_TIMEOUT}s) profile=$target_profile"
 
-    now_ts=$(date +%s 2>/dev/null 2>/dev/null || echo 0)
-    echo "$now_ts" > "$CALIBRATE_TS_FILE"
-    echo "running" > "$CALIBRATE_STATE_FILE"
-    rm -f "$CALIBRATE_OUT"
+    now_ts=$(date +%s 2>/dev/null || echo 0)
+    echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
+    echo "running" | atomic_write "$CALIBRATE_STATE_FILE"
+    rm -f "$CALIBRATE_OUT" 2>/dev/null
 
-    if ! . "$CALIBRATE_SH" >>"$POLICY_LOG" 2>&1; then
+    if ! . "$CALIBRATE_SH" >> "$POLICY_LOG" 2>&1; then
         log_policy "Failed to source $CALIBRATE_SH; aborting calibrate"
-        echo "idle" > "$CALIBRATE_STATE_FILE"
-        run_calibrate=0
+        echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
     else
-        ( calibrate_network_settings "$calibrate_delay" 2>>"$POLICY_LOG" > "$CALIBRATE_OUT" ) &
+        ( calibrate_network_settings "$calibrate_delay" > "$CALIBRATE_OUT" 2>>"$POLICY_LOG" ) &
         calib_pid=$!
         log_policy "Calibrate started pid=$calib_pid, waiting up to ${CALIBRATE_TIMEOUT}s"
 
         waited=0
+        timed_out=0
         while kill -0 "$calib_pid" 2>/dev/null; do
             sleep 1
             waited=$((waited + 1))
@@ -242,22 +273,24 @@ if [ $run_calibrate -eq 1 ] && [ -f "$CALIBRATE_SH" ]; then
                 log_policy "Calibrate still running pid=$calib_pid (${waited}s elapsed)"
             fi
             if [ "$waited" -ge "$CALIBRATE_TIMEOUT" ]; then
+                timed_out=1
                 log_policy "Calibrate timeout (${CALIBRATE_TIMEOUT}s) reached; killing pid=$calib_pid"
                 kill "$calib_pid" 2>/dev/null || true
                 break
             fi
         done
 
-        wait "$calib_pid" 2>/dev/null || true
-        calib_rc=$?
+        if [ "$timed_out" -eq 1 ]; then
+            calib_rc=124
+        else
+            wait "$calib_pid" 2>/dev/null
+            calib_rc=$?
+        fi
+
+        log_policy "Calibrate finished rc=$calib_rc"
 
         if [ "$calib_rc" -eq 0 ] && [ -s "$CALIBRATE_OUT" ]; then
-            log_policy "Calibrate finished successfully; applying props from $CALIBRATE_OUT"
-            props_applied=0
-            while IFS= read -r line || [ -n "$line" ]; do
-                case "$line" in ''|\#*) continue ;; esac
-                key="${line%%=*}"
-                val="${line#*=}"
+            while IFS='=' read -r key val; do
                 case "$key" in BEST_*) ;; *) continue ;; esac
                 [ -z "$val" ] && continue
                 prop="${key#BEST_}"
@@ -271,18 +304,30 @@ if [ $run_calibrate -eq 1 ] && [ -f "$CALIBRATE_SH" ]; then
                 props_applied=$((props_applied + 1))
             done < "$CALIBRATE_OUT"
 
-            echo "$target_profile" > "$CURRENT_FILE"
-            echo "$now_ts" > "$CALIBRATE_TS_FILE"
-            echo "cooling" > "$CALIBRATE_STATE_FILE"
-            echo 0 > "$CALIBRATE_STREAK_FILE"
+            printf '%s' "$target_profile" | atomic_write "$CURRENT_FILE" || true
+            now_ts=$(date +%s 2>/dev/null || echo 0)
+            echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
+            echo "cooling" | atomic_write "$CALIBRATE_STATE_FILE"
+            echo 0 | atomic_write "$CALIBRATE_STREAK_FILE"
             log_policy "Calibration applied: props_applied=$props_applied; entering cooling state"
+        elif [ "$calib_rc" -eq 3 ]; then
+            log_policy "Calibrate postponed by child (rc=3); deferring next run"
+            now_ts=$(date +%s 2>/dev/null || echo 0)
+            echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
+            echo "postponed" | atomic_write "$CALIBRATE_STATE_FILE"
+        elif [ "$calib_rc" -eq 1 ] || [ "$calib_rc" -eq 2 ] || [ "$calib_rc" -eq 4 ]; then
+            log_policy "Calibrate aborted (rc=$calib_rc); leaving profile unchanged"
+            echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
         else
             log_policy "Calibrate failed or empty output (rc=$calib_rc)"
-            echo "idle" > "$CALIBRATE_STATE_FILE"
+            now_ts=$(date +%s 2>/dev/null || echo 0)
+            echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
+            echo "cooling" | atomic_write "$CALIBRATE_STATE_FILE"
+            echo 0 | atomic_write "$CALIBRATE_STREAK_FILE"
         fi
     fi
 else
-    log_policy "Skipping calibrate (disabled or missing)"
+    log_policy "Skipping calibrate (disabled, gated, or missing)"
 fi
 
 # Emit simple JSON event for the APK (polling-friendly)

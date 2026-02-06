@@ -57,6 +57,7 @@ echo "GPU INFO        = $(prop_or_default ro.hardware.egl "N/A")"
 echo "CPU INFO        = $(prop_or_default ro.hardware "N/A")"
 echo "PROCESSOR BRAND = $(prop_or_default ro.board.platform "N/A")"
 echo "CPU ARCH        = $(prop_or_default ro.product.cpu.abi "N/A")"
+# TODO: add ram info to system.prop, to usage to calc a value to use in profiles: persist.kitsunping.ram.size, *.habiablelity, etc
 echo "RAM INFO        = $(free -m | awk '/^Mem:/{print $2}')"
 echo "ANDROID VERSION = $(prop_or_default ro.build.version.release "N/A")"
 echo "${divider}"
@@ -103,8 +104,12 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     log_info "Backup already created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
 
     log_info "Starting calibration process..."
+    log_info "This process will run multiple tests to determine the optimal network settings for your device."
+    log_info "Please wait and do not interrupt the process/move the device. It may take several minutes to complete."
     
-    calibrate_network_settings 10 2> >(tee "/sdcard/trace_log2.log" >&2) | tee "$NEWMODPATH/logs/results.env"
+    calibrate_network_settings 10 2> >(tee "/sdcard/trace_log2.log" >&2) \
+        | grep -E '^BEST_[A-Za-z0-9_]+=' \
+        | tee "$NEWMODPATH/logs/results.env"
 
     if [ -s "$NEWMODPATH/logs/results.env" ]; then
         . "$NEWMODPATH/logs/results.env"

@@ -1,50 +1,230 @@
 #!/system/bin/sh
 # Net Calibrate.sh Script
-# Version: 4.87
+# Version: 4.89
 # Description: This script calibrates network properties for optimal performance.
-# Status: Archived - 26/01/2026
-trace_log="/sdcard/trace_log.log"
+# Status: re open - 4/02/2026
+
+# Global variables
+# NOTE: This script is commonly *sourced* by executor.sh. When sourced, $0 is the
+# caller, so prefer caller-provided NEWMODPATH/MODDIR and avoid clobbering them.
+if [ -z "${NEWMODPATH:-}" ] || [ ! -d "${NEWMODPATH:-/}" ]; then
+    if [ -n "${MODDIR:-}" ] && [ -d "${MODDIR:-/}" ]; then
+        NEWMODPATH="$MODDIR"
+    else
+        # Best-effort derive module root from caller path.
+        _caller_dir="${0%/*}"
+        case "$_caller_dir" in
+            */addon/Net_Calibrate) NEWMODPATH="${_caller_dir%%/addon/Net_Calibrate}" ;;
+            */addon/*) NEWMODPATH="${_caller_dir%%/addon/*}" ;;
+            */addon) NEWMODPATH="${_caller_dir%%/addon}" ;;
+            *) NEWMODPATH="${_caller_dir%/*}" ;;
+        esac
+    fi
+fi
+
+: "${MODDIR:=$NEWMODPATH}"
+
+# Keep legacy variable names for internal references.
+SCRIPT_DIR="$NEWMODPATH/addon/Net_Calibrate"
+ADDON_DIR="$NEWMODPATH/addon"
 NET_PROPERTIES_KEYS="ro.ril.hsupa.category ro.ril.hsdpa.category" # Priority, for [upload and download] WIFI
 NET_OTHERS_PROPERTIES_KEYS="ro.ril.lte.category ro.ril.ltea.category ro.ril.nr5g.category" # Priority, for [LTE, LTEA, 5G] Data
-NET_VAL_HSUPA="5 6 7 8 9 10 11 12 13 18" # Testing values for higher upload
-NET_VAL_HSDPA="9 12 15 18 21 34 36 38 41" # Testing values for higher download
-NET_VAL_LTE="5 6 7 8 9 10 11 12 13" # Testing values for LTE data technology
-NET_VAL_LTEA="5 6 7 8 9 10 11 12 13" # Testing values for LTEA data technology
+NET_VAL_HSUPA="5 7 9 11 13 15 17 19 21 23" # Testing values for higher upload
+NET_VAL_HSDPA="9 12 15 18 21 24 26 28" # Testing values for higher download
+NET_VAL_LTE="5 6 7 8 9 10 11 12" # Testing values for LTE data technology
+NET_VAL_LTEA="6 8 10 12 14 16 18 20 22 24" # Testing values for LTEA data technology
 NET_VAL_5G="1 2 3 4 5" # Testing values for 5G data technology
-NETMETER_FILE="$NEWMODPATH/logs/kitsunping.log"
-CACHE_DIR_cln="$NEWMODPATH/cache"
+
+# Logs Variables
+NETMETER_FILE="$NEWMODPATH/logs/calibrate.log"
+trace_log="/sdcard/trace_log.log"
+
+# Binarys Variables
 jqbin="$NEWMODPATH/addon/jq/arm64/jq"
 ipbin="$NEWMODPATH/addon/ip/ip" 
 pingbin="$NEWMODPATH/addon/ping"
+
+# Cache for Calibrate.sh optimizations
+CACHE_DIR_cln="$NEWMODPATH/cache"
 data_dir="$NEWMODPATH/addon/Net_Calibrate/data"
 fallback_json="$data_dir/unknown.json"
 cache_dir="$data_dir/cache"
+
+## Cache for states
 CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
 CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
+
+# Calibration cache (best values) - avoids re-calibrating from scratch every boot.
+# Cache is keyed by provider/operator string (from configure_network JSON).
+CALIBRATE_CACHE_ENV="$NEWMODPATH/cache/calibrate.best.env"
+CALIBRATE_CACHE_META="$NEWMODPATH/cache/calibrate.best.meta"
+
+calibrate_cache_load_vars() {
+    local env_file="$1"
+    [ -f "$env_file" ] || return 1
+
+    # Strictly accept only BEST_ro_ril_* lines (numbers only).
+    if ! grep -Eq '^(BEST_ro_ril_(hsupa|hsdpa|lte|ltea|nr5g)_category)=[0-9]+$' "$env_file" 2>/dev/null; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1090
+    . "$env_file" 2>/dev/null || return 1
+    return 0
+}
+
+calibrate_cache_try_use() {
+    # Args: provider ping_target
+    local provider="$1" ping_target="$2"
+    local enable max_age now ts age max_rtt max_loss rc
+
+    enable=$(getprop persist.kitsunping.calibrate_cache_enable 2>/dev/null)
+    [ -z "$enable" ] && enable=1
+    case "$enable" in
+        0|false|FALSE|off|OFF|no|NO) return 1 ;;
+    esac
+
+    [ -f "$CALIBRATE_CACHE_META" ] || return 1
+    [ -f "$CALIBRATE_CACHE_ENV" ] || return 1
+
+    # Meta format: PROVIDER='<str>' TS=<epoch>
+    local cached_provider cached_ts
+    cached_provider=$(awk -F= '/^PROVIDER=/{gsub(/^PROVIDER=|^\x27|\x27$/, "", $0); sub(/^PROVIDER=/, "", $0); print; exit}' "$CALIBRATE_CACHE_META" 2>/dev/null)
+    cached_ts=$(awk -F= '/^TS=/{print $2; exit}' "$CALIBRATE_CACHE_META" 2>/dev/null)
+    [ -z "$cached_provider" ] && return 1
+    [ -z "$cached_ts" ] && return 1
+
+    if [ "$cached_provider" != "$provider" ]; then
+        return 1
+    fi
+
+    max_age=$(getprop persist.kitsunping.calibrate_cache_max_age_sec 2>/dev/null)
+    [ -z "$max_age" ] && max_age=604800
+    case "$max_age" in ''|*[!0-9]* ) max_age=604800;; esac
+
+    now=$(date +%s)
+    case "$now" in ''|*[!0-9]* ) now=0;; esac
+    case "$cached_ts" in ''|*[!0-9]* ) cached_ts=0;; esac
+
+    if [ "$now" -gt 0 ] && [ "$cached_ts" -gt 0 ]; then
+        age=$((now - cached_ts))
+        [ "$age" -lt 0 ] && age=0
+        if [ "$age" -gt "$max_age" ]; then
+            return 1
+        fi
+    fi
+
+    # Quick validation: ensure we still have good ping metrics.
+    max_rtt=$(getprop persist.kitsunping.calibrate_cache_rtt_ms 2>/dev/null)
+    [ -z "$max_rtt" ] && max_rtt=120
+    case "$max_rtt" in ''|*[!0-9]* ) max_rtt=120;; esac
+
+    max_loss=$(getprop persist.kitsunping.calibrate_cache_loss_pct 2>/dev/null)
+    [ -z "$max_loss" ] && max_loss=5
+    case "$max_loss" in ''|*[!0-9]* ) max_loss=5;; esac
+
+    # Prefer ping_target from JSON, but fallback to 8.8.8.8
+    [ -z "$ping_target" ] && ping_target="8.8.8.8"
+
+    test_ping_target "$ping_target"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        return 1
+    fi
+
+    # Require numeric metrics
+    if ! printf '%s' "${PROBE_RTT_MS:-}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+        return 1
+    fi
+    if ! printf '%s' "${PROBE_LOSS_PCT:-}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+        return 1
+    fi
+
+    if awk -v rtt="$PROBE_RTT_MS" -v max="$max_rtt" 'BEGIN{exit !(rtt>0 && rtt<=max)}' && \
+       awk -v loss="$PROBE_LOSS_PCT" -v max="$max_loss" 'BEGIN{exit !(loss>=0 && loss<=max)}'; then
+        if ! calibrate_cache_load_vars "$CALIBRATE_CACHE_ENV"; then
+            return 1
+        fi
+
+        log_info "Using calibration cache for provider=$provider (rtt=${PROBE_RTT_MS}ms loss=${PROBE_LOSS_PCT}%)" >> "$trace_log"
+
+        # Mark calibration as cooling and refresh last-run timestamp.
+        echo "cooling" | atomic_write "$CALIBRATE_STATE_RUN"
+        echo "$(date +%s)" | atomic_write "$CALIBRATE_LAST_RUN"
+
+        echo "BEST_ro_ril_hsupa_category=$BEST_ro_ril_hsupa_category"
+        echo "BEST_ro_ril_hsdpa_category=$BEST_ro_ril_hsdpa_category"
+        echo "BEST_ro_ril_lte_category=$BEST_ro_ril_lte_category"
+        echo "BEST_ro_ril_ltea_category=$BEST_ro_ril_ltea_category"
+        echo "BEST_ro_ril_nr5g_category=$BEST_ro_ril_nr5g_category"
+        return 0
+    fi
+
+    return 1
+}
+
+calibrate_cache_save() {
+    # Args: provider
+    local provider="$1" ts
+    ts=$(date +%s)
+    case "$ts" in ''|*[!0-9]* ) ts=0;; esac
+
+    # Save env with BEST_* values.
+    {
+        echo "BEST_ro_ril_hsupa_category=${BEST_ro_ril_hsupa_category:-}"
+        echo "BEST_ro_ril_hsdpa_category=${BEST_ro_ril_hsdpa_category:-}"
+        echo "BEST_ro_ril_lte_category=${BEST_ro_ril_lte_category:-}"
+        echo "BEST_ro_ril_ltea_category=${BEST_ro_ril_ltea_category:-}"
+        echo "BEST_ro_ril_nr5g_category=${BEST_ro_ril_nr5g_category:-}"
+    } | atomic_write "$CALIBRATE_CACHE_ENV"
+
+    {
+        echo "PROVIDER='$provider'"
+        echo "TS=$ts"
+    } | atomic_write "$CALIBRATE_CACHE_META"
+}
+
+# Getprops variables
 ping_count="$(getprop persist.kitsunping.ping_timeout)"
+ping_count="${ping_count:-7}"
 
-# Shared env helpers
-ENV_HELPER="$NEWMODPATH/addon/functions/utils/env_detect.sh"
-if [ -f "$ENV_HELPER" ]; then
-    . "$ENV_HELPER"
-else
-    echo "[ERROR] Shared env_detect.sh not found at: $ENV_HELPER" >> "$trace_log"
-    exit 1
-fi
+# Rare if not found but just in case
+verify_scripts() {
+    script="$1"
+    if [ ! -f "$script" ]; then
+        echo "[ERROR] Required script not found: $script" >> "$trace_log"
+        exit 1
+    fi
 
+    # These helpers are sourced, not executed; on Windows-built zips the +x bit
+    # is often lost. Ensure readability and continue.
+    if [ ! -r "$script" ]; then
+        chmod 0644 "$script" 2>/dev/null
+    fi
+    if [ ! -r "$script" ]; then
+        echo "[ERROR] Required script not readable: $script" >> "$trace_log"
+        exit 1
+    fi
+
+    echo "[INFO] Sourcing script: $script" >> "$trace_log"
+    . "$script"
+}
+
+# Load helper scripts for advanced functions
+verify_scripts "$NEWMODPATH/addon/functions/utils/env_detect.sh"
 # Network helpers (test_ping_target/test_dns_ip)
-NET_UTILS="$NEWMODPATH/addon/functions/network_utils.sh"
-if [ -f "$NET_UTILS" ]; then
-    . "$NET_UTILS"
-else
-    log_warning "network_utils.sh not found at: $NET_UTILS" >> "$trace_log"
-fi
+verify_scripts "$NEWMODPATH/addon/functions/network_utils.sh"
+# Generic utils
+verify_scripts "$NEWMODPATH/addon/functions/utils/Kitsutils.sh"
 
-date +%s > "$CALIBRATE_LAST_RUN" 2>/dev/null
-echo "running" > "$CALIBRATE_STATE_RUN"
+# Description: Backup current network-related properties to a file.
+echo "$(date +%s)" | atomic_write "$CALIBRATE_LAST_RUN"
+echo "running" | atomic_write "$CALIBRATE_STATE_RUN"
+
+# Create backup when calibration starts
+create_backup
 
 # Description: Ensure core binaries exist and ping works.
-
 check_and_detect_commands() {
     log_info "====================== check_and_detect_commands =========================" >> "$trace_log"
 
@@ -52,7 +232,10 @@ check_and_detect_commands() {
     detect_ip_binary || return 1
     ipbin="$IP_BIN"
 
+    # returns 0 = OK, 1 = ping binary not found, 2 = ping not functional
     check_and_prepare_ping "$pingbin"
+    # get output code
+    local rc
     rc=$?
 
     case "$rc" in
@@ -67,25 +250,29 @@ check_and_detect_commands() {
         2)
             log_warning "Ping binary detected but not functional" >> "$trace_log"
 
+            # Scan for common issues
             if is_install_context; then
-                log_info "Install context detected; skipping calibration." >> "$trace_log"
-                return 1
-            elif  is_daemon_running; then
+                log_info "Install context detected." >> "$trace_log"
+                log_info "Error code 2: Ping not functional in install context (possible no connectivity)" >> "$trace_log"
+                return 2 # skip calibration in install context
+            elif is_daemon_running; then
+                # posible SELinux or permission issue, or network blocking while daemon is active
                 log_error "Ping not functional while daemon is running" >> "$trace_log"
                 log_error "Check SELinux, permissions, or network state" >> "$trace_log"
 
                 if command -v getenforce >/dev/null 2>&1 && getenforce | grep -q Enforcing; then
                     log_warning "SELinux enforcing mode may block ping (CAP_NET_RAW)" >> "$trace_log"
                 fi
+                return 3
             else
-                log_error "Ping not functional; check connectivity or permissions" >> "$trace_log"
+                log_error "Ping not functional; check connectivity or permissions, or if exist" >> "$trace_log"
             fi
             return 1
             ;;
     esac
 }
 
-
+# v4.85
 # Main function to calibrate network settings
 # Description: Orchestrate full calibration flow for radio properties using ping-based scoring.
 # Usage: calibrate_network_settings <delay_seconds>
@@ -96,8 +283,39 @@ calibrate_network_settings() {
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log" 
-    check_and_detect_commands || return 1
+    # Ensure core commands and ping functionality
+    check_and_detect_commands
+    local calibrate_ping_status=$?
 
+    # v4.89
+    # Interpret decision result and return appropriate code to executor.sh for postpone handling, etc.
+    case "$calibrate_ping_status" in
+        0)
+            log_info "Ping functional; proceeding with calibration" >> "$NETMETER_FILE"
+            ;;
+        1)
+            log_error "Ping binary not found; aborting calibration" >> "$NETMETER_FILE"
+            return 1
+            ;;
+        2)
+            log_error "Ping not functional (install/context issue); aborting calibration" >> "$NETMETER_FILE"
+            return 2
+            ;;
+        3)
+            log_info "Ping not functional while daemon running; requesting postpone" >> "$NETMETER_FILE"
+            log_error "Check SELinux, permissions, or network state" >> "$NETMETER_FILE"
+            if command -v getenforce >/dev/null 2>&1 && getenforce | grep -q Enforcing; then
+                log_warning "SELinux enforcing mode may block ping (CAP_NET_RAW)" >> "$NETMETER_FILE"
+            fi
+            return 3
+            ;;
+        *)
+            log_error "Unknown status code: $calibrate_ping_status; aborting calibration" >> "$NETMETER_FILE"
+            return 4
+            ;;
+    esac
+
+  
     local delay=$1 # seconds
     local config_json dns1 dns2 TEST_IP # unassigned local variables
 
@@ -113,24 +331,31 @@ calibrate_network_settings() {
         return 1
     }
 
+    provider_name=$(echo "$config_json" | "$jqbin" -r '.provider // "Unknown"')
+
+    # Extract DNS and ping targets from JSON, with defaults
     dns1=$(echo "$config_json" | "$jqbin" -r '.dns[0] // "8.8.8.8"')
     dns2=$(echo "$config_json" | "$jqbin" -r '.dns[1] // "8.8.4.4"')
     PING_VAL=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
+
+    # Fast path: if we have a valid cache for this provider and ping is still good, reuse it.
+    # This avoids re-calibrating from scratch on every reboot when the operator remains the same.
+    if calibrate_cache_try_use "$provider_name" "$PING_VAL"; then
+        return 0
+    fi
 
     test_dns_ip "$dns1" "$dns2" "$PING_VAL"
     status=$?
 
     case "$status" in
-        0) log_info "Provider FULL_OK" ;;
-        2) log_warning "Provider DNS_ONLY_OK (ping target no metrics; DNS usable for metrics)" ;;
-        3) log_warning "Provider PING_ONLY_OK (ping target usable; DNS not usable for metrics)" ;;
+        0) log_info "Provider FULL_OK" >> "$trace_log" ;;
+        2) log_warning "Provider DNS_ONLY_OK (ping target no metrics; DNS usable for metrics)" >> "$trace_log" ;;
+        3) log_warning "Provider PING_ONLY_OK (ping target usable; DNS not usable for metrics)" >> "$trace_log" ;;
         1)
             # No abort here: we can still try hostname fallback for metrics.
             log_warning "Provider UNUSABLE for metrics; trying fallback targets" >> "$trace_log"
             ;;
     esac
-
-    
 
     # If JSON provides an IP for ping, probe both the IP and a geo-aware
     # hostname (so DNS resolution uses the provider DNS we just configured)
@@ -264,6 +489,10 @@ calibrate_network_settings() {
 
     echo "cooling" > "$CALIBRATE_STATE_RUN"
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
+
+    # Persist cache for future runs (provider keyed).
+    calibrate_cache_save "$provider_name"
+
     echo "BEST_ro_ril_hsupa_category=$BEST_ro_ril_hsupa_category"
     echo "BEST_ro_ril_hsdpa_category=$BEST_ro_ril_hsdpa_category"
     echo "BEST_ro_ril_lte_category=$BEST_ro_ril_lte_category"
@@ -304,6 +533,7 @@ get_values_for_prop() {
     fi
 }
 
+#v4.85
 # Description: Iterate candidate values for a property, score them via ping, persist the best.
 # Usage: calibrate_property <property> "<candidates>" <delay_seconds> <best_file_path>
 calibrate_property() {

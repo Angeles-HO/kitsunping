@@ -108,10 +108,24 @@ copy_file_if_exists "service.sh"
 copy_file_if_exists "uninstall.sh"
 copy_file_if_exists "post-fs-data.sh"
 
+# Re-apply module-specific permissions AFTER copying root boot scripts.
+# Important: Magisk's default set_permissions may chmod bundled binaries (ping/ip/jq/bc) to 0644,
+# breaking runtime detection (e.g., daemon says "ping binary not found").
+if [ -f "$MODPATH/addon/functions/utils/Kitsutils.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$MODPATH/addon/functions/utils/Kitsutils.sh"
+  if command -v set_permissions_module >/dev/null 2>&1; then
+    set_permissions_module "$MODPATH" "$LOGFILE"
+    log_line " [i] Module permissions applied (set_permissions_module)"
+  else
+    log_line " [!] WARN: set_permissions_module not available after sourcing Kitsutils.sh"
+  fi
+else
+  log_line " [!] WARN: Kitsutils.sh not found; cannot apply module-specific permissions"
+fi
+
 [ "$DEBUG" = "true" ] && set -x
 [ "$SKIPMOUNT" = "true" ] && touch "$MODPATH/skip_mount"
-
-set_permissions
 
 for TARGET in $REPLACE; do
   log_line "[*] Replacing destination: $TARGET"
@@ -131,7 +145,6 @@ fi
 rm -rf "$MODPATH/scripts"
 rm -rf "$MODPATH/META-INF"
 rm -rf "$MODPATH/setup.sh"
-rm -rf "$MODPATH/net_profiles"
 rm -rf "$MODPATH/CHANGELOG.md"
 
 
