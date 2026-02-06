@@ -28,17 +28,32 @@ persist.kitsunping.debug=0
 # Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
 persist.kitsunping.ping_timeout=7
 
-# Increase or decrease time for "should_emit_event" function (default: 10 seconds), lower values can reduce time to detect changes in network status and emit events for policy evaluation
-# but can increase battery consumption/log size, so adjust it carefully. (TODO: delete when logs exceed 1MB in debug mode)
-persist.kitsunping.emit_events=10
+# Emit events on network changes (0/1 or false/true). If disabled, the daemon will not spawn the executor.
+persist.kitsunping.emit_events=true
+
+# Debounce window for events in seconds (integer > 0). Lower values react faster but can increase battery/logs.
+# Note: the daemon will auto-raise this to at least `kitsunping.daemon.interval` to avoid event spam.
+persist.kitsunping.event_debounce_sec=10
 
 # This is for custom calibration of the daemon functions, if you don't know what it is, leave it as is.
 # LLM / Sigmoid / Exponential / Linear (default: sigmoid and unique)
-# kitsunping.daemon.algorithm=sigmoid
+# kitsunping.sigmoid.algorithm=sigmoid
 # Values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
-# kitsunping.daemon.sigmoid.alpha=0.5
-# kitsunping.daemon.sigmoid.beta=0.1
-# kitsunping.daemon.sigmoid.gamma=0.1
+# kitsunping.sigmoid.alpha=0.5
+# kitsunping.sigmoid.beta=0.1
+# kitsunping.sigmoid.gamma=0.1
+# Wi-Fi quality threshold used by the daemon to choose profile from Wi-Fi score (0-100).
+# If wifi.score >= threshold, it tends to request `speed`, otherwise `stable` (default: 75).
+kitsunping.wifi.speed_threshold=75
+
+# ====== Calibration cache (Net_Calibrate) ======
+# Reuse previous BEST_* values when the provider/operator is the same and a quick ping validation looks good.
+persist.kitsunping.calibrate_cache_enable=1
+# Max cache age in seconds (default: 7 days)
+persist.kitsunping.calibrate_cache_max_age_sec=604800
+# Validation thresholds to reuse cache
+persist.kitsunping.calibrate_cache_rtt_ms=120
+persist.kitsunping.calibrate_cache_loss_pct=5
 
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.

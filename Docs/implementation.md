@@ -6,7 +6,7 @@ This page keeps deeper implementation details out of the main README, while docu
 
 - `scripts/post-fs-data.sh`: early boot stage
   - Sets permissions / prepares the module environment.
-  - Runs `service.sh` (and restores SELinux state afterwards).
+  - Does early boot prep only; does not start runtime services.
 - `scripts/service.sh`: late boot stage
   - Waits for `sys.boot_completed=1`.
   - Applies baseline network tuning.
@@ -36,7 +36,7 @@ This page keeps deeper implementation details out of the main README, while docu
 - Script: `addon/policy/network_policy.sh`
 - Purpose:
   - Reads `cache/daemon.state` + `cache/daemon.last` and chooses a profile via `addon/policy/decide_profile.sh`.
-  - Writes the chosen profile to `cache/policy.target` (atomically) for the executor to apply.
+  - Writes the chosen profile to `cache/policy.request` (informational) and triggers the executor via a `PROFILE_CHANGED` context.
 
 ## Provider mapping / calibration data
 
@@ -54,10 +54,11 @@ Stored under `cache/`:
 - `event.last.json`: last event (JSON)
 - `signal_quality.json`: radio sampling output (JSON)
 - `policy.request`: informational “desired profile” written by the daemon
-- `policy.target`: target profile for executor to apply
-- `policy.current`: last applied profile
+- `policy.target`: target profile written by the executor before applying
+- `policy.current`: last applied profile written by the executor
 - `policy.event.json`: executor summary (for APK polling)
 - `calibrate.state`, `calibrate.ts`, `calibrate.streak`: calibration lifecycle
+- `calibrate.best.env`, `calibrate.best.meta`: calibration cache (provider-keyed BEST_* values)
 
 ## Tools and fallbacks
 

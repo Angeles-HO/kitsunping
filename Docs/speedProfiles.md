@@ -20,8 +20,8 @@ High-level flow:
 
 1) The daemon monitors Wi‑Fi/mobile status and writes state to `cache/daemon.state`.
 2) When an event happens (Wi‑Fi join/leave, iface change, degraded signal), the daemon triggers the executor.
-3) A policy selector may write a target profile to `cache/policy.target`.
-4) The executor compares `cache/policy.target` vs `cache/policy.current` and applies changes when needed.
+3) If a profile decision is made (built-in or via `addon/policy/decide_profile.sh`), a `PROFILE_CHANGED` event is emitted.
+4) The executor writes/reads `cache/policy.target`, compares it vs `cache/policy.current`, and applies changes when needed.
 
 See the full flow diagram in Docs/Daemon.md.
 
