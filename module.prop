@@ -1,6 +1,6 @@
 id=Kitsunping
 name=Kitsunping
-version=5.0
+version=5.00
 versionCode=500
 author=@Angeles_ho
 description=Improved data transfer over both Wi-Fi and mobile data. Network timeout has also been increased, so you can stay connected even in areas with weak signals. Stability improvements have also been made for a number of devices.
