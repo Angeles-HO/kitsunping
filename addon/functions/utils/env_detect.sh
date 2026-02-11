@@ -122,14 +122,30 @@ detect_ping_binary() {
 ping_is_functional() {
     [ -z "$PING_BIN" ] && return 1
 
-    if ! "$PING_BIN" -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        log_error "Ping found but not functional: $PING_BIN"
+    local loop_target probe_target
+    loop_target="${PING_LOOP_TARGET:-127.0.0.1}"
+    probe_target="${PING_PROBE_TARGET:-8.8.8.8}"
+
+    if ! "$PING_BIN" -c 1 -W 1 "$loop_target" >/dev/null 2>&1; then
+        log_error "Ping missing CAP_NET_RAW or blocked locally: $PING_BIN (loopback $loop_target failed)"
 
         if command -v getenforce >/dev/null 2>&1 &&
            getenforce | grep -q Enforcing; then
-            log_warning "SELinux enforcing may block ping (CAP_NET_RAW)"
+            log_warning "SELinux enforcing may block ping (CAP_NET_RAW); consider 'setenforce 0' or patching sepolicy"
         fi
 
+        if command -v setcap >/dev/null 2>&1; then
+            log_info "You can try: setcap cap_net_raw+ep $PING_BIN"
+        fi
+        if command -v restorecon >/dev/null 2>&1; then
+            log_info "Ensure context is correct: restorecon -RF $(dirname "$PING_BIN")"
+        fi
+
+        return 1
+    fi
+
+    if ! "$PING_BIN" -c 1 -W 1 "$probe_target" >/dev/null 2>&1; then
+        log_warning "Ping connectivity check failed for $probe_target; network or DNS may be unavailable"
         return 1
     fi
 

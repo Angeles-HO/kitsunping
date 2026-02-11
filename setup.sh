@@ -20,6 +20,33 @@ complemento_debug="addon/functions/debug/shared_errors.sh"
 complemento_net_calibrate="addon/Net_Calibrate/calibrate.sh"
 complemento_VKS="addon/Volume-Key-Selector/utils.sh"
 
+# --- Path normalization ---
+# setup.sh is typically sourced by Magisk's update-binary. In that context:
+# - $MODPATH is expected to be set by the installer
+# - $NEWMODPATH may be unset depending on installer implementation
+# If NEWMODPATH/MODPATH are empty, sourcing "$NEWMODPATH/..." becomes "/addon/..." and fails.
+if [ -z "${NEWMODPATH:-}" ]; then
+    NEWMODPATH="${MODPATH:-}"
+fi
+
+# If executed manually (not via Magisk), try to infer module root from this script path.
+if [ -z "${NEWMODPATH:-}" ]; then
+    _self="$0"
+    case "$_self" in
+        /*) : ;;
+        *) _self="$PWD/$_self" ;;
+    esac
+    if command -v readlink >/dev/null 2>&1; then
+        _self=$(readlink -f "$_self" 2>/dev/null || echo "$_self")
+    fi
+    NEWMODPATH="${_self%/*}"
+fi
+
+# Keep MODPATH consistent when running outside Magisk.
+if [ -z "${MODPATH:-}" ]; then
+    MODPATH="$NEWMODPATH"
+fi
+
 # Load base utilities and permissions
 . "$NEWMODPATH/$complemento_kitsutils"
 set_permissions

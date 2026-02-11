@@ -43,7 +43,29 @@ command -v atomic_write >/dev/null 2>&1 || atomic_write() {
 
 # Epoch helper
 command -v now_epoch >/dev/null 2>&1 || now_epoch() {
-    date +%s 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0
+    local ts src
+
+    ts="$(date +%s 2>/dev/null)"
+    case "$ts" in ''|0|*[!0-9]*) ts="" ;; esac
+
+    if [ -z "$ts" ]; then
+        ts="$(awk 'BEGIN{print systime()}' 2>/dev/null)"
+        case "$ts" in ''|0|*[!0-9]*) ts="" ;; esac
+    fi
+
+    if [ -n "$ts" ]; then
+        src="epoch"
+    elif [ -r /proc/uptime ]; then
+        ts="$(awk '{print int($1)}' /proc/uptime 2>/dev/null)"
+        case "$ts" in ''|0|*[!0-9]*) ts=0 ;; esac
+        src="uptime"
+    else
+        ts=0
+        src="unknown"
+    fi
+
+    NOW_EPOCH_SOURCE="$src"
+    printf '%s' "${ts:-0}"
 }
 
 # portable rounding helper

@@ -44,6 +44,60 @@ Executor reads policy.target (target profile) and compares it to policy.current 
 
 also if determinate to need change de profile uses decide profile and execute a x_profile.sh script located on Kitsunping/net_profiles/ folder to apply additional configurations for the selected profile.
 
+---
+
+## Timing and cadence
+
+This section documents the time-related behavior of the daemon/executor and how often calibration can run.
+
+### Daemon loop
+
+- **Main loop interval**: `kitsunping.daemon.interval` (seconds, default: 10). The daemon polls interfaces and updates `cache/daemon.state` every loop.
+- **Event debounce**: `persist.kitsunping.event_debounce_sec` (seconds, default: 5). This suppresses repeated events within the window. The daemon auto-raises debounce to at least the polling interval.
+- **Emit events toggle**: `persist.kitsunping.emit_events` (0/1 or true/false). When disabled, no events are emitted and the executor is not spawned.
+- **Mobile signal sampling**: `SIGNAL_POLL_INTERVAL` (loops, default: 5). Signal quality is sampled every N loops when mobile is the egress path.
+- **Wi-Fi probe interval**: `NET_PROBE_INTERVAL` (loops, default: 3). Optional probe runs every N loops when Wi-Fi is the default route.
+
+### Executor / calibration cadence
+
+Calibration is not a periodic timer. It only runs when the executor is triggered (typically by an event or profile change) and the gating conditions allow it.
+
+- **Cooldown**: `CALIBRATE_COOLDOWN` (seconds, default: 1800). Minimum time between calibrations.
+- **Low-score threshold**: `CALIBRATE_SCORE_LOW` (default: 40). If current score is below this, it contributes to the low-score streak.
+- **Low-score streak**: `CALIBRATE_LOW_STREAK` (default: 2). Minimum consecutive low scores required to allow calibration.
+- **Delay before calibration**: `CALIBRATE_DELAY` (seconds, default: 10). Passed to `calibrate_network_settings`.
+- **Timeout**: `CALIBRATE_TIMEOUT` (seconds, default: 600). Hard limit for calibration runtime.
+- **Settle margin**: `CALIBRATE_SETTLE_MARGIN` (seconds, default: 60). Reserved for post-run settling logic.
+
+### State flow and lock
+
+- `cache/calibrate.state` transitions: `idle` → `running` → `cooling` (or `postponed` / `idle` on abort).
+- The executor uses a lock directory (`cache/calibrate.lock`) to prevent overlapping calibrations across concurrent runs.
+- The lock is released once the run finishes, and the state persists in `calibrate.state` for cooldown gating.
+
+### Policy event payload
+
+- File: `cache/policy.event.json`, updated at the end of every executor run.
+- Fields:
+    - `ts`: epoch seconds captured after the executor run completes.
+    - `target`: profile the executor attempted to apply.
+    - `applied_profile`: 1 if the profile script/resetprop pipeline completed, else 0.
+    - `props_applied`: count of BEST_* properties that were successfully written through `resetprop`.
+    - `props_failed`: count of properties that failed (missing `resetprop`, permission issues, or rc != 0).
+    - `props_failed_list`: array with each failing property name; useful for APK polling/debug dashboards.
+    - `calibrate_state` / `calibrate_ts`: latest calibration lifecycle data.
+    - `event`: static `EXECUTOR_RUN` marker so clients can sanity-check the payload source.
+- Client guidance:
+    - Early APKs can poll this file (atomic write) to render progress boards.
+    - When the daemon later exposes broadcasts, the same structure will be reused to avoid schema drift.
+
+### SELinux and ping capability checks
+
+- Calibration now performs a loopback ping (default `127.0.0.1`) before touching network targets to validate `CAP_NET_RAW`.
+- Failures here usually mean SELinux denied the bundled ping binary; the logs surface remediation hints (`setcap cap_net_raw+ep <ping>`, `restorecon -RF <dir>`).
+- After the capability pass, a short connectivity probe (default `8.8.8.8`) verifies that outbound ICMP is possible; this prevents long calibrations when data is down.
+- For strict environments, ensure a permissive sepolicy patch or grant Magisk’s context access so the helper binaries remain executable after boot.
+
 ```mermaid
 flowchart TD
     A[System boot] --> B[Magisk stage: post-fs-data.sh]

@@ -21,9 +21,13 @@ ro.ril.transmitpower=true
 #==================================
 # Interval of check for the daemon in seconds (default value: 10 seconds)
 kitsunping.daemon.interval=10
+# If enabled, the daemon will store the calibration results in a cache and reuse them for the same network conditions (e.g., same cell tower or Wi-Fi BSSID) to speed up the process and reduce ping overhead. The cache will be invalidated after a certain time or if the network conditions change significantly.
+kitsunping.daemon.signal_poll_interval=6
+kitsunping.daemon.net_probe_interval=3
 
 # Debug mode (0: disable | 1: enable), reduces installation size for better logging, not for normal use
-persist.kitsunping.debug=0
+persist.kitsunping.debug=1
+persist.kitsunping.router.debug=1
 
 # Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
 persist.kitsunping.ping_timeout=7
@@ -54,7 +58,6 @@ persist.kitsunping.calibrate_cache_max_age_sec=604800
 # Validation thresholds to reuse cache
 persist.kitsunping.calibrate_cache_rtt_ms=120
 persist.kitsunping.calibrate_cache_loss_pct=5
-
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.
 
