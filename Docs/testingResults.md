@@ -97,7 +97,7 @@ xychart-beta
 - Best gains vs baseline: +51% download (55.00 Mbps), +294% upload (32.01 Mbps), -23% ping (20 ms).
 - Average over 5 runs vs baseline: +29% download (49.38 Mbps), +246% upload (28.90 Mbps), -15% ping (22 ms).
 
-# Version 5.0 (Automatic calibration)
+# Version 5.0 - Beta (Automatic calibration)
 > base line in this is a previous version of the module (4.89) to compare improvements in this version vs the previous one, since the baseline is the same as 4.89, we can also compare improvements vs original baseline (4.85) and see how it performs against it.
 | Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
 | -------- | --------------- | ------------- | --------- |
@@ -141,8 +141,49 @@ xychart-beta
 - Average over 5 runs vs baseline: +6% download (46.06 Mbps), +19% upload (27.67 Mbps), -9% ping (21 ms).
 - Average over 5 runs vs version 4.89: -7% download (46.06 Mbps), +4% upload (27.67 Mbps), -5% ping (21 ms).
 
+## Version 5.0 - Release + APK (Automatic calibration)
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) |
+| -------- | --------------- | ------------- | --------- |
+| Baseline | 46.06           | 27.67         | 21        |
+| Test 1   | 48.51           | 40.54         | 18		 |
+| Test 2   | 50.42           | 36.80         | 21        |
+| Test 3   | 48.66           | 35.69         | 21        |
+| Test 4   | 53.01           | 35.54         | 19 	     |
+| Test 5   | 46.37           | 33.37         | 19        |
 
-## Comparison (4.85 vs 4.89 vs 5.0)
+- Baseline v5.00 - Beta non APK: 46.06 Mbps down / 27.67 Mbps up / 21 ms ping.
+- Average with v5.00 - Release + APK: 49.30 Mbps down / 36.78 Mbps up / 19.6 ms ping.
+
+```mermaid
+xychart-beta
+	title "Download (Mbps)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "v5.00 - Beta non APK" [48.51, 50.42, 48.66, 53.01, 46.37]
+	line "v5.00 - Release + APK" [48.51, 50.42, 48.66, 53.01, 46.37]
+```
+
+```mermaid
+	title "Upload (Mbps)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "v5.00 - Beta non APK" [22.61, 33.51, 32.93, 28.49, 34.31]
+	line "v5.00 - Release + APK" [40.54, 36.80, 35.69, 35.54, 33.37]
+```
+
+```mermaid
+	title "Ping (ms)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "ms"
+	line "v5.00 - Beta non APK" [21, 22, 20, 20, 21]
+	line "v5.00 - Release + APK" [18, 21, 21, 19, 19]
+```
+
+- Best gains vs baseline: +15% download (53.01 Mbps), +29% upload (36.80 Mbps), -14% ping (18 ms).
+- Average over 5 runs vs baseline: +7% download (49.30 Mbps), +33% upload (36.78 Mbps), -6% ping (19.6 ms).
+- Average over 5 runs vs version 5.00 - Beta non APK: +6% download (49.30 Mbps), +33% upload (36.78 Mbps), -6% ping (19.6 ms).
+ 
+## Comparison (4.85 vs 4.89 vs 5.0 - Beta non APK vs 5.0 - Release + APK)
 
 Observations:
 - Download peaks higher on 4.89 (55.00 Mbps) vs 4.85 (48.80 Mbps) vs 5.0 (51.37 Mbps).
