@@ -58,6 +58,14 @@ This section documents the time-related behavior of the daemon/executor and how 
 - **Mobile signal sampling**: `SIGNAL_POLL_INTERVAL` (loops, default: 5). Signal quality is sampled every N loops when mobile is the egress path.
 - **Wi-Fi probe interval**: `NET_PROBE_INTERVAL` (loops, default: 3). Optional probe runs every N loops when Wi-Fi is the default route.
 
+#### Debounce vs interval coupling (practical)
+
+- Effective debounce is never lower than the daemon loop interval, because values below `kitsunping.daemon.interval` are auto-raised.
+- Practical rule: start with `persist.kitsunping.event_debounce_sec = kitsunping.daemon.interval` and then increase debounce only if event bursts are noisy.
+- Low-latency profile switching example: `kitsunping.daemon.interval=5`, `persist.kitsunping.event_debounce_sec=5`.
+- Conservative/battery-oriented example: `kitsunping.daemon.interval=15`, `persist.kitsunping.event_debounce_sec=20`.
+- Fractional debounce is not currently supported (integer seconds only). If finer responsiveness is needed, reduce `kitsunping.daemon.interval` instead of attempting decimal debounce values.
+
 ### Executor / calibration cadence
 
 Calibration is not a periodic timer. It only runs when the executor is triggered (typically by an event or profile change) and the gating conditions allow it.
@@ -74,6 +82,80 @@ Calibration is not a periodic timer. It only runs when the executor is triggered
 - `cache/calibrate.state` transitions: `idle` → `running` → `cooling` (or `postponed` / `idle` on abort).
 - The executor uses a lock directory (`cache/calibrate.lock`) to prevent overlapping calibrations across concurrent runs.
 - The lock is released once the run finishes, and the state persists in `calibrate.state` for cooldown gating.
+
+### Heavy-activity race prevention model
+
+This model combines **signal + mutex** to avoid overlapping expensive operations:
+
+- **Signal**: `kitsunping.heavy_load` (active heavy tasks counter).
+- **Mutex**: `cache/heavy_activity.lock` (exclusive lock between daemon heavy windows and executor calibration).
+
+#### Normal flow
+
+1. Daemon enters a heavy router window (experimental parsing/cache path).
+2. Daemon acquires `cache/heavy_activity.lock`.
+3. Daemon increments `kitsunping.heavy_load`.
+4. Daemon executes heavy work.
+5. Daemon decrements `kitsunping.heavy_load`.
+6. Daemon releases `cache/heavy_activity.lock`.
+7. Executor, when triggered, checks both:
+    - `kitsunping.heavy_load <= HEAVY_LOAD_MAX_FOR_CALIBRATE` (default max = 0), and
+    - lock availability.
+8. If both pass, calibration continues normally.
+
+#### Explicit contention case (lock in action)
+
+Example: daemon starts heavy router sync at the same moment executor wants to calibrate.
+
+1. Daemon acquires `cache/heavy_activity.lock` first and sets `kitsunping.heavy_load=1`.
+2. Executor reaches calibrate gate:
+    - sees `heavy_load=1` and marks calibration as `postponed`, **or**
+    - if counter is stale but lock is busy, lock-acquire fails and calibration is still `postponed`.
+3. Executor does not run `calibrate.sh`; it updates `calibrate.state=postponed` and `calibrate.ts`.
+4. Daemon finishes heavy window, decrements counter to 0, releases lock.
+5. On next eligible executor trigger, calibration can run.
+
+This dual guard prevents race conditions even if one signal (counter or lock) is temporarily inconsistent.
+
+#### Starvation prevention (priority by time/retries)
+
+To avoid indefinite calibration postponement under frequent heavy activity, executor escalates to priority mode after thresholds:
+
+- `CALIBRATE_FORCE_AFTER_POSTPONES` (default: `12`): force mode if postponements reach this count.
+- `CALIBRATE_FORCE_AFTER_SEC` (default: `600`): force mode if postpone age reaches this many seconds.
+- `CALIBRATE_FORCE_LOCK_WAIT_SEC` (default: `20`): bounded wait trying to acquire `heavy_activity.lock` during force mode.
+- `CALIBRATION_PRIORITY_PROP` (default: `kitsunping.calibration.priority`): signal used by daemon to yield heavy router windows.
+
+Force-mode behavior:
+
+1. Executor detects starvation (`count` or `age` threshold hit).
+2. Executor sets `kitsunping.calibration.priority=1`.
+3. Daemon heavy router cycle checks priority and yields (skips heavy section while priority is active).
+4. Executor retries lock acquisition with bounded wait (`CALIBRATE_FORCE_LOCK_WAIT_SEC`).
+5. On success, calibration runs and postpone tracker resets; on failure, it remains `postponed` and retries on next trigger.
+6. Executor clears `kitsunping.calibration.priority` at the end of the run.
+
+#### Manual test: stale lock/counter recovery
+
+Use this quick sequence from `adb shell` to validate both protections:
+
+1. Simulate stale state (as if daemon died after increment/lock):
+    - `mkdir -p /data/adb/modules/Kitsunping/cache/heavy_activity.lock`
+    - `setprop kitsunping.heavy_load 1`
+2. Trigger executor once (normal event path or manual run).
+3. Expected runtime behavior:
+    - If lock is truly busy, calibration is `postponed`.
+    - If lock is stale/free, executor self-heals (`heavy_load -> 0`) and continues.
+4. Reboot device.
+5. Expected boot behavior (`service.sh` self-heal):
+    - `cache/heavy_activity.lock` is removed.
+    - `kitsunping.heavy_load` is reset to `0`.
+
+Verification hints:
+
+- `getprop kitsunping.heavy_load`
+- `ls -ld /data/adb/modules/Kitsunping/cache/heavy_activity.lock`
+- Check `logs/policy.log` and `logs/services.log` for `postponed`/`recovered`/`reset` entries.
 
 ### Policy event payload
 
