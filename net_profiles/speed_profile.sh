@@ -61,25 +61,14 @@ EOF
 
 # adjust VM/FS for throughput (conservative values)
 apply_param_set <<'EOF'
-20|/proc/sys/vm/dirty_background_ratio|dirty_background_ratio
-40|/proc/sys/vm/dirty_ratio|dirty_ratio
+10|/proc/sys/vm/dirty_background_ratio|dirty_background_ratio (mobile-safe)
+25|/proc/sys/vm/dirty_ratio|dirty_ratio (mobile-safe)
 20000|/proc/sys/vm/dirty_expire_centisecs|dirty_expire_centisecs
 5000|/proc/sys/vm/dirty_writeback_centisecs|dirty_writeback_centisecs
 60|/proc/sys/vm/swappiness|swappiness (prefer RAM, moderate)
 0|/proc/sys/vm/zone_reclaim_mode|zone_reclaim_mode disabled
 EOF
 
-# Specific optimization for wireless interfaces (if any)
-echo "[PROFILE] applying WiFi optimizations (if applicable)" >> "$LOG_OUT"
-for wifi_dir in /sys/class/net/*/wireless; do
-	if [ -d "$wifi_dir" ]; then
-		interface=$(dirname "$(dirname "$wifi_dir")")
-		interface=$(basename "$interface")
-		# increase tx_queue_len moderately
-		if [ -e "/sys/class/net/$interface/tx_queue_len" ]; then
-			echo "1000" > "/sys/class/net/$interface/tx_queue_len" 2>/dev/null || true
-		fi
-	fi
-done
+echo "[PROFILE] speed: skip tx_queue_len override (driver default preferred)" >> "$LOG_OUT"
 
 echo "[PROFILE] speed done" >> "$LOG_OUT"

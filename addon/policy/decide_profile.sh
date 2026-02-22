@@ -10,7 +10,7 @@
 #   Returns: 
 #     echoes the decided profile name (speed/balanced/stable)
 
-# TODO: implement logic for gaming profile
+# TODO: [PENDING] Implement dedicated gaming profile selection logic TODO:
 pick_profile() {
     wifi_state="$1" # Current state of Wi-Fi
     iface="$2" # Current Wi-Fi interface

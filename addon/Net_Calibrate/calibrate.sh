@@ -29,10 +29,10 @@ SCRIPT_DIR="$NEWMODPATH/addon/Net_Calibrate"
 ADDON_DIR="$NEWMODPATH/addon"
 NET_PROPERTIES_KEYS="ro.ril.hsupa.category ro.ril.hsdpa.category" # Priority, for [upload and download] WIFI
 NET_OTHERS_PROPERTIES_KEYS="ro.ril.lte.category ro.ril.ltea.category ro.ril.nr5g.category" # Priority, for [LTE, LTEA, 5G] Data
-NET_VAL_HSUPA="5 7 9 11 13 15 17 19 21 23" # Testing values for higher upload
-NET_VAL_HSDPA="9 12 15 18 21 24 26 28" # Testing values for higher download
+NET_VAL_HSUPA="10 12 14 16 18 20 22 24 26" # Testing values for higher upload
+NET_VAL_HSDPA="10 12 14 16 18 20 22 24 26" # Testing values for higher download
 NET_VAL_LTE="5 6 7 8 9 10 11 12" # Testing values for LTE data technology
-NET_VAL_LTEA="6 8 10 12 14 16 18 20 22 24" # Testing values for LTEA data technology
+NET_VAL_LTEA="6 8 10 12 14 16 18 20 22" # Testing values for LTEA data technology
 NET_VAL_5G="1 2 3 4 5" # Testing values for 5G data technology
 
 # Logs Variables
@@ -756,7 +756,7 @@ EOF
 
             [ -z "$DNS_LIST" ] && DNS_LIST="8.8.8.8 1.1.1.1"
             [ -z "$PING" ] && PING="8.8.8.8"
-    # TODO: Need add a ndc binary for many architectures and compatibility
+    # TODO: [PENDING] Add ndc binary compatibility strategy for multiple architectures TODO:
     for iface in $($ipbin -o link show | awk -F': ' '{print $2}' | grep -E 'rmnet|wlan|eth|ccmni|usb'); do
         log_info "Configuring DNS on interface: $iface" >> "$trace_log"
       ndc resolver setifacedns "$iface" "" $DNS_LIST >/dev/null 2>&1

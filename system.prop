@@ -19,15 +19,49 @@ ro.ril.transmitpower=true
 # ====== Daemon / Kitsunping ======
 # This section is for the module Kitsunping, if you don't know what it is, leave it as is.
 #==================================
-# Interval of check for the daemon in seconds (default value: 10 seconds)
+# Polling intervals (seconds)
+# Interval of checks for the daemon (default: 10)
 kitsunping.daemon.interval=10
-# If enabled, the daemon will store the calibration results in a cache and reuse them for the same network conditions (e.g., same cell tower or Wi-Fi BSSID) to speed up the process and reduce ping overhead. The cache will be invalidated after a certain time or if the network conditions change significantly.
+# Poll radio signal quality every N loops when mobile is active
 kitsunping.daemon.signal_poll_interval=6
+# Run Wi-Fi internet probe every N loops
 kitsunping.daemon.net_probe_interval=3
 
-# Debug mode (0: disable | 1: enable), reduces installation size for better logging, not for normal use
+# Optional composite weights (if unset, daemon uses defaults)
+kitsunping.sigmoid.alpha=0.4
+kitsunping.sigmoid.beta=0.3
+kitsunping.sigmoid.gamma=0.3
+
+# Wi-Fi quality threshold used by daemon profile selection (0-100)
+# If wifi.score >= threshold => tends to request `speed`, else `stable` (default: 75)
+kitsunping.wifi.speed_threshold=75
+
+# Debug mode (0: disable | 1: enable)
 persist.kitsunping.debug=1
 persist.kitsunping.router.debug=1
+# Legacy/compat fallback read by daemon when persist prop is absent
+kitsunping.router.debug=1
+
+# Enable Kitsunrouter (0: disable | 1: enable), a component that can adjust network parameters based on the ping results to optimize performance. It can be used to switch between different network profiles (e.g., speed vs stability) or to trigger specific actions (e.g., disable background data) when poor connectivity is detected.
+persist.kitsunrouter.enable=1
+persist.kitsunrouter.debug=0
+# Pairing state updated by the app after QR/code validation with the router-agent.
+# 0: not paired | 1: paired
+persist.kitsunrouter.paired=0
+
+# Router identity/capabilities detection controls
+# Enable router-aware flow inside daemon (0: disable | 1: enable)
+persist.kitsunping.router.experimental=1
+kitsunping.router.experimental=1
+# Emit OpenWrt-specific router capability events when DNI/caps change (0: disable | 1: enable)
+persist.kitsunping.router.openwrt_mode=1
+kitsunping.router.openwrt_mode=1
+# Cache TTL for per-BSSID router info (seconds)
+persist.kitsunping.router.cache_ttl=3600
+kitsunping.router.cache_ttl=3600
+# Infer channel width from link speed when width is not explicit (0: disable | 1: enable)
+persist.kitsunping.router.infer_width=1
+kitsunping.router.infer_width=1
 
 # Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
 persist.kitsunping.ping_timeout=7
@@ -38,17 +72,7 @@ persist.kitsunping.emit_events=true
 # Debounce window for events in seconds (integer > 0). Lower values react faster but can increase battery/logs.
 # Note: the daemon will auto-raise this to at least `kitsunping.daemon.interval` to avoid event spam.
 persist.kitsunping.event_debounce_sec=10
-
-# This is for custom calibration of the daemon functions, if you don't know what it is, leave it as is.
-# LLM / Sigmoid / Exponential / Linear (default: sigmoid and unique)
-# kitsunping.sigmoid.algorithm=sigmoid
-# Values (α, β, γ) for sigmoid: 0.5, 0.1, 0.1
-# kitsunping.sigmoid.alpha=0.5
-# kitsunping.sigmoid.beta=0.1
-# kitsunping.sigmoid.gamma=0.1
-# Wi-Fi quality threshold used by the daemon to choose profile from Wi-Fi score (0-100).
-# If wifi.score >= threshold, it tends to request `speed`, otherwise `stable` (default: 75).
-kitsunping.wifi.speed_threshold=75
+kitsunping.event.debounce_sec=10
 
 # ====== Calibration cache (Net_Calibrate) ======
 # Reuse previous BEST_* values when the provider/operator is the same and a quick ping validation looks good.
@@ -76,6 +100,9 @@ ro.telephony.default_network=9
 ro.wifi.direct.interface=p2p0
 #wifi.tethering.interface=wlan0
 #wifi.supplicant_scan_interval=0 (deprecated, use 15 or higher values to reduce battery consumption)
+
+# Temporal experimental
+net.ipv4.tcp_mtu_probing=1
 
 # --- VoLTE / VoWiFi ---
 persist.vendor.mtk.volte.enable=1

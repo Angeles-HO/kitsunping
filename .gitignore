@@ -21,9 +21,7 @@ kUtils.txt
 .vscode/
 .idea/
 
-# Others
 results/
-
-
+testdata/
 # daemon process proposal
 folder-structure.md
