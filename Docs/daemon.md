@@ -182,12 +182,25 @@ flowchart TD
 ---
 
 #### Daemon / Kitsunping Properties
+### Property convention (recommended)
+- **persist.kitsunping.x**: runtime toggles meant to be switched by user/tests without rebuilding the module.
+- **kitsunping.daemon.x**: daemon behavior and cadence settings.
+- **kitsunping.router.x**: router-specific logic namespace (experimental in 6.0).
+
 ### Debugging and Performance Tuning
 - **kitsunping.daemon.interval**: Sets the interval for daemon checks in seconds (default: 10 seconds).
 - **persist.kitsunping.debug**: Toggles debug mode for detailed logging (0: disable | 1: enable).
 - **persist.kitsunping.ping_timeout**: Tuning value used by calibration/probing (currently used as a ping count in `Net_Calibrate/calibrate.sh`; default: 7).
 - **persist.kitsunping.emit_events**: Enables/disables emitting events and spawning the executor (0/1 or false/true; default: true).
 - **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 5; auto-raised to at least `kitsunping.daemon.interval`).
+
+### Router / OpenWrt (6.0 experimental)
+- **persist.kitsunping.router.experimental**: Master gate for router fingerprint/cache logic (default: 0).
+- **persist.kitsunping.router.openwrt_mode**: Enables router capability event emission path for OpenWrt lab setup (default: 0).
+- **persist.kitsunping.router.debug**: Verbose router parsing/debug logs in daemon (default recommended: 0; enable only in tests).
+- **persist.kitsunping.router.cache_ttl**: TTL in seconds for `cache/router_<bssid>.info` (default: 3600).
+
+When `router.experimental=0`, daemon skips router parsing/signature pipeline and behaves as stable baseline.
 
 ### Wi‑Fi decision
 - **kitsunping.wifi.speed_threshold**: Wi‑Fi quality threshold used to choose profile (score 0–100). If `wifi.score >= threshold` the daemon tends to request `speed`, else `stable`.

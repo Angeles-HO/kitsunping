@@ -25,3 +25,7 @@ results/
 testdata/
 # daemon process proposal
 folder-structure.md
+Docs/resumen_estado_modulo_actual.md
+tools/filter_getprop_qcom_wifi.py
+tools/filter_wifi_dump.py
+tools/merge_wifi_profiles.py
