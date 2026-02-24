@@ -16,15 +16,16 @@ ro.ril.enable.a55=1
 ro.ril.gprsclass=34
 ro.ril.transmitpower=true
 
-# ====== Daemon / Kitsunping ======
+# ====== Kitsunping / Module ======
 # This section is for the module Kitsunping, if you don't know what it is, leave it as is.
 #==================================
+
 # Polling intervals (seconds)
-# Interval of checks for the daemon (default: 10)
+# Interval of checks for the daemon (default: 10, lower value better activity, higher value less battery consumption)
 kitsunping.daemon.interval=10
 # Poll radio signal quality every N loops when mobile is active
 kitsunping.daemon.signal_poll_interval=6
-# Run Wi-Fi internet probe every N loops
+# Run Wi-Fi internet probe every N loops (check if Wi-Fi has internet access, default: 3)
 kitsunping.daemon.net_probe_interval=3
 
 # Optional composite weights (if unset, daemon uses defaults)
@@ -36,18 +37,37 @@ kitsunping.sigmoid.gamma=0.3
 # If wifi.score >= threshold => tends to request `speed`, else `stable` (default: 75)
 kitsunping.wifi.speed_threshold=75
 
-# Debug mode (0: disable | 1: enable)
-persist.kitsunping.debug=1
-persist.kitsunping.router.debug=1
-# Legacy/compat fallback read by daemon when persist prop is absent
-kitsunping.router.debug=1
+# Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
+persist.kitsunping.ping_timeout=7
 
-# Enable Kitsunrouter (0: disable | 1: enable), a component that can adjust network parameters based on the ping results to optimize performance. It can be used to switch between different network profiles (e.g., speed vs stability) or to trigger specific actions (e.g., disable background data) when poor connectivity is detected.
+# Emit events on network changes (0/1 or false/true). If disabled, the daemon will not spawn the executor.
+persist.kitsunping.emit_events=true
+
+# Module debug mode (0: disable | 1: enable)
+persist.kitsunping.debug=1
+
+# ====== Kitsunping / App ======
+# Optional direct broadcast from daemon to APK for immediate UI updates without waiting for file polling (0: disable | 1: enable).
+# If enabled, the daemon will send a broadcast intent `com.kitsunping.ACTION_UPDATE` with extras containing the latest network status and ping results whenever an event is emitted.
+persist.kitsunping.direct_broadcast=1
+
+# Debounce window for events in seconds (integer > 0). Lower values react faster but can increase battery/logs.
+# Note: the daemon will auto-raise this to at least `kitsunping.daemon.interval` to avoid event spam.
+persist.kitsunping.event_debounce_sec=10
+kitsunping.event.debounce_sec=10
+
+# ====== Kitsunping / Router ======
+# Enable Kitsunrouter (0: disable | 1: enable), a component that can adjust network parameters based on ping results to optimize performance.
 persist.kitsunrouter.enable=1
 persist.kitsunrouter.debug=0
 # Pairing state updated by the app after QR/code validation with the router-agent.
 # 0: not paired | 1: paired
 persist.kitsunrouter.paired=0
+
+# Router debug mode (0: disable | 1: enable)
+persist.kitsunping.router.debug=1
+# Legacy/compat fallback read by daemon when persist prop is absent
+kitsunping.router.debug=1
 
 # Router identity/capabilities detection controls
 # Enable router-aware flow inside daemon (0: disable | 1: enable)
@@ -63,17 +83,6 @@ kitsunping.router.cache_ttl=3600
 persist.kitsunping.router.infer_width=1
 kitsunping.router.infer_width=1
 
-# Increase or decrease ping timeout (default: 10 seconds), higher values can reduce false negatives on bad networks
-persist.kitsunping.ping_timeout=7
-
-# Emit events on network changes (0/1 or false/true). If disabled, the daemon will not spawn the executor.
-persist.kitsunping.emit_events=true
-
-# Debounce window for events in seconds (integer > 0). Lower values react faster but can increase battery/logs.
-# Note: the daemon will auto-raise this to at least `kitsunping.daemon.interval` to avoid event spam.
-persist.kitsunping.event_debounce_sec=10
-kitsunping.event.debounce_sec=10
-
 # ====== Calibration cache (Net_Calibrate) ======
 # Reuse previous BEST_* values when the provider/operator is the same and a quick ping validation looks good.
 persist.kitsunping.calibrate_cache_enable=1
@@ -85,7 +94,7 @@ persist.kitsunping.calibrate_cache_loss_pct=5
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.
 
-# ====== End of Daemon Kitsunping ======
+# ====== End of Kitsunping section ======
 
 # Method of correlation of the database to obtain location (adjust if privacy is prioritized)
 # ro.ril.enable.dcm.feature=0

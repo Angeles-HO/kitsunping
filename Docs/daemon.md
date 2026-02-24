@@ -79,13 +79,20 @@ Calibration is not a periodic timer. It only runs when the executor is triggered
 
 ### State flow and lock
 
-- `cache/calibrate.state` transitions: `idle` → `running` → `cooling` (or `postponed` / `idle` on abort).
+- `cache/calibrate.state` transitions: `idle` -> `running` -> `cooling` (or `postponed` / `idle` on abort).
 - The executor uses a lock directory (`cache/calibrate.lock`) to prevent overlapping calibrations across concurrent runs.
 - The lock is released once the run finishes, and the state persists in `calibrate.state` for cooldown gating.
 
 ### Heavy-activity race prevention model
 
 This model combines **signal + mutex** to avoid overlapping expensive operations:
+
+**Simple explanation:**
+
+- Think of this like one narrow door: only one heavy task can pass at a time.
+- If the daemon is busy doing heavy router work, calibration waits.
+- If calibration has waited too long, it raises priority so daemon heavy work pauses briefly and calibration can run.
+- This avoids two heavy tasks fighting each other and keeps the phone/network more stable.
 
 - **Signal**: `kitsunping.heavy_load` (active heavy tasks counter).
 - **Mutex**: `cache/heavy_activity.lock` (exclusive lock between daemon heavy windows and executor calibration).
@@ -275,6 +282,7 @@ flowchart TD
 - **persist.kitsunping.ping_timeout**: Tuning value used by calibration/probing (currently used as a ping count in `Net_Calibrate/calibrate.sh`; default: 7).
 - **persist.kitsunping.emit_events**: Enables/disables emitting events and spawning the executor (0/1 or false/true; default: true).
 - **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 5; auto-raised to at least `kitsunping.daemon.interval`).
+- **persist.kitsunping.direct_broadcast**: Optional direct daemon->APK broadcast (`com.kitsunping.ACTION_UPDATE`) for immediate UI refresh without waiting for file polling (default: enabled).
 
 ### Router / OpenWrt (6.0 experimental)
 - **persist.kitsunping.router.experimental**: Master gate for router fingerprint/cache logic (default: 0).
