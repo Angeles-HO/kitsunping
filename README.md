@@ -1,117 +1,61 @@
 # Kitsunping Magisk Network Optimizer
 
-Magisk module that tunes radio/network properties based on detected carrier (MCC/MNC) and country, applies provider-specific DNS and ping targets, and calibrates RIL categories to improve stability and throughput on rooted Android devices.
-
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-## Problem
+## Introduction
 
-- Default radio/RIL properties are generic and often suboptimal for specific carriers and regions.
-- Devices may pick slow or distant DNS, increasing latency and packet loss.
-- Some devices lack reliable MCC/MNC detection during boot, making automation brittle.
-- Bundled tools (ping, jq, ip) can be missing or linked against unavailable libs on certain ROMs.
+Kitsunping is a Magisk module focused on improving network stability and responsiveness on rooted Android devices.
+It runs automatically in the background and adapts settings based on connection state (Wi‑Fi or mobile data).
 
-## Solution Approach
+## Purpose
 
-- Detect country (ISO) and carrier (MCC/MNC) and map to provider entries (JSON per country) with DNS and ping targets.
-- Calibrate key RIL properties (HSUPA/HSDPA/LTE/LTEA/NR) via iterative ping scoring to pick best values for current network type.
-- Fallbacks: if MCC/MNC/ISO unavailable, use default `unknow.json` provider with safe DNS/ping.
-- Logging and caching: write best values to cache and system.prop; keep tracing logs under `/sdcard/trace_log*.log` and module logs in `logs/`.
-- Resilience: prefer system `ping`; bundled static `jq` for parsing; permission/bootstrap handled in `post-fs-data.sh`.
+Its main goal is to reduce unstable behavior, high latency, and inconsistent network performance across carriers/regions
+by applying more suitable settings for the active network.
 
-## Quick Start
+## What it does and what this README contains
 
-1) Flash the module ZIP in Magisk
-2) Reboot
-3) Check logs in `logs/` (especially `logs/services.log`, `logs/daemon.log`, `logs/policy.log`)
+### What it does
 
-The module applies baseline network tuning in late boot and then starts a daemon that monitors Wi‑Fi/mobile state. When conditions change, it triggers the policy executor to apply profiles and (optionally) run calibration.
+- Detects network context (for example, transport type and connection state).
+- Applies network profiles when state changes.
+- Runs calibration when needed.
+- Stores diagnostic results in local logs and cache files.
 
-## Documentation
+### Quick start
 
-- Architecture + daemon flow: [Docs/Daemon.md](Docs/Daemon.md)
-- Wi‑Fi / system properties reference: [Docs/wifiProps.md](Docs/wifiProps.md)
-- Scoring math (RSRP/SINR/composite): [Docs/helpful.md](Docs/helpful.md)
-- Profile notes (concepts): [Docs/speedProfiles.md](Docs/speedProfiles.md)
-- Benchmarks / test runs: [Docs/testingResults.md](Docs/testingResults.md)
-- Implementation notes (detection, mapping, caching): [Docs/implementation.md](Docs/implementation.md)
+1) Flash the ZIP in Magisk.
+2) During installation, choose static or automatic mode.
+3) Reboot the device.
+4) Check `logs/` and `cache/` to review activity and results.
 
-## Tests / Benchmarks
+### Documentation by topic
 
-Test runs (tables + Mermaid charts) are kept in: [Docs/testingResults.md](Docs/testingResults.md)
+- Daemon flow and events: [Docs/Daemon.md](Docs/Daemon.md)
+- Internal implementation: [Docs/implementation.md](Docs/implementation.md)
+- Wi‑Fi properties: [Docs/wifiProps.md](Docs/wifiProps.md)
+- Speed/stability profile notes: [Docs/speedProfiles.md](Docs/speedProfiles.md)
+- Test results: [Docs/testingResults.md](Docs/testingResults.md)
+- Router/App integration: [Docs/routerIntegration.md](Docs/routerIntegration.md)
 
----
+> Note: Advanced parameters (technical props/tunables) are documented in the files above to keep this main page simple.
 
-## Borrowed / Credits / External
+## Acknowledgements
 
-This module includes or is inspired by external tools and resources:
-
-- **Keycheck binary**  
-  Source and credits:  
-  [/addon/Volume-Key-Selector/README.md#credits](/addon/Volume-Key-Selector/README.md#credits)  
-  Compiled by **Zackptg5**
-- **Static bc binary**
-  Source and credits:
-  [/addon/bc/README.md#credits](/addon/bc/README.md#credits)  
-  Compiled by **Zackptg5** 
-
+Thanks to **Zackptg5** for binaries/contributions used in this project (for example: `ping`, `KeyBin`, `iw`, `bc`).
 
 All credits belong to their respective authors.
 
----
-
-## Contributing
-
-Contributions are welcome and appreciated.
-
-You can contribute in the following ways:
-
-- Report bugs or unexpected behavior
-- Open issues with suggestions or improvements
-- Share test results (before / after) for different carriers or regions
-- Contribute carrier/provider data (DNS, MCC/MNC mappings)
-- Submit pull requests with fixes, optimizations, or documentation improvements
-
-
-
-### Carrier / Provider Data
-
-Network behavior varies significantly by country and carrier.  
-If you want to help improve accuracy and stability, please open an **issue** with:
-
-- Country (ISO code)
-- Carrier name
-- MCC / MNC
-- Detected DNS (e.g. `getprop net.dns*`, or similar you can search on build.prop / system.prop with getprop)
-- Optional: before / after latency or throughput results
-
-All data sharing is **voluntary**.
-
----
-
 ## Privacy
 
-This module does **not** collect, transmit, or upload any user data.
+Kitsunping does **not** send data to remote servers and does **not** use telemetry.
 
-- No telemetry
-- No remote logging
-- No background uploads
-- No location/GPS access; only reads mcc/mnc from system properties
+- No background uploads.
+- No remote logging.
+- Operational data stays local on the device.
 
-All logs and cache files remain local on the device unless the user chooses to share them manually.
-
----
-
-## Other Notes
-
-If you want to read more about parameters, features, or implementation details, start here:
-
-- [Docs/wifiProps.md](Docs/wifiProps.md)
-- [Docs/Daemon.md](Docs/Daemon.md)
-
----
+Detailed reference: [Docs/pricacy.md](Docs/pricacy.md)
 
 ## License
 
-This project is released under the MIT License.  
-See the `LICENSE` file for more details.
+This project is released under the MIT License.
+See [LICENSE](LICENSE).
