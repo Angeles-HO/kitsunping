@@ -1,0 +1,37 @@
+daemon_write_state_file() {
+    cat <<EOF | atomic_write "$STATE_FILE"
+iface=$current_iface
+transport=$transport
+wifi.iface=$WIFI_IFACE
+wifi.state=$wifi_state
+wifi.link=$wifi_link
+wifi.ip=$wifi_ip
+wifi.egress=$wifi_egress
+wifi.score=$wifi_score
+wifi.reason=$wifi_path_reason
+wifi.quality=$wifi_quality_reason
+wifi.rssi_dbm=${wifi_rssi_dbm:--}
+wifi.probe_ok=$wifi_probe_ok
+wifi.bssid=${wifi_bssid:-}
+wifi.band=${wifi_band:-}
+wifi.chan=${wifi_chan:-}
+wifi.freq=${wifi_freq:-}
+wifi.width=${wifi_width:-}
+wifi.width_source=${wifi_width_source:-}
+wifi.width_confidence=${wifi_width_confidence:-}
+wifi.ssid=${wifi_ssid:-}
+mobile.iface=$mobile_iface
+mobile.link=$mobile_link
+mobile.ip=$mobile_ip
+mobile.egress=$mobile_egress
+mobile.score=$mobile_score
+mobile.reason=$mobile_reason
+rsrp_dbm=${rsrp:--}
+rsrp_score=${rsrp_score:-0}
+sinr_db=${sinr:--}
+sinr_score=${sinr_score:-0}
+composite_score=${composite:-0}
+composite_ema=${composite_ema_val:-0}
+profile=${profile:-unknown}
+EOF
+}

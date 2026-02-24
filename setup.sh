@@ -84,8 +84,12 @@ echo "GPU INFO        = $(prop_or_default ro.hardware.egl "N/A")"
 echo "CPU INFO        = $(prop_or_default ro.hardware "N/A")"
 echo "PROCESSOR BRAND = $(prop_or_default ro.board.platform "N/A")"
 echo "CPU ARCH        = $(prop_or_default ro.product.cpu.abi "N/A")"
-# TODO: add ram info to system.prop, to usage to calc a value to use in profiles: persist.kitsunping.ram.size, *.habiablelity, etc
-echo "RAM INFO        = $(free -m | awk '/^Mem:/{print $2}')"
+# Detect RAM and delegate to Kitsutils.sh (function persisted there)
+detect_and_write_ram_props "$NEWMODPATH" >/dev/null 2>&1 || true
+# Report RAM info from the written system.prop (fallback to free output)
+RAM_INFO=$(grep -m1 '^persist.kitsunping.ram.size=' "$NEWMODPATH/system.prop" 2>/dev/null | cut -d= -f2 || echo "$(free -m | awk '/^Mem:/{print $2}')MB")
+RAM_CLASS=$(grep -m1 '^persist.kitsunping.ram.class=' "$NEWMODPATH/system.prop" 2>/dev/null | cut -d= -f2 || echo "unknown")
+echo "RAM INFO        = ${RAM_INFO} (class: ${RAM_CLASS})"
 echo "ANDROID VERSION = $(prop_or_default ro.build.version.release "N/A")"
 echo "${divider}"
 echo "❖ Contact:"

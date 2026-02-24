@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # Net Calibrate.sh Script
-# Version: 4.89
+# Version: 5.4 - non release
 # Description: This script calibrates network properties for optimal performance.
-# Status: re open - 4/02/2026
+# Status: re open - 24/02/2026
 
 # Global variables
 # NOTE: This script is commonly *sourced* by executor.sh. When sourced, $0 is the
@@ -23,6 +23,14 @@ if [ -z "${NEWMODPATH:-}" ] || [ ! -d "${NEWMODPATH:-/}" ]; then
 fi
 
 : "${MODDIR:=$NEWMODPATH}"
+
+uint_or_default() {
+    local raw="$1" def="$2"
+    case "$raw" in
+        ''|*[!0-9]*) printf '%s' "$def" ;;
+        *) printf '%s' "$raw" ;;
+    esac
+}
 
 # Keep legacy variable names for internal references.
 SCRIPT_DIR="$NEWMODPATH/addon/Net_Calibrate"
@@ -98,9 +106,8 @@ calibrate_cache_try_use() {
         return 1
     fi
 
-    max_age=$(getprop persist.kitsunping.calibrate_cache_max_age_sec 2>/dev/null)
-    [ -z "$max_age" ] && max_age=604800
-    case "$max_age" in ''|*[!0-9]* ) max_age=604800;; esac
+    max_age=$(getprop persist.kitsunping.calibrate_cache_max_age_sec 2>/dev/null | tr -d '\r\n')
+    max_age="$(uint_or_default "$max_age" "604800")"
 
     now=$(date +%s)
     case "$now" in ''|*[!0-9]* ) now=0;; esac
@@ -115,13 +122,11 @@ calibrate_cache_try_use() {
     fi
 
     # Quick validation: ensure we still have good ping metrics.
-    max_rtt=$(getprop persist.kitsunping.calibrate_cache_rtt_ms 2>/dev/null)
-    [ -z "$max_rtt" ] && max_rtt=120
-    case "$max_rtt" in ''|*[!0-9]* ) max_rtt=120;; esac
+    max_rtt=$(getprop persist.kitsunping.calibrate_cache_rtt_ms 2>/dev/null | tr -d '\r\n')
+    max_rtt="$(uint_or_default "$max_rtt" "120")"
 
-    max_loss=$(getprop persist.kitsunping.calibrate_cache_loss_pct 2>/dev/null)
-    [ -z "$max_loss" ] && max_loss=5
-    case "$max_loss" in ''|*[!0-9]* ) max_loss=5;; esac
+    max_loss=$(getprop persist.kitsunping.calibrate_cache_loss_pct 2>/dev/null | tr -d '\r\n')
+    max_loss="$(uint_or_default "$max_loss" "5")"
 
     # Prefer ping_target from JSON, but fallback to 8.8.8.8
     [ -z "$ping_target" ] && ping_target="8.8.8.8"
@@ -185,8 +190,8 @@ calibrate_cache_save() {
 }
 
 # Getprops variables
-ping_count="$(getprop persist.kitsunping.ping_timeout)"
-ping_count="${ping_count:-7}"
+ping_count="$(getprop persist.kitsunping.ping_timeout | tr -d '\r\n')"
+ping_count="$(uint_or_default "$ping_count" "7")"
 
 # Rare if not found but just in case
 verify_scripts() {
@@ -839,13 +844,7 @@ test_configuration() {
     # Execute ping with consistent format
     # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 1 
 
-    [ -z "$ping_count" ] && ping_count="7"
-
-    case "$ping_count" in
-        ''|*[!0-9]*)
-        ping_count=7
-        ;;
-    esac
+    ping_count="$(uint_or_default "$ping_count" "7")"
     local output 
     output="$($PING_BIN -c "$ping_count" -i 0.5 -W 1 "$TEST_IP" 2>&1)"
     [ $? -ne 0 ] && { echo "9999 9999 100"; return 2; }
