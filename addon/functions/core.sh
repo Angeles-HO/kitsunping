@@ -14,6 +14,11 @@ fi
 : "${NEWMODPATH:=${MODDIR}}"
 : "${ADDON_DIR:=${MODDIR}/addon}"
 
+POLICY_COMMON_SH="${ADDON_DIR}/functions/policy_common.sh"
+if [ -f "$POLICY_COMMON_SH" ]; then
+    . "$POLICY_COMMON_SH"
+fi
+
 # logging helpers: define only if not already present
 command -v log_info >/dev/null 2>&1 || log_info() { printf '[DAEMON][INFO] %s\n' "$*" >&2; }
 command -v log_debug >/dev/null 2>&1 || log_debug() { printf '[DAEMON][DEBUG] %s\n' "$*" >&2; }
@@ -21,51 +26,125 @@ command -v log_warning >/dev/null 2>&1 || log_warning() { printf '[DAEMON][WARN]
 command -v log_error >/dev/null 2>&1 || log_error() { printf '[DAEMON][ERROR] %s\n' "$*" >&2; }
 command -v log_policy >/dev/null 2>&1 || log_policy() { printf '[POLICY] %s\n' "$*" >&2; }
 
-# function existence helper for portability
-command -v command_exists >/dev/null 2>&1 || command_exists() { command -v "$1" >/dev/null 2>&1; }
+command -v heavy_load_prop_name >/dev/null 2>&1 || heavy_load_prop_name() {
+    printf '%s' "${HEAVY_LOAD_PROP:-kitsunping.heavy_load}"
+}
+
+command -v is_uint >/dev/null 2>&1 || is_uint() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+command -v heavy_load_read >/dev/null 2>&1 || heavy_load_read() {
+    local prop_name raw
+    prop_name="$(heavy_load_prop_name)"
+    raw="$(getprop "$prop_name" 2>/dev/null | tr -d '\r\n')"
+    is_uint "$raw" || raw=0
+    [ "$raw" -lt 0 ] 2>/dev/null && raw=0
+    printf '%s' "$raw"
+}
+
+command -v heavy_load_write >/dev/null 2>&1 || heavy_load_write() {
+    local value="$1" prop_name
+    prop_name="$(heavy_load_prop_name)"
+    is_uint "$value" || value=0
+    [ "$value" -lt 0 ] 2>/dev/null && value=0
+    if command -v setprop >/dev/null 2>&1; then
+        setprop "$prop_name" "$value" >/dev/null 2>&1 || true
+    elif command -v resetprop >/dev/null 2>&1; then
+        resetprop "$prop_name" "$value" >/dev/null 2>&1 || true
+    fi
+    printf '%s' "$value"
+}
+
+command -v heavy_load_begin >/dev/null 2>&1 || heavy_load_begin() {
+    local current next
+    current="$(heavy_load_read)"
+    is_uint "$current" || current=0
+    next=$((current + 1))
+    heavy_load_write "$next" >/dev/null
+    printf '%s' "$next"
+}
+
+command -v heavy_load_end >/dev/null 2>&1 || heavy_load_end() {
+    local current next
+    current="$(heavy_load_read)"
+    is_uint "$current" || current=0
+    next=$((current - 1))
+    [ "$next" -lt 0 ] && next=0
+    heavy_load_write "$next" >/dev/null
+    printf '%s' "$next"
+}
+
+command -v calibration_priority_prop_name >/dev/null 2>&1 || calibration_priority_prop_name() {
+    printf '%s' "${CALIBRATION_PRIORITY_PROP:-kitsunping.calibration.priority}"
+}
+
+command -v calibration_priority_read >/dev/null 2>&1 || calibration_priority_read() {
+    local prop_name raw
+    prop_name="$(calibration_priority_prop_name)"
+    raw="$(getprop "$prop_name" 2>/dev/null | tr -d '\r\n')"
+    case "$raw" in
+        1|true|TRUE|yes|YES|on|ON) printf '%s' 1 ;;
+        *) printf '%s' 0 ;;
+    esac
+}
+
+command -v calibration_priority_write >/dev/null 2>&1 || calibration_priority_write() {
+    local value="$1" prop_name
+    prop_name="$(calibration_priority_prop_name)"
+    case "$value" in
+        1|true|TRUE|yes|YES|on|ON) value=1 ;;
+        *) value=0 ;;
+    esac
+    if command -v setprop >/dev/null 2>&1; then
+        setprop "$prop_name" "$value" >/dev/null 2>&1 || true
+    elif command -v resetprop >/dev/null 2>&1; then
+        resetprop "$prop_name" "$value" >/dev/null 2>&1 || true
+    fi
+    printf '%s' "$value"
+}
+
+command -v heavy_activity_lock_dir >/dev/null 2>&1 || heavy_activity_lock_dir() {
+    printf '%s' "${HEAVY_ACTIVITY_LOCK_DIR:-$MODDIR/cache/heavy_activity.lock}"
+}
+
+command -v heavy_activity_lock_acquire >/dev/null 2>&1 || heavy_activity_lock_acquire() {
+    local lock_dir pidfile old_pid
+    lock_dir="$(heavy_activity_lock_dir)"
+    pidfile="$lock_dir/pid"
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$$" > "$pidfile" 2>/dev/null || true
+        return 0
+    fi
+
+    if [ -f "$pidfile" ]; then
+        old_pid="$(cat "$pidfile" 2>/dev/null)"
+        if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+            return 1
+        fi
+    fi
+
+    rm -rf "$lock_dir" 2>/dev/null || true
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$$" > "$pidfile" 2>/dev/null || true
+        return 0
+    fi
+    return 1
+}
+
+command -v heavy_activity_lock_release >/dev/null 2>&1 || heavy_activity_lock_release() {
+    local lock_dir
+    lock_dir="$(heavy_activity_lock_dir)"
+    rm -rf "$lock_dir" 2>/dev/null || true
+}
 
 # JSON escape helper
 command -v json_escape >/dev/null 2>&1 || json_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
-}
-
-# Atomic write helper
-command -v atomic_write >/dev/null 2>&1 || atomic_write() {
-    local target="$1" tmp
-    tmp=$(mktemp "${target}.XXXXXX") || tmp="${target}.$$.$(date +%s).tmp"
-    if cat - > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
-    else
-        rm -f "$tmp"
-        return 1
-    fi
-}
-
-# Epoch helper
-command -v now_epoch >/dev/null 2>&1 || now_epoch() {
-    local ts src
-
-    ts="$(date +%s 2>/dev/null)"
-    case "$ts" in ''|0|*[!0-9]*) ts="" ;; esac
-
-    if [ -z "$ts" ]; then
-        ts="$(awk 'BEGIN{print systime()}' 2>/dev/null)"
-        case "$ts" in ''|0|*[!0-9]*) ts="" ;; esac
-    fi
-
-    if [ -n "$ts" ]; then
-        src="epoch"
-    elif [ -r /proc/uptime ]; then
-        ts="$(awk '{print int($1)}' /proc/uptime 2>/dev/null)"
-        case "$ts" in ''|0|*[!0-9]*) ts=0 ;; esac
-        src="uptime"
-    else
-        ts=0
-        src="unknown"
-    fi
-
-    NOW_EPOCH_SOURCE="$src"
-    printf '%s' "${ts:-0}"
 }
 
 # portable rounding helper

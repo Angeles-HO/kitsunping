@@ -75,50 +75,16 @@ log "post-fs-data stage: skip running service.sh (Magisk late_start will run it)
 
 
 if is_qualcomm; then
-    log "Qualcomm detected ($CHIPSET): applying WCNSS_qcom_cfg.ini tweaks"
-
-    CMDPREFIX=""
-    if command -v magisk >/dev/null 2>&1; then
-        if magisk --denylist ls >/dev/null 2>&1; then
-            CMDPREFIX="magisk --denylist exec"
-        elif magisk magiskhide ls >/dev/null 2>&1; then
-            CMDPREFIX="magisk magiskhide exec"
-        fi
-    fi
-
-    CHECK_DIRS="/system /vendor /product /system_ext"
-    EXISTING_DIRS=""
-    for dir in $CHECK_DIRS; do
-        [ -d "$dir" ] && EXISTING_DIRS="$EXISTING_DIRS $dir"
-    done
-
-    if [ -n "$EXISTING_DIRS" ]; then
-        CFGS=$($CMDPREFIX find $EXISTING_DIRS -type f -name WCNSS_qcom_cfg.ini 2>/dev/null)
-    else
-        CFGS=""
-    fi
-
-    for CFG in $CFGS; do
-        [ -f "$CFG" ] || continue
-        dst="$MODPATH$CFG"
-        mkdir -p "$(dirname "$dst")"
-        log "Migrating $CFG"
-        $CMDPREFIX cp -af "$CFG" "$dst" 2>>"$SERVICES_LOGS"
-        log "Modifying $dst"
-        sed -i '/gChannelBondingMode24GHz=/d;/gChannelBondingMode5GHz=/d;/gForce1x1Exception=/d;/sae_enabled=/d;/BandCapability=/d;s/^END$/gChannelBondingMode24GHz=1\ngChannelBondingMode5GHz=1\ngForce1x1Exception=0\nsae_enabled=1\nBandCapability=0\nEND/g' "$dst"
-    done
-
-    if [ -z "$CFGS" ]; then
-        log "No WCNSS_qcom_cfg.ini found; skipping migration"
-    else
-        mkdir -p "$MODPATH/system"
-        mv -f "$MODPATH/vendor" "$MODPATH/system/vendor" 2>/dev/null
-        mv -f "$MODPATH/product" "$MODPATH/system/product" 2>/dev/null
-        mv -f "$MODPATH/system_ext" "$MODPATH/system/system_ext" 2>/dev/null
-    fi
+    log "Qualcomm detected ($CHIPSET): profile application deferred to executor/service"
+elif is_mtk; then
+    log "MediaTek detected ($CHIPSET): profile application deferred to executor/service"
 else
-    log "Non-Qualcomm chipset ($CHIPSET)"
+    log "Other chipset ($CHIPSET): no chipset-specific action in post-fs-data"
+    log "for non-Qualcomm/MediaTek devices, profile application will be deferred to executor/service"
 fi
+# if the chipset its not in the list, the module will apply some profiles, but for safety, are limited to the ones that are not related to wifi, because the module is focused on wifi performance, and the wifi profiles are the most risky to apply in a wrong chipset, so for non-Qualcomm/MediaTek devices, the module will apply some profiles, but for safety, are limited to the ones that are not related to wifi, because the module is focused on wifi performance, and the wifi profiles are the most risky to apply in a wrong chipset
+# if you want to include your chipset, please contact the developer with your device model and chipset information, and if possible, with a logcat of the module applying the profiles in your device, to help the developer to include your chipset in the future updates
+# github: github.com/Angeles-HO/Kitsunping
 
 log "Restoring SELinux enforcing"
 set_selinux_enforce 1 "$SERVICES_LOGS"

@@ -23,12 +23,23 @@ SCRIPT_DIR="$MODDIR"
 mkdir -p "$SCRIPT_DIR/logs" 2>/dev/null
 SERVICES_LOGS="$SCRIPT_DIR/logs/services.log"
 SERVICES_LOGS_CALLED_BY_DAEMON="$SCRIPT_DIR/logs/services_daemon.log"
+HEAVY_ACTIVITY_LOCK_DIR="${HEAVY_ACTIVITY_LOCK_DIR:-$SCRIPT_DIR/cache/heavy_activity.lock}"
+HEAVY_LOAD_PROP="${HEAVY_LOAD_PROP:-kitsunping.heavy_load}"
 # =============================================================================
 # Function: Waits for the system to finish booting
 
+# Boot self-heal for heavy activity anti-race model (stale lock/counter after OOM kill)
+rm -rf "$HEAVY_ACTIVITY_LOCK_DIR" 2>/dev/null || true
+if command -v setprop >/dev/null 2>&1; then
+    setprop "$HEAVY_LOAD_PROP" 0 >/dev/null 2>&1 || true
+elif command -v resetprop >/dev/null 2>&1; then
+    resetprop "$HEAVY_LOAD_PROP" 0 >/dev/null 2>&1 || true
+fi
+echo "[SYS][SERVICE] heavy activity state reset (lock + $HEAVY_LOAD_PROP=0)" >> "$SERVICES_LOGS"
+
 # Common utilities 
 COMMON_UTIL="$SCRIPT_DIR/addon/functions/utils/Kitsutils.sh"
-
+ 
 if [ -f "$COMMON_UTIL" ]; then
     . "$COMMON_UTIL"
 else
@@ -210,8 +221,6 @@ apply_tcp_settings() {
 65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem adjusted 
 cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic 
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
-bbr,cubic|/proc/sys/net/ipv4/tcp_allowed_congestion_control|tcp_allowed_congestion_control adjusted a bic y cubic 
-bbr,cubic|/proc/sys/net/ipv4/tcp_available_congestion_control|tcp_available_congestion_control adjusted a bic y cubic 
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled 
 5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 adjusted 
 5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 adjusted 
@@ -340,6 +349,7 @@ apply_network_optimizations  || echo "[SYS][SERVICE] Error applying base optimiz
 
 DAEMON_SH="$SCRIPT_DIR/addon/daemon/daemon.sh"
 DAEMON_PID_FILE="$SCRIPT_DIR/cache/daemon.pid"
+DAEMON_SUPERVISOR_PID_FILE="$SCRIPT_DIR/cache/daemon.supervisor.pid"
 mkdir -p "$SCRIPT_DIR/cache" 2>/dev/null
 
 daemon_pid_is_running() {
@@ -353,16 +363,45 @@ daemon_pid_is_running() {
     return 0
 }
 
-if [ -f "$DAEMON_PID_FILE" ] && daemon_pid_is_running; then
-    echo "[SYS][SERVICE] Daemon is already running with PID $(cat "$DAEMON_PID_FILE")" >> "$SERVICES_LOGS"
-else
-    rm -f "$DAEMON_PID_FILE" 2>/dev/null
-    if [ -f "$DAEMON_SH" ]; then
-        echo "[SYS][SERVICE] Starting daemon..." >> "$SERVICES_LOGS"
-        sh "$DAEMON_SH" >> "$SERVICES_LOGS" 2>&1 &
-    else
+supervisor_pid_is_running() {
+    local spid
+    spid="$(cat "$DAEMON_SUPERVISOR_PID_FILE" 2>/dev/null)"
+    case "$spid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$spid" 2>/dev/null || return 1
+    return 0
+}
+
+start_daemon_supervisor() {
+    [ -f "$DAEMON_SH" ] || {
         echo "[SYS][SERVICE][ERROR] Daemon script not found: $DAEMON_SH" >> "$SERVICES_LOGS"
-    fi
+        return 1
+    }
+
+    (
+        while true; do
+            rm -f "$DAEMON_PID_FILE" 2>/dev/null
+            sh "$DAEMON_SH" >> "$SERVICES_LOGS" 2>&1
+            rc=$?
+            echo "[SYS][SERVICE][WARN] Daemon exited rc=$rc; restarting in 5s" >> "$SERVICES_LOGS"
+            sleep 5
+        done
+    ) &
+    echo "$!" > "$DAEMON_SUPERVISOR_PID_FILE"
+    echo "[SYS][SERVICE] Daemon supervisor started with PID $(cat "$DAEMON_SUPERVISOR_PID_FILE" 2>/dev/null)" >> "$SERVICES_LOGS"
+    return 0
+}
+
+if [ -f "$DAEMON_SUPERVISOR_PID_FILE" ] && supervisor_pid_is_running; then
+    echo "[SYS][SERVICE] Daemon supervisor already running with PID $(cat "$DAEMON_SUPERVISOR_PID_FILE")" >> "$SERVICES_LOGS"
+elif [ -f "$DAEMON_PID_FILE" ] && daemon_pid_is_running; then
+    echo "[SYS][SERVICE] Daemon is already running with PID $(cat "$DAEMON_PID_FILE"); keeping current process" >> "$SERVICES_LOGS"
+else
+    rm -f "$DAEMON_SUPERVISOR_PID_FILE" 2>/dev/null
+    rm -f "$DAEMON_PID_FILE" 2>/dev/null
+    echo "[SYS][SERVICE] Starting daemon supervisor..." >> "$SERVICES_LOGS"
+    start_daemon_supervisor || true
 fi
 
 

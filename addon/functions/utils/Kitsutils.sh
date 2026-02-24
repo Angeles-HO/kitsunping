@@ -54,6 +54,7 @@ set_permissions_module() {
             "$modpath/addon/jq" \
             "$modpath/addon/bc" \
             "$modpath/addon/ip" \
+            "$modpath/addon/iw" \
             "$modpath/addon/ping" \
             "$modpath/addon/Volume-Key-Selector/tools"; do
             [ -d "$d" ] && set_perm_recursive "$d" 0 0 0755 0755
@@ -68,8 +69,10 @@ set_permissions_module() {
         set_perm "$modpath/addon/functions/utils/Kitsutils.sh" 0 0 0755
         set_perm "$modpath/addon/functions/net_math.sh" 0 0 0755
         set_perm "$modpath/addon/functions/core.sh" 0 0 0755
+        [ -e "$modpath/addon/functions/daemon_static.sh" ] && set_perm "$modpath/addon/functions/daemon_static.sh" 0 0 0755
         [ -e "$modpath/addon/daemon/iface_monitor.sh" ] && set_perm "$modpath/addon/daemon/iface_monitor.sh" 0 0 0755
         [ -e "$modpath/addon/ip/ip" ] && set_perm "$modpath/addon/ip/ip" 0 0 0755
+        [ -e "$modpath/addon/iw/iw" ] && set_perm "$modpath/addon/iw/iw" 0 0 0755
         [ -e "$modpath/addon/ping/ping" ] && set_perm "$modpath/addon/ping/ping" 0 0 0755
         [ -e "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 0 0 0755
         [ -e "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 0 0 0755
@@ -92,6 +95,7 @@ set_permissions_module() {
             "$modpath/addon/bc" \
             "$modpath/addon/jq" \
             "$modpath/addon/ip" \
+            "$modpath/addon/iw" \
             "$modpath/addon/ping" \
             "$modpath/addon/Volume-Key-Selector/tools"; do
             if [ -d "$dir" ]; then
@@ -112,11 +116,13 @@ set_permissions_module() {
             "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" \
             "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" \
             "$modpath/addon/ip/ip" \
+            "$modpath/addon/iw/iw" \
             "$modpath/addon/ping/ping" \
             "$modpath/addon/daemon/daemon.sh" \
             "$modpath/addon/daemon/iface_monitor.sh" \
             "$modpath/addon/functions/net_math.sh" \
             "$modpath/addon/functions/core.sh" \
+            "$modpath/addon/functions/daemon_static.sh" \
             "$modpath/addon/policy/executor.sh"; do
             if [ -e "$f" ]; then
                 if ! chmod 0755 "$f" 2>/dev/null; then
@@ -208,6 +214,53 @@ atomic_write() {
     fi
 }
 
+# Update or append a property in a file (portable)
+update_prop_in_file() {
+    key="$1"
+    val="$2"
+    file="$3"
+    mkdir -p "$(dirname "$file")" 2>/dev/null
+    touch "$file" 2>/dev/null || return 1
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+        awk -v k="$key" -v v="$val" 'BEGIN{FS=OFS="="} $1==k{$2=v;found=1} {print} END{if(!found) print k"="v}' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    else
+        printf '%s=%s\n' "$key" "$val" >> "$file"
+    fi
+}
+
+# Detect total RAM once and write properties into system.prop for profile logic
+# Thresholds (MB, with margin): 2560 (2.5GB -> 3GB class), 5120 (5GB -> 6GB class), 12288 (12GB), 16384 (16GB)
+detect_and_write_ram_props() {
+    modpath="$1"
+    [ -z "$modpath" ] && modpath="${NEWMODPATH:-.}"
+    system_prop_file="$modpath/system.prop"
+
+    RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
+    if [ -z "$RAM_MB" ] || [ "$RAM_MB" -le 0 ] 2>/dev/null; then
+        RAM_MB=0
+    fi
+
+    # Thresholds (MB, with margin): 2560 (2.5GB), 5120 (5GB), 12288 (12GB), 16384 (16GB)
+    if [ "$RAM_MB" -lt 2560 ]; then
+        RAM_CLASS="3GB"
+    elif [ "$RAM_MB" -lt 5120 ]; then
+        RAM_CLASS="6GB"
+    elif [ "$RAM_MB" -lt 12288 ]; then
+        RAM_CLASS="12GB"
+    elif [ "$RAM_MB" -lt 16384 ]; then
+      RAM_CLASS="16GB"
+    else
+        RAM_CLASS="16GB+"
+    fi
+    # TODO: create a function whit detect what amount of ram/cpu/proces can be added for better performance, for example, if the device have less 3gb of ram, the module can include aditional time on ping or increase the interval of the daemon to reduce the load on the system, and if the device have more than 6-12gb of ram, the module can include aditional features that require more resources, like reduce time proceses, more frecuent pings, procesos, events etc.
+    update_prop_in_file "persist.kitsunping.ram.size" "${RAM_MB}MB" "$system_prop_file"
+    update_prop_in_file "persist.kitsunping.ram.class" "$RAM_CLASS" "$system_prop_file"
+
+    # Return readable info for callers
+    printf '%s %s' "${RAM_MB}MB" "$RAM_CLASS"
+}
+
+
 # Crear backup de los valores que se van a modificar para backup y restauracion
 create_backup() {
     BACKUP_FILE="$NEWMODPATH/configs/kitsuneping_original_backup.conf"
@@ -227,38 +280,85 @@ create_backup() {
         return 1
     fi
 
+    BACKUP_PROP_KEYS="
+ro.ril.hsdpa.category
+ro.ril.hsupa.category
+ro.ril.lte.category
+ro.ril.ltea.category
+ro.ril.nr5g.category
+ro.ril.enable.dtm
+ro.ril.enable.a51
+ro.ril.enable.a52
+ro.ril.enable.a53
+ro.ril.enable.a54
+ro.ril.enable.a55
+ro.ril.gprsclass
+ro.ril.transmitpower
+ro.telephony.default_network
+ro.wifi.direct.interface
+ro.config.hw_power_saving
+ro.media.enc.jpeg.quality
+ro.board.platform
+ro.soc.manufacturer
+ro.product.cpu.abi
+
+persist.vendor.mtk.volte.enable
+persist.vendor.volte_support
+persist.vendor.vowifi.enable
+persist.vendor.vowifi_support
+persist.sys.vzw_wifi_running
+persist.radio.add_power_save
+persist.audio.fluence.voicecall
+
+kitsunping.daemon.interval
+kitsunping.daemon.signal_poll_interval
+kitsunping.daemon.net_probe_interval
+kitsunping.sigmoid.alpha
+kitsunping.sigmoid.beta
+kitsunping.sigmoid.gamma
+kitsunping.router.debug
+kitsunping.router.experimental
+kitsunping.router.openwrt_mode
+kitsunping.router.cache_ttl
+kitsunping.router.infer_width
+kitsunping.wifi.speed_threshold
+kitsunping.event.debounce_sec
+
+persist.kitsunping.debug
+persist.kitsunping.ping_timeout
+persist.kitsunping.emit_events
+persist.kitsunping.event_debounce_sec
+persist.kitsunping.calibrate_cache_enable
+persist.kitsunping.calibrate_cache_max_age_sec
+persist.kitsunping.calibrate_cache_rtt_ms
+persist.kitsunping.calibrate_cache_loss_pct
+persist.kitsunping.router.debug
+persist.kitsunping.router.experimental
+persist.kitsunping.router.openwrt_mode
+persist.kitsunping.router.cache_ttl
+persist.kitsunping.router.infer_width
+persist.kitsunping.user_event
+persist.kitsunping.user_event_data
+
+persist.kitsunrouter.enable
+persist.kitsunrouter.debug
+persist.kitsunrouter.paired
+
+wifi.supplicant_scan_interval
+gsm.sim.operator.iso-country
+debug.tracing.mcc
+debug.tracing.mnc
+sys.boot_completed
+logcat.live
+"
+
     # Write current properties to backup file atomically
-    if ! atomic_write "$BACKUP_FILE" <<EOF
-ro.ril.hsdpa.category=$(getprop_or_default ro.ril.hsdpa.category)
-ro.ril.hsupa.category=$(getprop_or_default ro.ril.hsupa.category)
-ro.ril.lte.category=$(getprop_or_default ro.ril.lte.category)
-ro.ril.ltea.category=$(getprop_or_default ro.ril.ltea.category)
-ro.ril.nr5g.category=$(getprop_or_default ro.ril.nr5g.category)
-ro.ril.enable.dtm=$(getprop_or_default ro.ril.enable.dtm)
-ro.ril.enable.a51=$(getprop_or_default ro.ril.enable.a51)
-ro.ril.enable.a52=$(getprop_or_default ro.ril.enable.a52)
-ro.ril.enable.a53=$(getprop_or_default ro.ril.enable.a53)
-ro.ril.gprsclass=$(getprop_or_default ro.ril.gprsclass)
-ro.ril.transmitpower=$(getprop_or_default ro.ril.transmitpower)
-kitsunping.daemon.interval=$(getprop_or_default kitsunping.daemon.interval)
-persist.kitsunping.debug=$(getprop_or_default persist.kitsunping.debug)
-persist.kitsunping.ping_timeout=$(getprop_or_default persist.kitsunping.ping_timeout)
-persist.kitsunping.emit_events=$(getprop_or_default persist.kitsunping.emit_events)
-persist.kitsunping.event_debounce_sec=$(getprop_or_default persist.kitsunping.event_debounce_sec)
-ro.telephony.default_network=$(getprop_or_default ro.telephony.default_network)
-ro.wifi.direct.interface=$(getprop_or_default ro.wifi.direct.interface)
-wifi.supplicant_scan_interval=$(getprop_or_default wifi.supplicant_scan_interval)
-persist.vendor.mtk.volte.enable=$(getprop_or_default persist.vendor.mtk.volte.enable)
-persist.vendor.volte_support=$(getprop_or_default persist.vendor.volte_support)
-persist.vendor.vowifi.enable=$(getprop_or_default persist.vendor.vowifi.enable)
-persist.vendor.vowifi_support=$(getprop_or_default persist.vendor.vowifi_support)
-persist.sys.vzw_wifi_running=$(getprop_or_default persist.sys.vzw_wifi_running)
-persist.radio.add_power_save=$(getprop_or_default persist.radio.add_power_save)
-ro.config.hw_power_saving=$(getprop_or_default ro.config.hw_power_saving)
-ro.media.enc.jpeg.quality=$(getprop_or_default ro.media.enc.jpeg.quality)
-persist.audio.fluence.voicecall=$(getprop_or_default persist.audio.fluence.voicecall)
-logcat.live=$(getprop_or_default logcat.live)
-EOF
+    if ! {
+        for prop_key in $BACKUP_PROP_KEYS; do
+            [ -z "$prop_key" ] && continue
+            printf '%s=%s\n' "$prop_key" "$(getprop_or_default "$prop_key")"
+        done
+    } | atomic_write "$BACKUP_FILE"
     then
         log_error "Cannot write backup file at $BACKUP_FILE"
         return 1
@@ -303,6 +403,258 @@ is_qualcomm() {
             ;;
     esac
     return 1
+}
+
+is_mtk() {
+    soc_mfr="$(getprop ro.soc.manufacturer | tr '[:upper:]' '[:lower:]')"
+    board="$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')"
+    case "$soc_mfr" in
+        mediatek|mtk) return 0 ;;
+    esac
+    case "$board" in
+        mt*) return 0 ;;
+    esac
+    return 1
+}
+
+# usage normalize_profile_name
+# Normalize the profile name to expected values (speed, stable, gaming)
+# If the value is not recognized, it returns "speed" by default
+normalize_profile_name() {
+    case "$1" in
+        speed|stable|gaming) printf '%s' "$1" ;;
+        *) printf '%s' "speed" ;;
+    esac
+}
+
+resolve_active_profile_name() {
+    modpath="$1"
+    profile=""
+
+    [ -n "${KITSUN_PROFILE:-}" ] && profile="$KITSUN_PROFILE"
+
+    if [ -z "$profile" ] && [ -f "$modpath/cache/policy.current" ]; then
+        profile="$(cat "$modpath/cache/policy.current" 2>/dev/null)"
+    fi
+
+    if [ -z "$profile" ] && [ -f "$modpath/cache/policy.target" ]; then
+        profile="$(cat "$modpath/cache/policy.target" 2>/dev/null)"
+    fi
+
+    if [ -z "$profile" ] && [ -f "$modpath/cache/policy.request" ]; then
+        profile="$(cat "$modpath/cache/policy.request" 2>/dev/null)"
+    fi
+
+    normalize_profile_name "$profile"
+}
+
+apply_wcnss_profile_file() {
+    dst_file="$1"
+    profile_file="$2"
+    log_file="$3"
+
+    [ -f "$dst_file" ] || return 1
+    [ -f "$profile_file" ] || return 1
+
+    profile_keys="$(awk -F= '
+        /^[[:space:]]*#/ {next}
+        /^[[:space:]]*$/ {next}
+        {
+            key=$1
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (key != "") print key
+        }
+    ' "$profile_file" 2>/dev/null)"
+
+    [ -n "$profile_keys" ] || return 1
+
+    tmp_file="${dst_file}.tmp.$$"
+    awk -v profile_file="$profile_file" -v keys="$profile_keys" '
+        BEGIN {
+            n = split(keys, key_lines, "\n")
+            for (i = 1; i <= n; i++) {
+                key = key_lines[i]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+                if (key != "") keep[key] = 1
+            }
+
+            pcount = 0
+            while ((getline pl < profile_file) > 0) {
+                if (pl ~ /^[[:space:]]*#/ || pl ~ /^[[:space:]]*$/) continue
+                pcount++
+                profile_lines[pcount] = pl
+            }
+            close(profile_file)
+            inserted = 0
+        }
+        {
+            if ($0 == "END") {
+                for (i = 1; i <= pcount; i++) print profile_lines[i]
+                print "END"
+                inserted = 1
+                next
+            }
+
+            skip = 0
+            for (k in keep) {
+                pattern = "^" k "[[:space:]]*="
+                if ($0 ~ pattern) {
+                    skip = 1
+                    break
+                }
+            }
+            if (!skip) print
+        }
+        END {
+            if (!inserted) {
+                for (i = 1; i <= pcount; i++) print profile_lines[i]
+                print "END"
+            }
+        }
+    ' "$dst_file" > "$tmp_file" 2>>"$log_file" || {
+        rm -f "$tmp_file" 2>/dev/null
+        return 1
+    }
+
+    mv -f "$tmp_file" "$dst_file" 2>>"$log_file" || {
+        rm -f "$tmp_file" 2>/dev/null
+        return 1
+    }
+
+    return 0
+}
+
+apply_qcom_wcnss_profile() {
+    modpath="$1"
+    profile_name="$2"
+    log_file="$3"
+
+    [ -z "$modpath" ] && return 1
+    profile_name="$(normalize_profile_name "$profile_name")"
+
+    if ! is_qualcomm; then
+        [ -n "$log_file" ] && echo "[SYS][WCNSS] Non-Qualcomm chipset; skip WCNSS profile" >> "$log_file"
+        return 0
+    fi
+
+    profile_file="$modpath/net_profiles/qcom_${profile_name}_profile.conf"
+    if [ ! -f "$profile_file" ]; then
+        profile_file="$modpath/net_profiles/qcom_speed_profile.conf"
+        [ -n "$log_file" ] && echo "[SYS][WCNSS][WARN] profile file missing, fallback to speed" >> "$log_file"
+    fi
+
+    cmdprefix=""
+    if command -v magisk >/dev/null 2>&1; then
+        if magisk --denylist ls >/dev/null 2>&1; then
+            cmdprefix="magisk --denylist exec"
+        elif magisk magiskhide ls >/dev/null 2>&1; then
+            cmdprefix="magisk magiskhide exec"
+        fi
+    fi
+
+    check_dirs="/system /vendor /product /system_ext"
+    existing_dirs=""
+    for dir in $check_dirs; do
+        [ -d "$dir" ] && existing_dirs="$existing_dirs $dir"
+    done
+
+    if [ -n "$existing_dirs" ]; then
+        cfgs=$($cmdprefix find $existing_dirs -type f -name WCNSS_qcom_cfg.ini 2>/dev/null)
+    else
+        cfgs=""
+    fi
+
+    if [ -z "$cfgs" ]; then
+        [ -n "$log_file" ] && echo "[SYS][WCNSS] No WCNSS_qcom_cfg.ini found" >> "$log_file"
+        return 0
+    fi
+
+    [ -n "$log_file" ] && echo "[SYS][WCNSS] Applying profile=$profile_name file=$(basename "$profile_file")" >> "$log_file"
+
+    for cfg in $cfgs; do
+        [ -f "$cfg" ] || continue
+
+        dst="$modpath$cfg"
+        mkdir -p "$(dirname "$dst")"
+        [ -n "$log_file" ] && echo "[SYS][WCNSS] Migrating $cfg" >> "$log_file"
+        $cmdprefix cp -af "$cfg" "$dst" 2>>"$log_file"
+
+        if apply_wcnss_profile_file "$dst" "$profile_file" "$log_file"; then
+            [ -n "$log_file" ] && echo "[SYS][WCNSS] Updated $dst" >> "$log_file"
+        else
+            [ -n "$log_file" ] && echo "[SYS][WCNSS][WARN] Failed to update $dst" >> "$log_file"
+        fi
+    done
+
+    mkdir -p "$modpath/system"
+    mv -f "$modpath/vendor" "$modpath/system/vendor" 2>/dev/null
+    mv -f "$modpath/product" "$modpath/system/product" 2>/dev/null
+    mv -f "$modpath/system_ext" "$modpath/system/system_ext" 2>/dev/null
+    return 0
+}
+
+apply_profile_runtime_resetprops() {
+    profile_name="$1"
+    log_file="$2"
+    rp_bin=""
+
+    profile_name="$(normalize_profile_name "$profile_name")"
+
+    if command -v resetprop >/dev/null 2>&1; then
+        rp_bin="$(command -v resetprop 2>/dev/null)"
+    fi
+
+    [ -n "$rp_bin" ] || {
+        [ -n "$log_file" ] && echo "[SYS][PROFILE][WARN] resetprop not available" >> "$log_file"
+        return 1
+    }
+
+    apply_prop() {
+        pkey="$1"
+        pval="$2"
+        if "$rp_bin" -n "$pkey" "$pval" >>"$log_file" 2>&1; then
+            [ -n "$log_file" ] && echo "[SYS][PROFILE] resetprop -n $pkey $pval" >> "$log_file"
+            return 0
+        fi
+        [ -n "$log_file" ] && echo "[SYS][PROFILE][WARN] resetprop failed: $pkey=$pval" >> "$log_file"
+        return 1
+    }
+
+    # TODO: create method to implement gaming profile when x app is lanched, com.app1=gaming
+    
+    if is_mtk; then
+        case "$profile_name" in
+            gaming)
+                apply_prop "sys.wifi6.enable" "1"
+                apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
+                ;;
+            speed)
+                apply_prop "sys.wifi6.enable" "1"
+                ;;
+            stable)
+                apply_prop "sys.wifi6.enable" "0"
+                apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "0"
+                ;;
+        esac
+        return 0
+    fi
+
+    if is_qualcomm; then
+        case "$profile_name" in
+            gaming|speed)
+                apply_prop "sys.wifi6.enable" "1"
+                apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
+                ;;
+            stable)
+                apply_prop "sys.wifi6.enable" "0"
+                apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "0"
+                ;;
+        esac
+        return 0
+    fi
+
+    [ -n "$log_file" ] && echo "[SYS][PROFILE] Unsupported SoC for runtime Wi-Fi resetprops" >> "$log_file"
+    return 0
 }
 
 
@@ -350,12 +702,13 @@ custom_write() {
         return 0
     fi
 
-    if [ ! -w "$target_file" ]; then
+    if [ ! -w "$target_file" ] && [ "${target_file#/proc/sys/}" = "$target_file" ]; then
         chmod 0777 "$target_file" 2>> "$SERVICES_LOGS"
     fi
 
     case "$target_file" in
         /proc/sys/*)
+            local sysctl_bin=""
             sysctl_param=${target_file#/proc/sys/}
             sysctl_param=$(echo "$sysctl_param" | tr '/' '.')
             # Skip if not writable to avoid noisy errors on readonly tunables
@@ -363,11 +716,25 @@ custom_write() {
                 echo "[SYS][SKIP]: '$target_file' no es escribible" >> "$SERVICES_LOGS"
                 return 0
             fi
-            if /system/bin/sysctl -w "$sysctl_param=$normalized_value" >> "$SERVICES_LOGS" 2>&1; then
-                echo "[OK] $log_text (sysctl): $normalized_value" >> "$SERVICES_LOGS"
-                return 0
+            if command -v sysctl >/dev/null 2>&1; then
+                sysctl_bin="$(command -v sysctl)"
+            elif [ -x /system/bin/sysctl ]; then
+                sysctl_bin="/system/bin/sysctl"
             fi
-            echo "[SYS] [ERROR]: Fallo sysctl $sysctl_param" >> "$SERVICES_LOGS"
+            if [ -n "$sysctl_bin" ]; then
+                if "$sysctl_bin" -w "$sysctl_param=$normalized_value" >> "$SERVICES_LOGS" 2>&1; then
+                    current_value=$(cat "$target_file" 2>/dev/null)
+                    if [ "$current_value" = "$normalized_value" ]; then
+                        echo "[OK] $log_text (sysctl): $normalized_value" >> "$SERVICES_LOGS"
+                        return 0
+                    fi
+                    echo "[SYS][WARN]: sysctl aplico pero verificacion leida no coincide en $target_file (got=$current_value expected=$normalized_value)" >> "$SERVICES_LOGS"
+                else
+                    echo "[SYS] [WARN]: Fallo sysctl $sysctl_param; intento escritura directa" >> "$SERVICES_LOGS"
+                fi
+            else
+                echo "[SYS][WARN]: sysctl no disponible; intento escritura directa para $target_file" >> "$SERVICES_LOGS"
+            fi
             ;;
     esac
 
@@ -384,8 +751,34 @@ custom_write() {
 }
 
 apply_param_set() {
+    local value target_file log_text line_count ok_count fail_count
+    line_count=0
+    ok_count=0
+    fail_count=0
+
     while IFS='|' read -r value target_file log_text; do
-        [ -z "$target_file" ] && continue
-        custom_write "$value" "$target_file" "$log_text"
+        line_count=$((line_count + 1))
+
+        value=$(printf '%s' "$value" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        target_file=$(printf '%s' "$target_file" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        log_text=$(printf '%s' "$log_text" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+        [ -z "$value" ] && [ -z "$target_file" ] && [ -z "$log_text" ] && continue
+        case "$value" in \#*) continue ;; esac
+
+        if [ -z "$target_file" ]; then
+            echo "[SYS][WARN]: apply_param_set linea $line_count sin target_file" >> "$SERVICES_LOGS"
+            fail_count=$((fail_count + 1))
+            continue
+        fi
+
+        if custom_write "$value" "$target_file" "$log_text"; then
+            ok_count=$((ok_count + 1))
+        else
+            fail_count=$((fail_count + 1))
+            echo "[SYS][WARN]: apply_param_set fallo linea $line_count target=$target_file value=$value" >> "$SERVICES_LOGS"
+        fi
     done
+
+    echo "[SYS][INFO]: apply_param_set resumen ok=$ok_count fail=$fail_count" >> "$SERVICES_LOGS"
 }
