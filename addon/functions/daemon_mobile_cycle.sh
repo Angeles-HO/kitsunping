@@ -87,6 +87,14 @@ daemon_run_mobile_transport_cycle() {
                 [ -n "$policy_choice" ] && profile="$policy_choice"
             fi
 
+            AUTO_REQUEST_FILE="$MODDIR/cache/policy.auto_request"
+            printf '%s' "$profile" > "$AUTO_REQUEST_FILE" 2>/dev/null || true
+
+            if [ -f "$MODDIR/cache/target.override.active" ]; then
+                log_debug "target override active; skipping auto mobile profile write"
+                continue
+            fi
+
             POLICY_REQUEST_FILE="$MODDIR/cache/policy.request"
             prev_profile=""
             [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
