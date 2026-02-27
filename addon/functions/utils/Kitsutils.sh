@@ -241,18 +241,19 @@ detect_and_write_ram_props() {
     fi
 
     # Thresholds (MB, with margin): 2560 (2.5GB), 5120 (5GB), 12288 (12GB), 16384 (16GB)
-    if [ "$RAM_MB" -lt 2560 ]; then
+    if [ "$RAM_MB" -ge 0 ] && [ "$RAM_MB" -lt 2860 ]; then
         RAM_CLASS="3GB"
-    elif [ "$RAM_MB" -lt 5120 ]; then
+    elif [ "$RAM_MB" -ge 2860 ] && [ "$RAM_MB" -lt 5120 ]; then
         RAM_CLASS="6GB"
-    elif [ "$RAM_MB" -lt 12288 ]; then
+    elif [ "$RAM_MB" -ge 5120 ] && [ "$RAM_MB" -lt 12288 ]; then
         RAM_CLASS="12GB"
-    elif [ "$RAM_MB" -lt 16384 ]; then
-      RAM_CLASS="16GB"
+    elif [ "$RAM_MB" -ge 12288 ] && [ "$RAM_MB" -lt 16384 ]; then
+        RAM_CLASS="16GB"
     else
         RAM_CLASS="16GB+"
     fi
-    # TODO: create a function whit detect what amount of ram/cpu/proces can be added for better performance, for example, if the device have less 3gb of ram, the module can include aditional time on ping or increase the interval of the daemon to reduce the load on the system, and if the device have more than 6-12gb of ram, the module can include aditional features that require more resources, like reduce time proceses, more frecuent pings, procesos, events etc.
+
+    # TODO: create a function to classify what amount of ram/cpu/proces can be added for better performance, for example, if the device have less 3gb of ram, the module can include aditional time on ping or increase the interval of the daemon to reduce the load on the system, and if the device have more than 6-12gb of ram, the module can include aditional features that require more resources, like reduce time proceses, more frecuent pings, procesos, events etc.
     update_prop_in_file "persist.kitsunping.ram.size" "${RAM_MB}MB" "$system_prop_file"
     update_prop_in_file "persist.kitsunping.ram.class" "$RAM_CLASS" "$system_prop_file"
 
@@ -782,3 +783,5 @@ apply_param_set() {
 
     echo "[SYS][INFO]: apply_param_set resumen ok=$ok_count fail=$fail_count" >> "$SERVICES_LOGS"
 }
+
+ 

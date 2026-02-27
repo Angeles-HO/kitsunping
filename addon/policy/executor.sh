@@ -1,18 +1,17 @@
 #!/system/bin/sh
 # executor.sh - executes network profile changes
 # Part of Kitsunping - daemon.sh
-# TODO: [DONE] Refactor common functions with daemon.sh into shared helpers
-# TODO: [DONE] Improve logging consistency with daemon.sh
-# TODO: [DONE] Move atomic_write/command detection/now_epoch to shared helper sourced by daemon/executor/policy
-# TODO: [DONE] Refine pick_score to prefer wifi vs mobile based on transport/event and handle missing daemon.state explicitly
-# TODO: [DONE] Add concurrency guard (lock/PID) to prevent overlapping calibrations
-# TODO: [DONE] Validate time source before gating/emitting and define fallback when date returns 0
+# DONE: Refactor common functions with daemon.sh into shared helpers
+# DONE: Improve logging consistency with daemon.sh
+# DONE: Move atomic_write/command detection/now_epoch to shared helper sourced by daemon/executor/policy
+# DONE: Refine pick_score to prefer wifi vs mobile based on transport/event and handle missing daemon.state explicitly
+# DONE: Add concurrency guard (lock/PID) to prevent overlapping calibrations
+# DONE: Validate time source before gating/emitting and define fallback when date returns 0
 # Note: now_ts is checked for 0 and gating logic skips calibrate if invalid; fallback and warnings are logged.
-# TODO: [DONE] Surface per-prop failures from apply_network_optimizations/resetprop in policy.event.json
-# TODO: [DONE] Document cooldown/low-streak tunables (and per-profile overrides) in README and expose via env
-# TODO: [DONE] Keep APK JSON schema/timestamps (epoch seconds) documented with minimal fields applied_profile/props_applied/calibrate_state/ts
-# TODO: [DONE] Explain debounce vs INTERVAL coupling (daemon) and consider fractional debounce
-# TODO: [PENDING] Document where are all heavy task locks and how they interact (calibration_priority, heavy_load, etc)
+# DONE: Surface per-prop failures from apply_network_optimizations/resetprop in policy.event.json
+# DONE: Document cooldown/low-streak tunables (and per-profile overrides) in README and expose via env
+# DONE: Keep APK JSON schema/timestamps (epoch seconds) documented with minimal fields applied_profile/props_applied/calibrate_state/ts
+# DONE: Explain debounce vs INTERVAL coupling (daemon) and consider fractional debounce
 # FIX: ensure calibration gating/JSON keep epoch seconds (do not mix /proc/uptime) to stay compatible with daemon/network_policy
 SCRIPT_DIR="${0%/*}"            # kitsunping/addon/policy
 ADDON_DIR="${SCRIPT_DIR%/policy}"  # kitsunping/addon
@@ -431,7 +430,7 @@ fi
 calib_state=$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")
 elapsed=$((now_ts - last_calib))
 
-# TODO: [DONE] Refactor pick_score to shared function used by daemon/executor
+# DONE: Refactor pick_score to shared function used by daemon/executor
 pick_score() {
     local prefer_transport="${1:-auto}" score
 
@@ -496,14 +495,14 @@ fi
 CALIBRATE_TIMEOUT="${CALIBRATE_TIMEOUT:-600}"
 CALIBRATE_SETTLE_MARGIN="${CALIBRATE_SETTLE_MARGIN:-60}"
 
-# TODO: [DONE] Allow override of output/state files via env TODO:
+# DONE: Allow override of output/state files via env
 # Default output and state files
 : "${CALIBRATE_OUT:=${CALIBRATE_OUT:-$MODDIR/logs/results.env}}"
 : "${CALIBRATE_TS_FILE:=${CALIBRATE_TS_FILE:-$MODDIR/cache/calibrate.ts}}"
 : "${CALIBRATE_STATE_FILE:=${CALIBRATE_STATE_FILE:-$MODDIR/cache/calibrate.state}}"
 : "${CALIBRATE_STREAK_FILE:=${CALIBRATE_STREAK_FILE:-$MODDIR/cache/calibrate.streak}}"
 
-# TODO: [DONE] Prevent multiple concurrent calibrates TODO:
+# DONE: Prevent multiple concurrent calibrates
 current_state="$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")"
 if [ "$current_state" = "running" ]; then
     log_policy "Calibration already running; skipping new run"
@@ -519,7 +518,7 @@ if [ "$run_calibrate" -eq 1 ]; then
         run_calibrate=0
     fi
 fi
-# TODO: [DONE] Prevent calibrate during heavy daemon activity windows TODO:
+# DONE: Prevent calibrate during heavy daemon activity windows
 HEAVY_LOAD_PROP="${HEAVY_LOAD_PROP:-kitsunping.heavy_load}"
 HEAVY_LOAD_MAX_FOR_CALIBRATE="${HEAVY_LOAD_MAX_FOR_CALIBRATE:-0}"
 CALIBRATE_FORCE_AFTER_POSTPONES="${CALIBRATE_FORCE_AFTER_POSTPONES:-12}"
