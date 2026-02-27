@@ -24,6 +24,14 @@ get_wifi_status() {
     # vars
     local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
 
+    # If iface is missing/none or doesn't look like Wi-Fi, try auto-detect.
+    # This prevents accidental assignment of mobile ifaces (rmnet/ccmni/...) as Wi-Fi.
+    case "$wifi_iface" in
+        ''|none|NONE) wifi_iface="" ;;
+        wl*|wifi*) ;;
+        *) wifi_iface="" ;;
+    esac
+
     # detect wifi interface if not specified
     if [ -z "$wifi_iface" ]; then
         wifi_iface=$("$IP_BIN" link show | awk -F: '/wl|wifi/ {gsub(/ /,"",$2); print $2; exit}')
@@ -171,6 +179,387 @@ get_wifi_rssi_dbm() {
     fi
 
     printf '%s' "$rssi"
+}
+
+# =============================
+# Extended Wi-Fi info helpers
+# =============================
+WIFI_INFO_CACHE_FILE="${MODDIR}/cache/wifi.info"
+IW_CHECK_INTERVAL="${IW_CHECK_INTERVAL:-120}"
+IW_BIN=""
+IW_USABLE=""
+IW_LAST_CHECK=0
+WIFI_INFO_SOURCE=""
+WIFI_RAW_IW_OUT=""
+WIFI_RAW_DUMPSYS_OUT=""
+
+resolve_iw_binary() {
+    if [ -n "$IW_BIN" ] && [ -x "$IW_BIN" ]; then
+        return 0
+    fi
+
+    if [ -n "${MODDIR:-}" ] && [ -x "$MODDIR/addon/iw/iw" ]; then
+        IW_BIN="$MODDIR/addon/iw/iw"
+        return 0
+    fi
+
+    if [ -n "${ADDON_DIR:-}" ] && [ -x "$ADDON_DIR/iw/iw" ]; then
+        IW_BIN="$ADDON_DIR/iw/iw"
+        return 0
+    fi
+
+    if [ -x "/data/adb/modules/Kitsunping/addon/iw/iw" ]; then
+        IW_BIN="/data/adb/modules/Kitsunping/addon/iw/iw"
+        return 0
+    fi
+
+    if command -v iw >/dev/null 2>&1; then
+        IW_BIN="$(command -v iw 2>/dev/null)"
+        return 0
+    fi
+
+    return 1
+}
+
+normalize_pipe_list() {
+    local s="$1"
+    case "$s" in
+        *'{'*|*'}'*|*'='*)
+            printf '%s' ""
+            return 0
+            ;;
+    esac
+    s=$(printf '%s' "$s" | tr ',' ' ' | tr 'A-Z' 'a-z')
+    s=$(printf '%s' "$s" | awk '{gsub(/[[:space:]]+/, " "); gsub(/^ | $/, ""); print}')
+    [ -z "$s" ] && return 0
+    printf '%s' "$s" | awk '{for (i=1;i<=NF;i++) {gsub(/[^a-z0-9._:+-]/, "", $i); if ($i != "") print $i}}' | LC_ALL=C sort -u | \
+        awk 'NR==1{printf "%s", $0; next} {printf "|%s", $0} END{print ""}'
+}
+
+sanitize_kv_value() {
+    local v="$1"
+    v=$(printf '%s' "$v" | tr '\r\n\t' '   ')
+    v=$(printf '%s' "$v" | awk '{gsub(/[[:space:]]+/, " "); gsub(/^ | $/, ""); print}')
+    v=$(printf '%s' "$v" | tr ' ' '_')
+    v=$(printf '%s' "$v" | tr -cd '[:alnum:]_.:+@-')
+    printf '%s' "$v"
+}
+
+normalize_freq_mhz() {
+    local f="$1"
+    printf '%s' "$f" | awk '{gsub(/[^0-9.]/, ""); if ($0=="") exit; printf "%d", $0+0.5 }'
+}
+
+derive_band_from_freq() {
+    local f="$1"
+    case "$f" in ''|*[!0-9]* ) echo ""; return 0;; esac
+    if [ "$f" -ge 2400 ] && [ "$f" -le 2484 ]; then
+        echo "2g"
+    elif [ "$f" -ge 5150 ] && [ "$f" -le 5850 ]; then
+        echo "5g"
+    elif [ "$f" -ge 5925 ] && [ "$f" -le 7125 ]; then
+        echo "6g"
+    else
+        echo "unknown"
+    fi
+}
+
+channel_from_freq() {
+    local f="$1" ch=""
+    case "$f" in ''|*[!0-9]* ) echo ""; return 0;; esac
+    if [ "$f" -ge 2412 ] && [ "$f" -le 2472 ]; then
+        ch=$(( (f - 2407) / 5 ))
+    elif [ "$f" -eq 2484 ]; then
+        ch=14
+    elif [ "$f" -ge 5000 ] && [ "$f" -le 5895 ]; then
+        ch=$(( (f - 5000) / 5 ))
+    elif [ "$f" -ge 5955 ] && [ "$f" -le 7115 ]; then
+        ch=$(( (f - 5950) / 5 ))
+    fi
+    printf '%s' "$ch"
+}
+
+iw_is_usable() {
+    local now out delta
+    resolve_iw_binary || return 1
+    now=$(now_epoch)
+    case "$now" in ''|*[!0-9]* ) now=0 ;; esac
+    delta=$((now - IW_LAST_CHECK))
+    if [ -n "$IW_USABLE" ] && [ "$delta" -lt "$IW_CHECK_INTERVAL" ]; then
+        [ "$IW_USABLE" -eq 1 ] && return 0 || return 1
+    fi
+    out=$($IW_BIN dev 2>&1 | awk 'NR==1 {print; exit}')
+    IW_LAST_CHECK="$now"
+    if printf '%s' "$out" | grep -qi 'Failed to connect to generic netlink'; then
+        IW_USABLE=0
+        return 1
+    fi
+    IW_USABLE=1
+    return 0
+} 
+
+infer_wifi_width_mhz() {
+    local band="$1" width="$2" link_speed="$3" inferred_width="" width_source="" width_confidence=""
+
+    if [ -n "$width" ]; then
+        printf '%s|%s|%s' "$width" "explicit" "high"
+        return 0
+    fi
+
+    if [ "${ROUTER_INFER_WIDTH:-0}" -ne 1 ]; then
+        printf '%s|%s|%s' "" "" "" 
+        return 0
+    fi
+
+    if [ "$band" != "5g" ]; then
+        printf '%s|%s|%s' "" "" ""
+        return 0
+    fi
+
+    if ! printf '%s' "$link_speed" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        printf '%s|%s|%s' "" "" ""
+        return 0
+    fi
+
+    if awk "BEGIN{exit !($link_speed > 900)}"; then
+        inferred_width="160"
+        width_source="inferred"
+        width_confidence="medium"
+    elif awk "BEGIN{exit !($link_speed > 600)}"; then
+        inferred_width="80"
+        width_source="inferred"
+        width_confidence="low"
+    fi
+
+    printf '%s|%s|%s' "$inferred_width" "$width_source" "$width_confidence"
+}
+
+parse_iw_link_info_text() {
+    local out="$1" bssid ssid freq signal rx_rate tx_rate link_speed caps band chan width width_source width_confidence width_guess kv
+    if [ -z "$out" ]; then
+        out=$(cat 2>/dev/null)
+    fi
+    [ -z "$out" ] && return 1
+    if printf '%s' "$out" | grep -qi 'Not connected'; then
+        return 1
+    fi
+
+    bssid=$(printf '%s' "$out" | awk '/Connected to/ {print $3; exit}')
+    ssid=$(printf '%s' "$out" | awk -F': ' '/SSID:/ {print $2; exit}')
+    freq=$(printf '%s' "$out" | awk '/freq:/ {print $2; exit}')
+    signal=$(printf '%s' "$out" | awk '/signal:/ {print $2; exit}')
+    rx_rate=$(printf '%s' "$out" | awk -F': ' '/rx bitrate:/ {print $2; exit}')
+    tx_rate=$(printf '%s' "$out" | awk -F': ' '/tx bitrate:/ {print $2; exit}')
+    caps=$(printf '%s' "$out" | awk -F': ' '/bss flags:/ {print $2; exit}')
+    width=$(printf '%s' "$out" | grep -Eo 'width:[[:space:]]*[0-9]+' | awk '{print $2; exit}')
+    if [ -z "$width" ]; then
+        width=$(printf '%s' "$out" | awk '/bitrate:/ {for (i=1;i<=NF;i++) if ($i ~ /MHz/) {gsub(/[^0-9]/, "", $i); if ($i!="") {print $i; exit}}}')
+    fi
+
+    freq=$(normalize_freq_mhz "$freq")
+    signal=$(printf '%s' "$signal" | awk '{gsub(/[^0-9-]/, ""); print}')
+    rx_rate=$(printf '%s' "$rx_rate" | awk '{print $1; exit}')
+    tx_rate=$(printf '%s' "$tx_rate" | awk '{print $1; exit}')
+    caps=$(normalize_pipe_list "$caps")
+    ssid=$(sanitize_kv_value "$ssid")
+
+    if printf '%s' "$rx_rate" | grep -Eq '^[0-9]+([.][0-9]+)?$' && printf '%s' "$tx_rate" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        link_speed=$(awk -v rx="$rx_rate" -v tx="$tx_rate" 'BEGIN{if(rx>tx) printf "%.1f", rx; else printf "%.1f", tx}')
+    elif printf '%s' "$rx_rate" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        link_speed="$rx_rate"
+    elif printf '%s' "$tx_rate" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        link_speed="$tx_rate"
+    else
+        link_speed=""
+    fi
+
+    band=""
+    chan=""
+    if [ -n "$freq" ]; then
+        band=$(derive_band_from_freq "$freq")
+        chan=$(channel_from_freq "$freq")
+    fi
+
+    width_guess=$(infer_wifi_width_mhz "$band" "$width" "$link_speed")
+    width=$(printf '%s' "$width_guess" | awk -F'|' '{print $1}')
+    width_source=$(printf '%s' "$width_guess" | awk -F'|' '{print $2}')
+    width_confidence=$(printf '%s' "$width_guess" | awk -F'|' '{print $3}')
+
+    kv=""
+    [ -n "$bssid" ] && kv="$kv bssid=$bssid"
+    [ -n "$ssid" ] && kv="$kv ssid=$ssid"
+    [ -n "$freq" ] && kv="$kv freq=$freq"
+    [ -n "$band" ] && kv="$kv band=$band"
+    [ -n "$chan" ] && kv="$kv chan=$chan"
+    [ -n "$signal" ] && kv="$kv signal_dbm=$signal"
+    [ -n "$width" ] && kv="$kv width=$width"
+    [ -n "$width_source" ] && kv="$kv width_source=$width_source"
+    [ -n "$width_confidence" ] && kv="$kv width_confidence=$width_confidence"
+    [ -n "$link_speed" ] && kv="$kv link_speed=$link_speed"
+    [ -n "$rx_rate" ] && kv="$kv rx_rate=$rx_rate"
+    [ -n "$tx_rate" ] && kv="$kv tx_rate=$tx_rate"
+    [ -n "$caps" ] && kv="$kv caps=$caps"
+
+    printf '%s' "${kv# }"
+}
+
+parse_iw_link_info() {
+    local wifi_iface="$1" out
+    [ -z "$wifi_iface" ] && return 1
+    resolve_iw_binary || return 1
+    out=$($IW_BIN dev "$wifi_iface" link 2>/dev/null)
+    if [ "${ROUTER_DEBUG:-0}" = "1" ]; then
+        WIFI_RAW_IW_OUT="$out"
+    fi
+    parse_iw_link_info_text "$out"
+}
+
+parse_dumpsys_wifi_info_text() {
+    local out="$1" bssid ssid freq caps link_speed band chan width width_source width_confidence width_guess kv
+    if [ -z "$out" ]; then
+        out=$(cat 2>/dev/null)
+    fi
+    [ -z "$out" ] && return 1
+
+    bssid=$(printf '%s\n' "$out" | grep -Eio '([0-9a-f]{2}:){5}[0-9a-f]{2}' | head -n1 | tr 'A-F' 'a-f')
+    ssid=$(printf '%s\n' "$out" | sed -nE 's/.*(SSID:|SSID=|ssid=)[[:space:]]*"?([^",]+)"?.*/\2/p' | head -n1)
+    freq=$(printf '%s\n' "$out" | sed -nE 's/.*(freq|frequency)[=:][[:space:]]*([0-9]+(\.[0-9]+)?).*/\2/p' | head -n1)
+    link_speed=$(printf '%s\n' "$out" | sed -nE 's/.*(linkSpeed|link speed)[=:][[:space:]]*([0-9]+(\.[0-9]+)?).*/\2/p' | head -n1)
+    width=$(printf '%s\n' "$out" | sed -nE 's/.*(channelWidth|channel width)[=:][[:space:]]*([0-9]+).*/\2/p' | head -n1)
+
+    caps=$(printf '%s' "$out" | awk '
+        /\[.*\]/ {
+            s=$0
+            if (s ~ /capab|Capabilities|capability|capabilities/ || s ~ /\[HT|\[VHT|\[HE|\[ESS|\[WPA/) {
+                sub(/^[^\[]*/, "", s)
+                gsub(/\[/, "", s)
+                gsub(/\]/, " ", s)
+                gsub(/[[:space:]]+/, " ", s)
+                gsub(/^ | $/, "", s)
+                print s
+                exit
+            }
+        }
+    ')
+
+    freq=$(normalize_freq_mhz "$freq")
+    caps=$(normalize_pipe_list "$caps")
+    ssid=$(sanitize_kv_value "$ssid")
+
+    band=""
+    chan=""
+    if [ -n "$freq" ]; then
+        band=$(derive_band_from_freq "$freq")
+        chan=$(channel_from_freq "$freq")
+    fi
+
+    width_guess=$(infer_wifi_width_mhz "$band" "$width" "$link_speed")
+    width=$(printf '%s' "$width_guess" | awk -F'|' '{print $1}')
+    width_source=$(printf '%s' "$width_guess" | awk -F'|' '{print $2}')
+    width_confidence=$(printf '%s' "$width_guess" | awk -F'|' '{print $3}')
+
+    kv=""
+    [ -n "$bssid" ] && kv="$kv bssid=$bssid"
+    [ -n "$ssid" ] && kv="$kv ssid=$ssid"
+    [ -n "$freq" ] && kv="$kv freq=$freq"
+    [ -n "$band" ] && kv="$kv band=$band"
+    [ -n "$chan" ] && kv="$kv chan=$chan"
+    [ -n "$link_speed" ] && kv="$kv link_speed=$link_speed"
+    [ -n "$width" ] && kv="$kv width=$width"
+    [ -n "$width_source" ] && kv="$kv width_source=$width_source"
+    [ -n "$width_confidence" ] && kv="$kv width_confidence=$width_confidence"
+    [ -n "$caps" ] && kv="$kv caps=$caps"
+
+    printf '%s' "${kv# }"
+}
+
+parse_dumpsys_wifi_info() {
+    local out
+    command_exists dumpsys || return 1
+    out=$(dumpsys wifi 2>/dev/null)
+    if [ "${ROUTER_DEBUG:-0}" = "1" ]; then
+        WIFI_RAW_DUMPSYS_OUT="$out"
+    fi
+    parse_dumpsys_wifi_info_text "$out"
+}
+
+parse_ip_neigh_wifi_info() {
+    local wifi_iface="$1" gw mac kv
+    [ -z "$wifi_iface" ] && return 1
+    [ -z "${IP_BIN:-}" ] && return 1
+
+    gw=$("$IP_BIN" route show default 2>/dev/null | awk -v dev="$wifi_iface" '$0 ~ ("dev " dev) {for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}')
+    [ -z "$gw" ] && return 1
+
+    mac=$("$IP_BIN" neigh show "$gw" dev "$wifi_iface" 2>/dev/null | awk '{print $5; exit}')
+    if ! printf '%s' "$mac" | grep -Eqi '^([0-9a-f]{2}:){5}[0-9a-f]{2}$'; then
+        return 1
+    fi
+
+    kv="bssid=$(printf '%s' "$mac" | tr 'A-F' 'a-f')"
+    printf '%s' "$kv"
+}
+
+wifi_cache_write() {
+    local cache_file="${WIFI_INFO_CACHE_FILE}" new_val="$1" cur_val=""
+    [ -z "$new_val" ] && return 1
+    [ -f "$cache_file" ] && cur_val=$(cat "$cache_file" 2>/dev/null | tr -d '\r\n')
+    [ "$cur_val" = "$new_val" ] && return 0
+    if command_exists atomic_write; then
+        printf '%s\n' "$new_val" | atomic_write "$cache_file"
+    else
+        printf '%s\n' "$new_val" > "$cache_file" 2>/dev/null
+    fi
+}
+
+# Get extended Wi-Fi info with caching
+# Usage: get_wifi_extended_info [IFACE]
+# Output: key=value list (caps uses value=a|b)
+get_wifi_extended_info() {
+    local wifi_iface="${1:-$WIFI_IFACE}" info=""
+
+    WIFI_INFO_SOURCE=""
+
+    if iw_is_usable; then
+        info=$(parse_iw_link_info "$wifi_iface")
+        [ -n "$info" ] && WIFI_INFO_SOURCE="iw"
+    fi
+
+    if [ -z "$info" ]; then
+        info=$(parse_dumpsys_wifi_info)
+        [ -n "$info" ] && WIFI_INFO_SOURCE="dumpsys"
+    fi
+
+    if [ -z "$info" ]; then
+        info=$(parse_ip_neigh_wifi_info "$wifi_iface")
+        [ -n "$info" ] && WIFI_INFO_SOURCE="ip-neigh"
+    fi
+
+    [ -n "$info" ] && wifi_cache_write "$info"
+    printf '%s' "$info"
+}
+
+# Attempt to detect router vendor from BSSID OUI
+
+detect_router_vendor() {
+    local bssid="$1" oui="" bssid_lc o1 o2 o3
+
+    case "$bssid" in
+        [0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:*) ;;
+        *) printf '%s' "unknown"; return 0 ;;
+    esac
+
+    bssid_lc=$(printf '%s' "$bssid" | tr '[:upper:]' '[:lower:]')
+    IFS=: read -r o1 o2 o3 _rest <<EOF
+$bssid_lc
+EOF
+    oui="${o1}:${o2}:${o3}"
+
+    case "$oui" in
+        00:26:75|28:e3:1f|e8:94:f6) printf '%s' "gl-inet" ;;
+        b4:fb:e4) printf '%s' "asus" ;;
+        *) printf '%s' "unknown" ;;
+    esac
 }
 
 
