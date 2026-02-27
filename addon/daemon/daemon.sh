@@ -1,16 +1,16 @@
 #!/system/bin/sh
 # Daemon: log interface and Wi-Fi/mobile transitions
-# ============== TODO Sec ==============
-# - TODO: Add ping and latency metrics to evaluate connection quality ( 70% of 100%, need to design lightweight probing method)
-# - TODO: Add support for multiple Wi-Fi interfaces (if the device supports it,  60% of 100%, need testing devices)
-# - TODO: Add support for multiple mobile interfaces (if the device supports it,  60% of 100%, need testing devices)
-# - TODO: Modularize the code further (separate functions into different files,  70% of 100%)
-# - TODO: Add support for IPv6 (currently only IPv4, 40% of 100%, need invvestigation of ipv6 tools and params can be modified)
-# - TODO: Add support for notifications to the app (broadcast intents   50% of 100%, need apk side)
-# - TODO: Add support for custom policy rules (external scripts,  70% of 100%)
-# - TODO: Add support for historical metrics (rotating logs, lightweight database,  30% of 100%)
-# - TODO: Add support for trend analysis (pattern detection)
-# - TODO: Possibility to detect the execution of a specific application and adjust network behavior accordingly: com.example.app="<profile_name>" 
+# ============== Roadmap Status ==============
+# DONE: Add ping and latency metrics to evaluate connection quality (RTT + latency score + EMA)
+# TODO: [PENDING] Add support for multiple Wi-Fi interfaces (requires multi-iface device testing) TODO:
+# TODO: [PENDING] Add support for multiple mobile interfaces (requires multi-modem/multi-rmnet testing) TODO:
+# DONE: Modularize daemon code into separate function modules
+# TODO: [PENDING] Add IPv6 support (currently IPv4-focused path) TODO:
+# DONE: Add app notifications/broadcast integration for daemon events
+# TODO: [IN_PROGRESS] Add support for richer custom policy rules (external scripts already supported, needs expansion) TODO:
+# TODO: [PENDING] Add historical metrics persistence (rotating logs / lightweight DB) TODO:
+# TODO: [PENDING] Add trend analysis (pattern detection) TODO:
+# DONE: Detect specific app execution and map to profile via target.prop
 
 # ============== Global Vars ==============
 SCRIPT_DIR="${0%/*}"
@@ -20,13 +20,26 @@ LOG_DIR="$MODDIR/logs"
 LOG_FILE="$LOG_DIR/daemon.log"
 POLICY_DIR="$MODDIR/addon/policy"
 POLICY_LOG="$LOG_DIR/policy.log"
-GENERAL_DAEMON_LOG="$LOG_DIR/general_daemon.log"
 STATE_FILE="$MODDIR/cache/daemon.state"
 PID_FILE="$MODDIR/cache/daemon.pid"
 LAST_EVENT_FILE="$MODDIR/cache/daemon.last"
 LAST_EVENT_JSON="$MODDIR/cache/event.last.json"
+ROUTER_DNI_FILE="$MODDIR/cache/router.dni"
+ROUTER_LAST_FILE="$MODDIR/cache/router.last"
+ROUTER_PAIRING_CACHE_FILE="$MODDIR/cache/router.pairing.json"
 shared_errors="$MODDIR/addon/functions/debug/shared_errors.sh"
+POLICY_COMMON_SH="$MODDIR/addon/functions/policy_common.sh"
 EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
+APP_EVENT_PROP="persist.kitsunping.user_event"
+APP_EVENT_DATA_PROP="persist.kitsunping.user_event_data"
+
+uint_or_default() {
+    local raw="$1" def="$2"
+    case "$raw" in
+        ''|*[!0-9]*) printf '%s' "$def" ;;
+        *) printf '%s' "$raw" ;;
+    esac
+}
 
 # Commands and Binarys (to be detected)
 IP_BIN=""
@@ -41,21 +54,15 @@ EV_WIFI_LEFT="WIFI_LEFT"
 EV_WIFI_JOINED="WIFI_JOINED"        
 EV_IFACE_CHANGED="IFACE_CHANGED"      
 EV_SIGNAL_DEGRADED="SIGNAL_DEGRADED"
-EV_TIMER_WAKE="TIMER_WAKE"
-EV_WAKE="WAKE"
-
-# Internal / state events
-ST_SLEEPING="SLEEPING"
-ST_AWAKE="AWAKE"
-ST_EVALUATING="EVALUATING"
-ST_CALIBRATING="CALIBRATING"
-ST_SUSPENDED="SUSPENDED"
-
-# Network quality states
-NET_NONE="NONE"
-NET_GOOD="GOOD"
-NET_LIMBO="LIMBO"
-NET_BAD="BAD"
+EV_USER_REQUESTED_START="user_requested_start"
+EV_USER_REQUESTED_CALIBRATE="user_requested_calibrate"
+EV_USER_REQUESTED_RESTART="user_requested_restart"
+EV_REQUEST_PROFILE="request_profile"
+# For pairing router from app
+EV_ROUTER_PAIRED="ROUTER_PAIRED"
+EV_ROUTER_UNPAIRED="ROUTER_UNPAIRED"
+EV_ROUTER_DNI_CHANGED="ROUTER_DNI_CHANGED"
+EV_ROUTER_CAPS_DETECTED="ROUTER_CAPS_DETECTED"
 
 # Configurable parameters
 DAEMON_INTERVAL="${DAEMON_INTERVAL:-10}" # seconds (default polling interval)
@@ -65,14 +72,31 @@ LAST_TS_IFACE_CHANGED=0
 INTERVAL_DEFAULT=10 # seconds
 INTERVAL="$INTERVAL_DEFAULT"
 SIGNAL_POLL_INTERVAL=5 # poll signal quality every N loops when on mobile
-interval_prop="$(getprop kitsunping.daemon.interval)"
+NET_PROBE_INTERVAL=3 # perform network probe every N loops when on Wi-Fi
+interval_prop="$(getprop kitsunping.daemon.interval | tr -d '\r\n')"
+signal_poll_prop="$(getprop kitsunping.daemon.signal_poll_interval | tr -d '\r\n')"
+net_probe_prop="$(getprop kitsunping.daemon.net_probe_interval | tr -d '\r\n')"
+interval_prop="$(uint_or_default "$interval_prop" "")"
+signal_poll_prop="$(uint_or_default "$signal_poll_prop" "")"
+net_probe_prop="$(uint_or_default "$net_probe_prop" "")"
 CONF_ALPHA=$(getprop kitsunping.sigmoid.alpha)
 CONF_BETA=$(getprop kitsunping.sigmoid.beta)
 CONF_GAMMA=$(getprop kitsunping.sigmoid.gamma)
+ROUTER_DEBUG_RAW=$(getprop kitsunping.router.debug)
+KITSUNROUTER_ENABLE_RAW="$(getprop persist.kitsunrouter.enable)"
+KITSUNROUTER_DEBUG_RAW="$(getprop persist.kitsunrouter.debug)"
+ROUTER_EXPERIMENTAL_RAW=$(getprop persist.kitsunping.router.experimental)
+ROUTER_EXPERIMENTAL_RAW_2=$(getprop kitsunping.router.experimental)
+ROUTER_OPENWRT_RAW=$(getprop persist.kitsunping.router.openwrt_mode)
+ROUTER_OPENWRT_RAW_2=$(getprop kitsunping.router.openwrt_mode)
+ROUTER_CACHE_TTL_RAW=$(getprop persist.kitsunping.router.cache_ttl)
+ROUTER_CACHE_TTL_RAW_2=$(getprop kitsunping.router.cache_ttl)
+ROUTER_INFER_WIDTH_RAW=$(getprop persist.kitsunping.router.infer_width)
+ROUTER_INFER_WIDTH_RAW_2=$(getprop kitsunping.router.infer_width)
 
 # Wifi serction
-WIFI_SPEED_THRESHOLD="$(getprop kitsunping.wifi.speed_threshold)" # Mbps, above this is GOOD, below is LIMBO/BAD
-WIFI_SPEED_THRESHOLD="${WIFI_SPEED_THRESHOLD:-75}" # default to 75 Mbps if not set or invalid
+WIFI_SPEED_THRESHOLD="$(getprop kitsunping.wifi.speed_threshold | tr -d '\r\n')" # Mbps, above this is GOOD, below is LIMBO/BAD
+WIFI_SPEED_THRESHOLD="$(uint_or_default "$WIFI_SPEED_THRESHOLD" "75")" # default to 75 Mbps if not set or invalid
 # Event emission controls:
 # - persist.kitsunping.emit_events: boolean (0/1, false/true) to enable/disable emitting events
 # - persist.kitsunping.event_debounce_sec: debounce in seconds (integer > 0)
@@ -110,10 +134,59 @@ if [ -z "$EVENT_DEBOUNCE_SEC" ]; then
             ;;
     esac
 fi
-LCL_ALPHA=${CONF_ALPHA:-0.4}
-LCL_BETA=${CONF_BETA:-0.3}
-LCL_GAMMA=${CONF_GAMMA:-0.3}
+
+normalize_weight_value() {
+    local raw="$1" def="$2"
+    awk -v v="$raw" -v d="$def" 'BEGIN { if (v ~ /^-?[0-9]+([.][0-9]+)?$/) printf "%s", v; else printf "%s", d }'
+}
+
+LCL_ALPHA="$(normalize_weight_value "${CONF_ALPHA:-}" "0.4")"
+LCL_BETA="$(normalize_weight_value "${CONF_BETA:-}" "0.3")"
+LCL_GAMMA="$(normalize_weight_value "${CONF_GAMMA:-}" "0.3")"
 LCL_DELTA=0.1
+
+ROUTER_DEBUG="${ROUTER_DEBUG:-$ROUTER_DEBUG_RAW}"
+case "${ROUTER_DEBUG:-}" in
+    1|true|TRUE|yes|YES|on|ON) ROUTER_DEBUG=1 ;;
+    *) ROUTER_DEBUG=0 ;;
+esac
+
+KITSUNROUTER_ENABLE="${KITSUNROUTER_ENABLE:-$KITSUNROUTER_ENABLE_RAW}"
+case "${KITSUNROUTER_ENABLE:-}" in
+    1|true|TRUE|yes|YES|on|ON) KITSUNROUTER_ENABLE=1 ;;
+    *) KITSUNROUTER_ENABLE=0 ;;
+esac
+
+# Prefer persist.kitsunrouter.debug over legacy kitsunping.router.debug when present.
+if [ -n "${KITSUNROUTER_DEBUG_RAW:-}" ]; then
+    case "${KITSUNROUTER_DEBUG_RAW:-}" in
+        1|true|TRUE|yes|YES|on|ON) ROUTER_DEBUG=1 ;;
+        *) ROUTER_DEBUG=0 ;;
+    esac
+fi
+
+ROUTER_EXPERIMENTAL="${ROUTER_EXPERIMENTAL:-${ROUTER_EXPERIMENTAL_RAW:-$ROUTER_EXPERIMENTAL_RAW_2}}"
+case "${ROUTER_EXPERIMENTAL:-}" in
+    1|true|TRUE|yes|YES|on|ON) ROUTER_EXPERIMENTAL=1 ;;
+    *) ROUTER_EXPERIMENTAL=0 ;;
+esac
+
+ROUTER_OPENWRT_MODE="${ROUTER_OPENWRT_MODE:-${ROUTER_OPENWRT_RAW:-$ROUTER_OPENWRT_RAW_2}}"
+case "${ROUTER_OPENWRT_MODE:-}" in
+    1|true|TRUE|yes|YES|on|ON) ROUTER_OPENWRT_MODE=1 ;;
+    *) ROUTER_OPENWRT_MODE=0 ;;
+esac
+
+ROUTER_CACHE_TTL="${ROUTER_CACHE_TTL:-${ROUTER_CACHE_TTL_RAW:-$ROUTER_CACHE_TTL_RAW_2}}"
+case "${ROUTER_CACHE_TTL:-}" in
+    ''|*[!0-9]* ) ROUTER_CACHE_TTL=3600 ;;
+esac
+
+ROUTER_INFER_WIDTH="${ROUTER_INFER_WIDTH:-${ROUTER_INFER_WIDTH_RAW:-$ROUTER_INFER_WIDTH_RAW_2}}"
+case "${ROUTER_INFER_WIDTH:-}" in
+    1|true|TRUE|yes|YES|on|ON) ROUTER_INFER_WIDTH=1 ;;
+    *) ROUTER_INFER_WIDTH=0 ;;
+esac
 
 # Policy file ownership conventions:
 # - `cache/policy.request`: written by the daemon to indicate the desired/profile chosen
@@ -144,9 +217,14 @@ log_error() { printf '[DAEMON][ERROR] %s\n' "$*" >&2; }
 log_policy() { printf '[POLICY] %s\n' "$*" >&2; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+# TODO: try to reduce code whit a 1 funciton 
+
 # Source modular components
 if [ -f "$MODDIR/addon/functions/core.sh" ]; then
     . "$MODDIR/addon/functions/core.sh"
+fi
+if [ -f "$POLICY_COMMON_SH" ]; then
+    . "$POLICY_COMMON_SH"
 fi
 if [ -f "$MODDIR/addon/functions/utils/env_detect.sh" ]; then
     . "$MODDIR/addon/functions/utils/env_detect.sh"
@@ -171,51 +249,40 @@ if [ -f "$MODDIR/addon/functions/daemon_utils.sh" ]; then
     . "$MODDIR/addon/functions/daemon_utils.sh"
 fi
 
+if [ -f "$MODDIR/addon/functions/daemon_static.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_static.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_events.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_events.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_wifi_cycle.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_wifi_cycle.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_mobile_cycle.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_mobile_cycle.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_app_cycle.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_app_cycle.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_state_writer.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_state_writer.sh"
+fi
+
+if [ -f "$MODDIR/addon/functions/daemon_transitions.sh" ]; then
+    . "$MODDIR/addon/functions/daemon_transitions.sh"
+fi
+
 if [ -f "$shared_errors" ]; then 
     . "$shared_errors"
     command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@";  } 
 else
     log_warning "Shared_errors no encontrado: $shared_errors (usando logger interno)"
 fi
-
-# ============= Event Writing And Regex ==============
-## JSON escape helper
-## Usage: json_escape "string to escape" 
-## e.g., json_escape 'He said "Hello\nWorld"' -> He said \"Hello\nWorld\"   
-json_escape() {
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
-}
-
-## Atomic write helper, (to avoid partial writes)
-## Usage: atomic_write target_file < data_to_write 
-## (on success, moves temp file to target; on failure, removes temp file)
-atomic_write() {
-    local target="$1" tmp
-
-    ## Create temp file in same dir as target (same filesystem → atomic mv)
-    tmp=$(mktemp "${target}.XXXXXX") || \
-        tmp="${target}.$$.$(date +%s).tmp"
-
-    if cat - > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
-    else
-        rm -f "$tmp"
-        return 1
-    fi
-}
-
-## Write event to JSON file
-## Usage: write_event_json $1 = "event_name" $2 = "timestamp" $3 = "details"
-## e.g., write_event_json "WIFI_LEFT" 1620000000 "iface=wlan0 link=DOWN ip=0 egress=0 reason=link_down"
-write_event_json() {
-    local name="$1" ts="$2" details jsonfile="$LAST_EVENT_JSON"
-    local details
-    details="$(json_escape "$3")"
-
-    cat <<EOF | atomic_write "$jsonfile"
-{"event":"$name","ts":$ts,"details":"$details","iface":"$current_iface","wifi_state":"$wifi_state","wifi_score":$wifi_score}
-EOF
-}
 
 # ============= Signal Handling ==============
 # Handle TERM/INT signals to cleanup pidfile
@@ -257,14 +324,6 @@ ensure_singleton() {
     echo "$$" > "$PID_FILE" 2>/dev/null || log_warning "could not write pidfile"
 }
 
-## Get current epoch time in seconds
-## Usage: now_epoch 
-## Results in stdout: epoch seconds (e.g., 1620000000)
-now_epoch() {
-    # Try toybox/GNU date, fallback to busybox, then POSIX awk systime
-    date +%s 2>/dev/null 2>/dev/null || awk 'BEGIN{print systime()}' 2>/dev/null || echo 0 
-}
-
 # ============== Command Checks ==============
 ## Check for required commands and set global vars
 ## Usage: check_and_detect_commands
@@ -287,74 +346,6 @@ check_and_detect_commands() {
     detect_bc_binary
 }
 
-# ============== Main Functions ==============
-## Determine if event should be emitted based on debounce time
-## Usage: should_emit_event "event_name"
-## Returns 0 (true) if event should be emitted, 1 (false) otherwise
-should_emit_event() {
-    local name="$1" now last_var last_ts diff
-
-    # Global kill-switch for event emission
-    [ "${EMIT_EVENTS:-1}" -eq 0 ] && return 1
-
-    now=$(now_epoch)
-    case "$now" in
-        ''|*[!0-9]*) now=0 ;;
-    esac
-
-    # If debounce is unset/invalid, don't suppress events.
-    case "${EVENT_DEBOUNCE_SEC:-}" in
-        ''|*[!0-9]*) return 0 ;;
-    esac
-
-    last_var="LAST_TS_${name}"
-    eval "last_ts=\${$last_var:-0}"
-    case "$last_ts" in
-        ''|*[!0-9]*) last_ts=0 ;;
-    esac
-
-    diff=$((now - last_ts))
-    # If time went backwards or is equal, allow emission.
-    [ "$diff" -lt 0 ] && diff="$EVENT_DEBOUNCE_SEC"
-
-    if [ "$diff" -ge "$EVENT_DEBOUNCE_SEC" ]; then
-        eval "$last_var=$now"
-        return 0
-    fi
-    return 1
-}
-
-## Emit an event (debounced) and notify executor
-## Usage: emit_event "EVENT_NAME" "details"
-emit_event() {
-    local name="$1" details="$2" now
-    now=$(now_epoch)
-
-    if should_emit_event "$name"; then
-        EVENT_SEQ=$(( ${EVENT_SEQ:-0} + 1 ))
-        log_info "EVENT #$EVENT_SEQ $name ts=$now $details"
-        write_event_json "$name" "$now" "$details"
-
-        if ! printf '%s %s %s\n' "$name" "$now" "$details" | atomic_write "$LAST_EVENT_FILE"; then
-            log_error "Failed to write LAST_EVENT_FILE"
-        fi
-
-        if [ -x "$EXECUTOR_SH" ]; then
-            EVENT_NAME="$name" \
-            EVENT_TS="$now" \
-            EVENT_DETAILS="$details" \
-            LOG_DIR="$LOG_DIR" \
-            POLICY_LOG="$POLICY_LOG" \
-            "$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
-        else
-            log_error "EXECUTOR not executable: $EXECUTOR_SH"
-        fi
-        # TODO: send broadcast to APK with action com.kitsunping.ACTION_UPDATE including 'event' and 'ts'
-    else
-        log_debug "EVENT suppressed by debounce: $name"
-    fi
-}
-
 # Initial delay to allow system to stabilize
 sleep 5
 check_and_detect_commands
@@ -375,6 +366,24 @@ case "$interval_prop" in
         ;;
 esac
 
+case "$signal_poll_prop" in
+    ''|*[!0-9]*) ;;
+    *)
+        if [ "$signal_poll_prop" -gt 0 ]; then
+            SIGNAL_POLL_INTERVAL="$signal_poll_prop"
+        fi
+        ;;
+esac
+
+case "$net_probe_prop" in
+    ''|*[!0-9]*) ;;
+    *)
+        if [ "$net_probe_prop" -gt 0 ]; then
+            NET_PROBE_INTERVAL="$net_probe_prop"
+        fi
+        ;;
+esac
+
 # Adjust minimum debounce based on interval (prevents spam during micro-outages)
 ## Ensure debounce >= polling interval (at most one event per loop)
 ## if interval > EVENT_DEBOUNCE_SEC then EVENT_DEBOUNCE_SEC = interval
@@ -386,10 +395,18 @@ if [ "$INTERVAL" -gt "$EVENT_DEBOUNCE_SEC" ]; then
 fi
 
 
-WIFI_IFACE="$(get_current_iface)"
+# Resolve Wi-Fi iface independently from current default route.
+# Using get_current_iface() here can point to rmnet* when mobile is active,
+# which swaps wifi/mobile fields in daemon.state.
+WIFI_IFACE="none"
+wifi_boot_readout="$(get_wifi_status)"
+for kv in $wifi_boot_readout; do
+    case "$kv" in
+        iface=*) WIFI_IFACE="${kv#iface=}" ;;
+    esac
+done
 if [ -z "$WIFI_IFACE" ]; then
     WIFI_IFACE="none"
-    log_warning "WIFI_IFACE not found (current route has no dev)"
 fi
 
 last_iface=""
@@ -404,322 +421,32 @@ last_mobile_egress=0
 last_mobile_score=0
 
 log_info "daemon start (DAEMON: monitor iface and wifi->mobile transitions)"
+log_info "kitsunrouter.enable=$KITSUNROUTER_ENABLE kitsunrouter.debug=$ROUTER_DEBUG"
 
 loop_count=0
 signal_loop_count=0
 wifi_probe_loop_count=0
 wifi_probe_fail_streak=0
 wifi_probe_ok=1
+last_router_paired="$(get_router_paired_flag)"
 
 while true; do
+    daemon_run_app_event_cycle
+    daemon_run_pairing_sync_cycle
+
     current_iface="$(get_current_iface)"
     [ -z "$current_iface" ] && current_iface="none"
 
-    wifi_readout="$(get_wifi_status "$WIFI_IFACE")"
-    wifi_link="DOWN"; wifi_ip=0; wifi_egress=0
-    wifi_path_reason="link_down"
-    wifi_rssi_dbm=""
-    wifi_rssi_score=""
-    for kv in $wifi_readout; do
-        case "$kv" in
-            link=*) wifi_link="${kv#link=}" ;;
-            ip=*) wifi_ip="${kv#ip=}" ;;
-            egress=*) wifi_egress="${kv#egress=}" ;;
-            reason=*) wifi_path_reason="${kv#reason=}" ;;
-        esac
-    done
-    wifi_state="disconnected"
-    [ "$wifi_link" = "UP" ] && [ "$wifi_ip" -eq 1 ] && wifi_state="connected"
-    if [ "$wifi_link" != "$last_wifi_link" ] || [ "$wifi_ip" -ne "$last_wifi_ip" ] || [ "$wifi_egress" -ne "$last_wifi_egress" ]; then
-        wifi_score="$(get_score "$wifi_link" "$wifi_ip" "$wifi_egress")"
-        last_wifi_link="$wifi_link"
-        last_wifi_ip="$wifi_ip"
-        last_wifi_egress="$wifi_egress"
-        last_wifi_score="$wifi_score"
-    else
-        wifi_score="$last_wifi_score"
-    fi
+    daemon_run_wifi_cycle
+    daemon_run_mobile_cycle
+    daemon_run_wifi_transport_cycle
+    daemon_run_mobile_transport_cycle
+    daemon_run_target_profile_cycle
+    daemon_run_router_status_push_cycle
 
-    # Wi-Fi quality enrichment: RSSI (cheap) + optional internet probe (throttled)
-    if [ "$wifi_link" = "UP" ] && [ "$wifi_ip" -eq 1 ]; then
-        wifi_rssi_dbm="$(get_wifi_rssi_dbm "$WIFI_IFACE")"
-        wifi_rssi_score="$(score_wifi_rssi "$wifi_rssi_dbm")"
+    daemon_run_transition_cycle
+    daemon_run_tick_cycle
 
-        # Combine base connectivity score with RSSI score when available (60/40)
-        if [ -n "$wifi_rssi_score" ] && echo "$wifi_rssi_score" | grep -Eq '^[0-9]+$'; then
-            wifi_score=$(awk -v b="$wifi_score" -v r="$wifi_rssi_score" 'BEGIN{v=(b*60 + r*40)/100; if(v<0) v=0; if(v>100) v=100; printf "%d", v}')
-        fi
-
-        # Probe only when Wi-Fi is the default route (otherwise the probe isn't Wi-Fi-specific)
-        # Also skip probing while calibration is running to avoid interfering with measurements.
-        if [ "$wifi_egress" -eq 1 ]; then
-            calib_state=""
-            [ -f "$MODDIR/cache/calibrate.state" ] && calib_state=$(cat "$MODDIR/cache/calibrate.state" 2>/dev/null | tr -d '\r\n' || true)
-            if [ "$calib_state" = "running" ]; then
-                wifi_probe_ok=1
-                wifi_probe_fail_streak=0
-                wifi_probe_loop_count=0
-            else
-                wifi_probe_loop_count=$((wifi_probe_loop_count + 1))
-                if [ "$wifi_probe_loop_count" -ge "${NET_PROBE_INTERVAL:-3}" ]; then
-                    wifi_probe_loop_count=0
-                    if tests_network; then
-                        wifi_probe_ok=1
-                        wifi_probe_fail_streak=0
-                    else
-                        wifi_probe_ok=0
-                        wifi_probe_fail_streak=$((wifi_probe_fail_streak + 1))
-                    fi
-                fi
-
-                # Penalize only after repeated failures (avoid false negatives / transient ICMP drops)
-                if [ "$wifi_probe_fail_streak" -ge 2 ]; then
-                    wifi_score=$((wifi_score - 20))
-                fi
-            fi
-        else
-            wifi_probe_ok=1
-            wifi_probe_fail_streak=0
-            wifi_probe_loop_count=0
-        fi
-    else
-        wifi_probe_ok=1
-        wifi_probe_fail_streak=0
-        wifi_probe_loop_count=0
-    fi
-
-    # Clamp score
-    [ "$wifi_score" -lt 0 ] && wifi_score=0
-    [ "$wifi_score" -gt 100 ] && wifi_score=100
-
-    wifi_quality_reason="$(get_reason_from_score "$wifi_score")"
-
-    wifi_details="link=$wifi_link ip=$wifi_ip egress=$wifi_egress reason=$wifi_path_reason quality=$wifi_quality_reason rssi=${wifi_rssi_dbm:--} probe=$wifi_probe_ok"
-
-    mobile_iface="none"
-    [ "$current_iface" != "$WIFI_IFACE" ] && [ "$current_iface" != "none" ] && mobile_iface="$current_iface"
-    mobile_readout="$(get_mobile_status "$mobile_iface")"
-    mobile_link="DOWN"; mobile_ip=0; mobile_egress=0; mobile_reason="link_down"
-    for kv in $mobile_readout; do
-        case "$kv" in
-            iface=*) mobile_iface="${kv#iface=}" ;;
-            link=*) mobile_link="${kv#link=}" ;;
-            ip=*) mobile_ip="${kv#ip=}" ;;
-            egress=*) mobile_egress="${kv#egress=}" ;;
-            reason=*) mobile_reason="${kv#reason=}" ;;
-        esac
-    done
-    if [ "$mobile_link" != "$last_mobile_link" ] || [ "$mobile_ip" -ne "$last_mobile_ip" ] || [ "$mobile_egress" -ne "$last_mobile_egress" ]; then
-        mobile_score="$(get_score "$mobile_link" "$mobile_ip" "$mobile_egress")"
-        last_mobile_link="$mobile_link"
-        last_mobile_ip="$mobile_ip"
-        last_mobile_egress="$mobile_egress"
-        last_mobile_score="$mobile_score"
-    else
-        mobile_score="$last_mobile_score"
-    fi
-    mobile_reason="$(get_reason_from_score "$mobile_score")"
-
-    transport="none"
-    if [ "$wifi_egress" -eq 1 ]; then
-        transport="wifi"
-    elif [ "$mobile_egress" -eq 1 ]; then
-        transport="mobile"
-    fi
-
-    # Decide profile on Wi-Fi as well (previously only mobile signal drove PROFILE_CHANGED).
-    # Uses wifi_score (connectivity + RSSI + optional probe penalty) as the quality proxy.
-    if [ "$transport" = "wifi" ]; then
-        wifi_composite="$wifi_score"
-        wifi_composite_ema_val=$(composite_ema "$wifi_composite" "$MODDIR/cache/composite.wifi.ema")
-
-        # Default thresholds: choose speed only when Wi-Fi quality is clearly good.
-        WIFI_SPEED_THRESHOLD=${WIFI_SPEED_THRESHOLD:-75}
-        case "$WIFI_SPEED_THRESHOLD" in ''|*[!0-9]* ) WIFI_SPEED_THRESHOLD=75;; esac
-
-        profile="stable"
-        if [ "$wifi_score" -ge "$WIFI_SPEED_THRESHOLD" ]; then
-            profile="speed"
-        fi
-
-        # Allow policy script to override/select profile if available
-        if [ -f "$POLICY_DIR/decide_profile.sh" ]; then
-            wifi_reason="$wifi_path_reason"
-            policy_choice=$(
-                ( . "$POLICY_DIR/decide_profile.sh" && pick_profile "$wifi_state" "$WIFI_IFACE" "$wifi_reason" "$wifi_details" "${LAST_EVENT_FILE}" ) 2>/dev/null
-            )
-            [ -n "$policy_choice" ] && profile="$policy_choice"
-        fi
-
-        POLICY_REQUEST_FILE="$MODDIR/cache/policy.request"
-        prev_profile=""
-        [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
-        if [ "$profile" != "$prev_profile" ]; then
-            printf '%s' "$profile" > "$POLICY_REQUEST_FILE" 2>/dev/null || true
-            emit_event "PROFILE_CHANGED" "from=$prev_profile to=$profile transport=wifi wifi_score=$wifi_score wifi_quality=$wifi_quality_reason rssi_dbm=${wifi_rssi_dbm:--} ema=$wifi_composite_ema_val"
-        fi
-
-        # Populate composite variables for state output consistency on Wi-Fi.
-        composite="$wifi_composite"
-        composite_ema_val="$wifi_composite_ema_val"
-        rsrp=""; rsrp_score=0
-        sinr=""; sinr_score=0
-    fi
-
-    # Poll radio signal only when mobile is the active/egress path; throttle by SIGNAL_POLL_INTERVAL
-    if [ "$transport" = "mobile" ]; then
-        signal_loop_count=$((signal_loop_count + 1))
-        if [ "$signal_loop_count" -ge "$SIGNAL_POLL_INTERVAL" ]; then
-            signal_loop_count=0
-            signal_info=$(get_signal_quality)
-            echo "$signal_info" | atomic_write "$MODDIR/cache/signal_quality.json"
-
-            # Extract quality_score, rsrp and sinr
-            signal_score=""
-            rsrp=""
-            sinr=""
-            if [ -n "$JQ_BIN" ]; then
-                signal_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .quality_score // empty' 2>/dev/null)
-                rsrp=$(echo "$signal_info" | "$JQ_BIN" -r 'try .rsrp_dbm // empty' 2>/dev/null)
-                sinr=$(echo "$signal_info" | "$JQ_BIN" -r 'try .sinr_db // empty' 2>/dev/null)
-            else
-                signal_score=$(echo "$signal_info" | awk -F: '/quality_score/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
-                rsrp=$(echo "$signal_info" | awk -F: '/rsrp_dbm/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
-                sinr=$(echo "$signal_info" | awk -F: '/sinr_db/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
-            fi
-
-            # Compute component scores (cached)
-            rsrp_score=0
-            sinr_score=0
-            if [ -n "$rsrp" ]; then
-                rsrp_score=$(score_rsrp_cached "$rsrp")
-            fi
-            if [ -n "$sinr" ]; then
-                sinr_score=$(score_sinr_cached "$sinr")
-            fi
-
-            # Hard penalty when SINR is negative to reflect unstable radio
-            if printf '%s' "$sinr" | grep -Eq '^-?[0-9]+$' && [ "$sinr" -lt 0 ]; then
-                log_debug "SINR negative (${sinr} dB), applying penalty to sinr_score=${sinr_score}"
-                sinr_score=$(awk -v s="$sinr_score" 'BEGIN{p=s-10; if(p<0)p=0; printf "%.2f", p}')
-            fi
-
-            # Performance proxy: use mobile_score (0..100) as initial Performance_score
-            performance_score="$mobile_score"
-
-            # Jitter penalty (placeholder for future metric)
-            jitter_penalty=0
-
-            # Composite weights (alpha+beta+gamma == 1)
-            # can implemement tis logic later in config: getprop kitsunping.daemon.sigmoid.*=x.x <-- verifi if is "" and use static || static values
-            LCL_ALPHA=0.4; LCL_BETA=0.3; LCL_GAMMA=0.3; LCL_DELTA=0.1
-
-            composite=$(awk -v a="$LCL_ALPHA" -v b="$LCL_BETA" -v c="$LCL_GAMMA" -v r="$rsrp_score" -v s="$sinr_score" -v p="$performance_score" -v d="$LCL_DELTA" -v j="$jitter_penalty" 'BEGIN{v=a*r + b*s + c*p - d*j; if(v<0) v=0; if(v>100) v=100; printf "%.2f", v }')
-
-            # Smooth composite with EMA
-            composite_ema_val=$(composite_ema "$composite" "$MODDIR/cache/composite.mobile.ema")
-
-            # Decide profile using EMA value
-            profile=$(decide_profile "$composite_ema_val")
-
-            # Allow policy script to override/select profile if available
-            if [ -f "$POLICY_DIR/decide_profile.sh" ]; then
-                # Execute policy script in a subshell to avoid polluting daemon variables
-                # (prevents decide_profile.sh from clobbering mobile_reason, etc.)
-                wifi_reason="$wifi_path_reason"
-                policy_choice=$(
-                    ( . "$POLICY_DIR/decide_profile.sh" && pick_profile "$wifi_state" "$WIFI_IFACE" "$wifi_reason" "$wifi_details" "${LAST_EVENT_FILE}" ) 2>/dev/null
-                )
-                # if policy returns non-empty, prefer it
-                [ -n "$policy_choice" ] && profile="$policy_choice"
-                # policy target will be handled by executor (PROFILE_CHANGED event)
-            fi  
-
-            # Persist desired profile request (daemon is NOT the applier)
-            # The executor is responsible for writing `cache/policy.target` and `cache/policy.current`. 
-            POLICY_REQUEST_FILE="$MODDIR/cache/policy.request"
-            prev_profile=""
-            [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
-            if [ "$profile" != "$prev_profile" ]; then
-                printf '%s' "$profile" > "$POLICY_REQUEST_FILE" 2>/dev/null || true
-                emit_event "PROFILE_CHANGED" "from=$prev_profile to=$profile composite=$composite ema=$composite_ema_val rsrp=$rsrp rsrp_score=$rsrp_score sinr=$sinr sinr_score=$sinr_score"
-            fi
-
-            degraded_reason=""
-
-            # Use composite to catch SINR-driven degradations; fallback to raw quality_score
-            if printf '%s' "$composite" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
-                if awk -v v="$composite" 'BEGIN{exit !(v>0 && v<40)}'; then
-                    degraded_reason="composite"
-                fi
-            fi
-
-            if [ -z "$degraded_reason" ] && echo "$signal_score" | grep -Eq '^[0-9]+$'; then
-                if [ "$signal_score" -gt 0 ] && [ "$signal_score" -lt 40 ]; then
-                    degraded_reason="rsrp"
-                fi
-            fi
-
-            if [ -n "$degraded_reason" ]; then
-                log_info "Poor signal detected ($degraded_reason) comp=$composite rsrp=$rsrp sinr=$sinr"
-                emit_event "$EV_SIGNAL_DEGRADED" "reason=$degraded_reason comp=$composite rsrp=$rsrp sinr=$sinr iface=$mobile_iface"
-            else
-                log_debug "signal ok comp=$composite ema=$composite_ema_val rsrp_score=$rsrp_score sinr_score=$sinr_score"
-            fi
-        fi
-    else
-        signal_loop_count=0
-    fi
-
-    if [ "$current_iface" != "$last_iface" ]; then
-        log_info "iface_changed: $last_iface -> $current_iface"
-        emit_event "$EV_IFACE_CHANGED" "from=$last_iface to=$current_iface"
-        last_iface="$current_iface"
-    fi
-
-    if [ "$wifi_state" != "$last_wifi_state" ]; then
-        log_info "wifi_state_changed: $last_wifi_state -> $wifi_state ($wifi_details)"
-        if [ "$last_wifi_state" = "connected" ] && [ "$wifi_state" = "disconnected" ]; then
-            log_info "event: wifi_left -> assume mobile priority"
-            emit_event "$EV_WIFI_LEFT" "iface=$current_iface $wifi_details"
-        elif [ "$last_wifi_state" = "disconnected" ] && [ "$wifi_state" = "connected" ]; then
-            emit_event "$EV_WIFI_JOINED" "iface=$current_iface $wifi_details"
-        fi
-        last_wifi_state="$wifi_state"
-    fi
-
-    loop_count=$((loop_count + 1))
-    if [ $loop_count -ge 6 ] || [ "$current_iface" = "none" ]; then
-        log_debug "tick iface=$current_iface wifi=$wifi_state ($wifi_details)"
-        loop_count=0
-    fi
-
-    cat <<EOF | atomic_write "$STATE_FILE"
-iface=$current_iface
-transport=$transport
-wifi.iface=$WIFI_IFACE
-wifi.state=$wifi_state
-wifi.link=$wifi_link
-wifi.ip=$wifi_ip
-wifi.egress=$wifi_egress
-wifi.score=$wifi_score
-wifi.reason=$wifi_path_reason
-wifi.quality=$wifi_quality_reason
-wifi.rssi_dbm=${wifi_rssi_dbm:--}
-wifi.probe_ok=$wifi_probe_ok
-mobile.iface=$mobile_iface
-mobile.link=$mobile_link
-mobile.ip=$mobile_ip
-mobile.egress=$mobile_egress
-mobile.score=$mobile_score
-mobile.reason=$mobile_reason
-rsrp_dbm=${rsrp:--}
-rsrp_score=${rsrp_score:-0}
-sinr_db=${sinr:--}
-sinr_score=${sinr_score:-0}
-composite_score=${composite:-0}
-composite_ema=${composite_ema_val:-0}
-profile=${profile:-unknown}
-EOF
+    daemon_write_state_file
     sleep "$INTERVAL"
 done
