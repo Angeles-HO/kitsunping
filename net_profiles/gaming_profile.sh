@@ -53,9 +53,9 @@ apply_param_set <<'EOF'
 1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled
 1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled
 1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled
-4096,87380,12582912|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem (min,default,max=12MiB)
-4096,87380,12582912|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem (min,default,max=12MiB)
-262144,524288,1048576|/proc/sys/net/ipv4/tcp_mem|tcp_mem conservative
+4096 87380 12582912|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem (min,default,max=12MiB)
+4096 87380 12582912|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem (min,default,max=12MiB)
+262144 524288 1048576|/proc/sys/net/ipv4/tcp_mem|tcp_mem conservative
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled (if supported)
 3|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 reduced
@@ -88,11 +88,11 @@ apply_param_set <<'EOF'
 500|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec conservative
 100|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit conservative
 1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux enabled
-262144,524288,1048576|/proc/sys/net/ipv4/udp_mem|udp_mem conservative
+262144 524288 1048576|/proc/sys/net/ipv4/udp_mem|udp_mem conservative
 4096|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min conservative
 4096|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min conservative
-1024,65000|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range wide
-0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range optimized
+1024 65000|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range wide
+0 2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range optimized
 EOF
 
 # Conditional: enable BBR only if kernel supports it
