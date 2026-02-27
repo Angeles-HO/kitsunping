@@ -15,7 +15,10 @@
 # com.warzone.mobile = high, gaming
 # com.spotify.music = medium, stable
 # app.kitsunping = high, stable
+# # com.brave.browser_nightly=gaming, high
 
 com.mobile.legends=gaming, medium
-com.brave.browser_nightly=gaming, high
+com.brave.browser=gaming, high
 com.spotify.music=speed, medium
+com.whatsapp=speed, medium
+com.instagram.android=speed, low

@@ -2,8 +2,11 @@
 # Net Calibrate.sh Script
 # Version: 5.4 - non release
 # Description: This script calibrates network properties for optimal performance.
-# Status: re open - 24/02/2026
-
+# Status: re open - 26/02/2026
+# TODO: [IN_PROGRESS] Add support for IPv6 calibration (requires IPv6-capable ping and test targets) TODO:
+# TODO: [PENDING] Add more granular latency metrics (e.g., jitter, percentile breakdowns) TODO:
+# TODO: [PENDING] Add option for continuous background calibration with adaptive intervals (requires daemon integration) TODO:
+#  TODO: [PENDING] Add support for saving historical calibration data and trends (requires lightweight DB or log rotation) TODO:
 # Global variables
 # NOTE: This script is commonly *sourced* by executor.sh. When sourced, $0 is the
 # caller, so prefer caller-provided NEWMODPATH/MODDIR and avoid clobbering them.
@@ -29,6 +32,25 @@ uint_or_default() {
     case "$raw" in
         ''|*[!0-9]*) printf '%s' "$def" ;;
         *) printf '%s' "$raw" ;;
+    esac
+}
+
+get_active_default_iface() {
+    local iface
+
+    iface=$(ip route show default 2>/dev/null | awk 'NR==1{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+    [ -z "$iface" ] && iface=$(ip -6 route show default 2>/dev/null | awk 'NR==1{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+    [ -z "$iface" ] && iface=$(awk '$2=="00000000"{print $1; exit}' /proc/self/net/route 2>/dev/null)
+
+    printf '%s' "$iface"
+}
+
+get_transport_key_from_iface() {
+    local iface="$1"
+    case "$iface" in
+        rmnet*|ccmni*) printf '%s' "mobile" ;;
+        wlan*|swlan*) printf '%s' "wifi" ;;
+        *) printf '%s' "unknown" ;;
     esac
 }
 
@@ -71,8 +93,14 @@ calibrate_cache_load_vars() {
     local env_file="$1"
     [ -f "$env_file" ] || return 1
 
-    # Strictly accept only BEST_ro_ril_* lines (numbers only).
-    if ! grep -Eq '^(BEST_ro_ril_(hsupa|hsdpa|lte|ltea|nr5g)_category)=[0-9]+$' "$env_file" 2>/dev/null; then
+    # Strictly accept only BEST_ro_ril_* lines (numbers only), for all non-empty lines.
+    # Require the full expected set to avoid partial/injected env files.
+    if ! awk '
+        /^[[:space:]]*$/ { next }
+        /^(BEST_ro_ril_(hsupa|hsdpa|lte|ltea|nr5g)_category)=[0-9]+$/ { ok++; next }
+        { exit 1 }
+        END { exit !(ok >= 5) }
+    ' "$env_file" 2>/dev/null; then
         return 1
     fi
 
@@ -82,8 +110,8 @@ calibrate_cache_load_vars() {
 }
 
 calibrate_cache_try_use() {
-    # Args: provider ping_target
-    local provider="$1" ping_target="$2"
+    # Args: provider ping_target transport_key
+    local provider="$1" ping_target="$2" transport_key="$3"
     local enable max_age now ts age max_rtt max_loss rc
 
     enable=$(getprop persist.kitsunping.calibrate_cache_enable 2>/dev/null)
@@ -96,15 +124,34 @@ calibrate_cache_try_use() {
     [ -f "$CALIBRATE_CACHE_ENV" ] || return 1
 
     # Meta format: PROVIDER='<str>' TS=<epoch>
-    local cached_provider cached_ts
+    local cached_provider cached_ts cached_transport
     cached_provider=$(awk -F= '/^PROVIDER=/{gsub(/^PROVIDER=|^\x27|\x27$/, "", $0); sub(/^PROVIDER=/, "", $0); print; exit}' "$CALIBRATE_CACHE_META" 2>/dev/null)
     cached_ts=$(awk -F= '/^TS=/{print $2; exit}' "$CALIBRATE_CACHE_META" 2>/dev/null)
+    cached_transport=$(awk -F= '/^TRANSPORT=/{print $2; exit}' "$CALIBRATE_CACHE_META" 2>/dev/null | tr -d '\r\n' | tr '[:upper:]' '[:lower:]')
     [ -z "$cached_provider" ] && return 1
     [ -z "$cached_ts" ] && return 1
 
     if [ "$cached_provider" != "$provider" ]; then
         return 1
     fi
+
+    local transport_strict
+    transport_strict=$(getprop persist.kitsunping.calibrate_cache_transport_strict 2>/dev/null | tr -d '\r\n')
+    [ -z "$transport_strict" ] && transport_strict=1
+    case "$transport_strict" in
+        0|false|FALSE|off|OFF|no|NO)
+            :
+            ;;
+        *)
+            [ -z "$transport_key" ] && transport_key="unknown"
+            if [ -z "$cached_transport" ]; then
+                return 1
+            fi
+            if [ "$cached_transport" != "$transport_key" ]; then
+                return 1
+            fi
+            ;;
+    esac
 
     max_age=$(getprop persist.kitsunping.calibrate_cache_max_age_sec 2>/dev/null | tr -d '\r\n')
     max_age="$(uint_or_default "$max_age" "604800")"
@@ -169,10 +216,11 @@ calibrate_cache_try_use() {
 }
 
 calibrate_cache_save() {
-    # Args: provider
-    local provider="$1" ts
+    # Args: provider transport_key
+    local provider="$1" transport_key="$2" ts
     ts=$(date +%s)
     case "$ts" in ''|*[!0-9]* ) ts=0;; esac
+    [ -z "$transport_key" ] && transport_key="unknown"
 
     # Save env with BEST_* values.
     {
@@ -185,6 +233,7 @@ calibrate_cache_save() {
 
     {
         echo "PROVIDER='$provider'"
+        echo "TRANSPORT=$transport_key"
         echo "TS=$ts"
     } | atomic_write "$CALIBRATE_CACHE_META"
 }
@@ -343,9 +392,14 @@ calibrate_network_settings() {
     dns2=$(echo "$config_json" | "$jqbin" -r '.dns[1] // "8.8.4.4"')
     PING_VAL=$(echo "$config_json" | "$jqbin" -r '.ping // "8.8.8.8"')
 
-    # Fast path: if we have a valid cache for this provider and ping is still good, reuse it.
+    local active_iface transport_key
+    active_iface="$(get_active_default_iface)"
+    [ -z "$active_iface" ] && active_iface="unknown"
+    transport_key="$(get_transport_key_from_iface "$active_iface")"
+
+    # Fast path: if we have a valid cache for this provider/transport and ping is still good, reuse it.
     # This avoids re-calibrating from scratch on every reboot when the operator remains the same.
-    if calibrate_cache_try_use "$provider_name" "$PING_VAL"; then
+    if calibrate_cache_try_use "$provider_name" "$PING_VAL" "$transport_key"; then
         return 0
     fi
 
@@ -368,7 +422,7 @@ calibrate_network_settings() {
     country_code=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
     [ -z "$country_code" ] && country_code="global"
 
-    if echo "$PING_VAL" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+    if echo "$PING_VAL" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
         ORIGINAL_IP="$PING_VAL"
         HOSTNAME="${country_code}.pool.ntp.org"
         log_info "Ping field is IP; probing ORIGINAL_IP=$ORIGINAL_IP and HOSTNAME=$HOSTNAME" >> "$trace_log"
@@ -437,30 +491,26 @@ calibrate_network_settings() {
 
     log_info "Starting calibration for $TEST_IP" >> "$trace_log"
     for prop in $NET_PROPERTIES_KEYS; do
-        (
-            case "$prop" in
-                "ro.ril.hsupa.category")
-                    vals="$NET_VAL_HSUPA"
-                    ;;
-                "ro.ril.hsdpa.category")
-                    vals="$NET_VAL_HSDPA"
-                    ;;
-                *)
-                    vals=$(get_values_for_prop "$index")
-                    ;;
-            esac
-            if [ -z "$vals" ]; then
-                log_info "Empty value set for $prop" >> "$trace_log"
-                continue
-            fi
-            log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
-            log_info "Calibrating properties: prop: [$prop] val: [$vals] delay: [$delay] at [${CACHE_DIR_cln}/$prop.best]" >> "$trace_log"
-            calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR_cln/$prop.best"
-        ) &
+        case "$prop" in
+            "ro.ril.hsupa.category")
+                vals="$NET_VAL_HSUPA"
+                ;;
+            "ro.ril.hsdpa.category")
+                vals="$NET_VAL_HSDPA"
+                ;;
+            *)
+                vals=$(get_values_for_prop "$index")
+                ;;
+        esac
+        if [ -z "$vals" ]; then
+            log_info "Empty value set for $prop" >> "$trace_log"
+            continue
+        fi
+        log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
+        log_info "Calibrating properties: prop: [$prop] val: [$vals] delay: [$delay] at [${CACHE_DIR_cln}/$prop.best]" >> "$trace_log"
+        calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR_cln/$prop.best"
         index=$((index + 1))
     done
-
-    wait
 
     for prop in $NET_PROPERTIES_KEYS; do
         # Read the best value from TMPDIR/*.best files
@@ -471,32 +521,32 @@ calibrate_network_settings() {
         export "BEST_${prop//./_}=$best_val"
     done
 
-    # Catch the active network interface from the default route (all within su -c to avoid awk/grep errors)
+    # Use active default-route interface to avoid cross-transport bias.
     local current_iface
-    # Detect interface prioritizing real traffic: first rmnet*, then wlan*
-    current_iface=$(su -c "awk 'NR>2 {gsub(/:/,\"\",\$1); if (\$1 ~ /^rmnet/) {t=\$2+\$10; if (t>max_rm) {max_rm=t; dev_rm=\$1}} else if (\$1 ~ /^wlan/) {t=\$2+\$10; if (t>max_wl) {max_wl=t; dev_wl=\$1}}} END {if (dev_rm != \"\") print dev_rm; else if (dev_wl != \"\") print dev_wl;}' /proc/net/dev" 2>/dev/null)
+    current_iface="$active_iface"
+    [ -z "$current_iface" ] && current_iface="unknown"
 
     sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
 
 
-    # Decide calibration path based on interface type: rmnet* (mobile/data) vs Active wifi and not rmnet, but have SIM props vs wlan* (Wi-Fi)
+    # Decide calibration path based on active transport.
+    # IMPORTANT: avoid calibrating mobile (RIL LTE/LTEA/NR) with Wi-Fi-biased metrics.
     if echo "$current_iface" | grep -qi '^rmnet'; then
         log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$trace_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
-    elif [ -n "$sim_iso" ]; then
-        log_info "SIM detected ($sim_iso) with non-rmnet iface; running extended calibration anyway [detail:${current_iface}]" >> "$trace_log"
-        calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
     elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
         log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
+    elif echo "$current_iface" | grep -qi '^wlan' && [ -n "$sim_iso" ]; then
+        log_info "Wi-Fi mode with SIM detected ($sim_iso): calibrating only HSUPA/HSDPA to avoid mobile mis-tuning [detail:${current_iface}]" >> "$trace_log"
     else
-        log_info "Unknown iface, defaulting to Wi-Fi calibration path [detail:${current_iface}]" >> "$trace_log"
+        log_info "Unknown/non-rmnet iface: skipping mobile extended calibration to avoid cross-transport bias [detail:${current_iface}]" >> "$trace_log"
     fi
 
-    echo "cooling" > "$CALIBRATE_STATE_RUN"
+    echo "cooling" | atomic_write "$CALIBRATE_STATE_RUN"
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
 
-    # Persist cache for future runs (provider keyed).
-    calibrate_cache_save "$provider_name"
+    # Persist cache for future runs (provider + transport keyed).
+    calibrate_cache_save "$provider_name" "$transport_key"
 
     echo "BEST_ro_ril_hsupa_category=$BEST_ro_ril_hsupa_category"
     echo "BEST_ro_ril_hsdpa_category=$BEST_ro_ril_hsdpa_category"
@@ -547,13 +597,21 @@ calibrate_property() {
     local delay="$3"
     local best_file="$4"
     
-    local best_score=0
+    local best_score=-1
     local best_val=$(echo "$candidates" | awk '{print $1}')
+    local best_score_seen=""
+    local epsilon="0.20"
+    local valid_count=0
+    local equal_best_count=0
     local attempts=3
+    local current_prop_val=""
     
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Properties: property: $property | candidates: $candidates | delay: $delay | best_file: $best_file" >> "$trace_log"
     log_info "best_val: $best_val" >> "$trace_log"
+
+    current_prop_val="$(getprop "$property" 2>/dev/null | tr -d '\r\n')"
+    log_info "current_prop_val: ${current_prop_val:-unknown}" >> "$trace_log"
 
     # Verify write permissions first
     local write_test="${best_file}.test"
@@ -585,12 +643,39 @@ calibrate_property() {
         
         local avg_score=$(awk "BEGIN {print $total_score / $attempts}")
         log_info "using avg_score: $avg_score" >> "$trace_log"
-        
-        if awk "BEGIN {exit !($avg_score > $best_score)}"; then
+
+        if ! echo "$avg_score" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            log_warning "Skipping non-numeric avg_score for $property candidate=$candidate: $avg_score" >> "$trace_log"
+            continue
+        fi
+
+        valid_count=$((valid_count + 1))
+
+        if awk "BEGIN {exit !($avg_score > $best_score + $epsilon)}"; then
             best_score="$avg_score"
             best_val="$candidate"
+            best_score_seen="$avg_score"
+            equal_best_count=0
+            log_info "new best: property=$property candidate=$candidate score=$avg_score" >> "$trace_log"
+        elif [ -n "$best_score_seen" ] && awk "BEGIN {d=($avg_score-$best_score_seen); if(d<0)d=-d; exit !(d <= $epsilon)}"; then
+            equal_best_count=$((equal_best_count + 1))
+            log_info "tie within epsilon: property=$property candidate=$candidate score=$avg_score best=$best_score_seen" >> "$trace_log"
         fi
     done
+
+    if [ "$valid_count" -eq 0 ]; then
+        log_warning "No valid scores for $property; keeping current/default value=$best_val" >> "$trace_log"
+    fi
+
+    if [ "$equal_best_count" -gt 0 ] && [ -n "$current_prop_val" ]; then
+        for c in $candidates; do
+            if [ "$c" = "$current_prop_val" ]; then
+                log_info "Scores tied for $property; preserving current value=$current_prop_val" >> "$trace_log"
+                best_val="$current_prop_val"
+                break
+            fi
+        done
+    fi
     
     # Create directory with error checking
     if ! mkdir -p "$(dirname "$best_file")"; then
@@ -603,6 +688,8 @@ calibrate_property() {
         log_error "Error writing to: $best_file"
         return 1
     fi
+
+    log_info "Final best for $property: $best_val (score=${best_score:-n/a}, valid_count=$valid_count)" >> "$trace_log"
     
     return 0
 }
@@ -762,10 +849,32 @@ EOF
             [ -z "$DNS_LIST" ] && DNS_LIST="8.8.8.8 1.1.1.1"
             [ -z "$PING" ] && PING="8.8.8.8"
     # TODO: [PENDING] Add ndc binary compatibility strategy for multiple architectures TODO:
-    for iface in $($ipbin -o link show | awk -F': ' '{print $2}' | grep -E 'rmnet|wlan|eth|ccmni|usb'); do
-        log_info "Configuring DNS on interface: $iface" >> "$trace_log"
-      ndc resolver setifacedns "$iface" "" $DNS_LIST >/dev/null 2>&1
-    done
+    if command -v ndc >/dev/null 2>&1; then
+        for iface in $($ipbin -o link show | awk -F': ' '{print $2}' | grep -E 'rmnet|wlan|eth|ccmni|usb'); do
+            log_info "Configuring DNS on interface: $iface" >> "$trace_log"
+            ndc resolver setifacedns "$iface" "" $DNS_LIST >/dev/null 2>&1
+        done
+    else
+        local dns1_fallback dns2_fallback setprop_fallback
+        setprop_fallback=$(getprop persist.kitsunping.calibrate_dns_setprop_fallback 2>/dev/null | tr -d '\r\n')
+        [ -z "$setprop_fallback" ] && setprop_fallback=0
+
+        case "$setprop_fallback" in
+            1|true|TRUE|on|ON|yes|YES)
+                dns1_fallback=$(printf '%s\n' $DNS_LIST | awk 'NR==1{print; exit}')
+                dns2_fallback=$(printf '%s\n' $DNS_LIST | awk 'NR==2{print; exit}')
+                [ -z "$dns1_fallback" ] && dns1_fallback="8.8.8.8"
+                [ -z "$dns2_fallback" ] && dns2_fallback="1.1.1.1"
+
+                log_warning "ndc not available; applying global DNS fallback via setprop" >> "$trace_log"
+                setprop net.dns1 "$dns1_fallback" >/dev/null 2>&1
+                setprop net.dns2 "$dns2_fallback" >/dev/null 2>&1
+                ;;
+            *)
+                log_warning "ndc not available; skipping setprop net.dns* fallback (persist.kitsunping.calibrate_dns_setprop_fallback=0)" >> "$trace_log"
+                ;;
+        esac
+    fi
 
     dns_json=$(printf '%s\n' $DNS_LIST | "$jqbin" -R . | "$jqbin" -s .)
     log_info "dns_json: $dns_json" >> "$trace_log"
@@ -787,26 +896,23 @@ calibrate_secondary_network_settings() {
     log_info "====================== calibrate_secondary_network_settings =========================" >> "$trace_log"
 
     for prop in $NET_OTHERS_PROPERTIES_KEYS; do
-        (
-            case "$prop" in
-                "ro.ril.lte.category")
-                    vals="$NET_VAL_LTE"
-                    ;;
-                "ro.ril.ltea.category")
-                    vals="$NET_VAL_LTEA"
-                    ;;
-                "ro.ril.nr5g.category")
-                    vals="$NET_VAL_5G"
-                    ;;
-                *)
-                    vals="9" # Default fallback value
-                    ;;
-            esac
-            log_info "Calibrating $prop with values: $vals" >> "$trace_log"
-            calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR/$prop.best"
-        ) &
+        case "$prop" in
+            "ro.ril.lte.category")
+                vals="$NET_VAL_LTE"
+                ;;
+            "ro.ril.ltea.category")
+                vals="$NET_VAL_LTEA"
+                ;;
+            "ro.ril.nr5g.category")
+                vals="$NET_VAL_5G"
+                ;;
+            *)
+                vals="9" # Default fallback value
+                ;;
+        esac
+        log_info "Calibrating $prop with values: $vals" >> "$trace_log"
+        calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR/$prop.best"
     done
-    wait
 
     # Export results
     for prop in $NET_OTHERS_PROPERTIES_KEYS; do

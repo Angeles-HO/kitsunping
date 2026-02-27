@@ -4,9 +4,23 @@
 # It is recommended to measure before/after and adjust incrementally.
 # exist a better profile to low lñatenc but with more risk of instability variables.
 # Part of Kitsunping - addon/policy/net_profiles
-MODDIR="${0%/*}"
-NEWMODPATH="${MODDIR%/*}"
+# When sourced by executor/profile_runner, preserve caller-provided NEWMODPATH.
+if [ -z "${NEWMODPATH:-}" ] || [ ! -d "${NEWMODPATH:-/}" ]; then
+	_caller_dir="${0%/*}"
+	case "$_caller_dir" in
+		*/net_profiles) NEWMODPATH="${_caller_dir%/net_profiles}" ;;
+		*) NEWMODPATH="${_caller_dir%/*}" ;;
+	esac
+fi
+
 profile_aplicated="${NEWMODPATH}/logs/profile_aplicated.log"
+
+# Executor defines MODDIR as module root; prefer it when available.
+if [ -n "${MODDIR:-}" ] && [ -d "${MODDIR:-/}" ]; then
+	profile_aplicated="${MODDIR}/logs/profile_aplicated.log"
+fi
+
+mkdir -p "$(dirname "$profile_aplicated")" 2>/dev/null || true
 
 echo "[PROFILE] gaming (safe) start" >> "$profile_aplicated"
 

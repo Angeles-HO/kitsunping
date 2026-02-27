@@ -93,6 +93,7 @@ command -v pick_event_ts >/dev/null 2>&1 || pick_event_ts() {
 command -v pick_score_from_state >/dev/null 2>&1 || pick_score_from_state() {
     local state_file="$1" prefer_transport="${2:-auto}" event_name="${3:-}" event_details="${4:-}"
     local score source transport wifi_state wifi_score mobile_score iface_to
+    local sim_enabled sim_divisor sim_score
 
     [ -f "$state_file" ] || return 1
 
@@ -166,6 +167,27 @@ command -v pick_score_from_state >/dev/null 2>&1 || pick_score_from_state() {
     fi
 
     [ -n "$score" ] || return 1
+
+    # Developer simulation: emulate poor network by dividing selected score.
+    # Props:
+    #   persist.kitsunping.dev_score_sim_enable=1
+    #   persist.kitsunping.dev_score_divisor=2
+    sim_enabled="$(getprop persist.kitsunping.dev_score_sim_enable 2>/dev/null | tr -d '\r\n')"
+    case "$sim_enabled" in
+        1|true|TRUE|yes|YES|on|ON)
+            sim_divisor="$(getprop persist.kitsunping.dev_score_divisor 2>/dev/null | tr -d '\r\n')"
+            case "$sim_divisor" in
+                ''|*[!0-9.]*) sim_divisor=2 ;;
+            esac
+            if awk "BEGIN {exit !($sim_divisor > 0)}"; then
+                sim_score=$(awk -v s="$score" -v d="$sim_divisor" 'BEGIN{v=s/d; if(v<0)v=0; if(v>100)v=100; printf "%.2f", v}')
+                if [ -n "$sim_score" ]; then
+                    score="$sim_score"
+                    source="${source}_simdiv${sim_divisor}"
+                fi
+            fi
+            ;;
+    esac
 
     PICK_SCORE_SOURCE="$source"
     PICK_SCORE_PREFER="$prefer_transport"
