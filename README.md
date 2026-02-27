@@ -30,7 +30,7 @@ by applying more suitable settings for the active network.
 
 ### Documentation by topic
 
-- Daemon flow and events: [Docs/Daemon.md](Docs/Daemon.md)
+- Daemon flow and events: [Docs/daemon.md](Docs/daemon.md)
 - Internal implementation: [Docs/implementation.md](Docs/implementation.md)
 - Wi‑Fi properties: [Docs/wifiProps.md](Docs/wifiProps.md)
 - Speed/stability profile notes: [Docs/speedProfiles.md](Docs/speedProfiles.md)

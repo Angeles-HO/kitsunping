@@ -91,6 +91,12 @@ persist.kitsunping.calibrate_cache_max_age_sec=604800
 # Validation thresholds to reuse cache
 persist.kitsunping.calibrate_cache_rtt_ms=120
 persist.kitsunping.calibrate_cache_loss_pct=5
+# Require cache transport match (wifi/mobile) before reusing BEST_* values.
+# 1: strict match (recommended) | 0: allow legacy provider-only reuse
+persist.kitsunping.calibrate_cache_transport_strict=1
+# If ndc is unavailable, optionally set global net.dns* fallback props.
+# 0: disabled (recommended, avoid noisy/non-effective writes) | 1: enabled
+persist.kitsunping.calibrate_dns_setprop_fallback=0
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.
 

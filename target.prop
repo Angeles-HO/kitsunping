@@ -1,12 +1,21 @@
-# This file is user to set propierties and priorities for the Kitsunping target
-
-# Set the priority of the target
-# Prioriry: low, medium, high (all similar to 1, i dont have how to separate them yet, for now they are the same)
-# Profile = gaming,speed,stable (i have logic to separate them but this is a templeate for future use)
-# app name = priority
-
-# Example:
-# com.instragram.android = speed, low
-# com.warzone.mobile= high,gaming
+# target.prop
+# package.name = profile, priority
+# package.name = priority, profile
+#
+# profile: gaming | speed | stable
+# priority: low | medium | high
+#
+# Notes:
+# - The daemon reads this file every cycle.
+# - If foreground app matches, it forces `policy.request` to that profile.
+# - Priority is currently informational (logged in events), profile is applied.
+#
+# Examples:
+# com.instagram.android = speed, low
+# com.warzone.mobile = high, gaming
 # com.spotify.music = medium, stable
-# com.kitsunping.app = high, stable
+# app.kitsunping = high, stable
+
+com.mobile.legends=gaming, medium
+com.brave.browser_nightly=gaming, high
+com.spotify.music=speed, medium
