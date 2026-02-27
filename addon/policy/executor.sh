@@ -164,6 +164,17 @@ if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "PROFILE_CHANGED" ] && [ -
     desired_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
 fi
 
+# For app/target overrides, request_profile carries details like: "... to=gaming ..."
+if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "request_profile" ] && [ -n "${EVENT_DETAILS:-}" ]; then
+    desired_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
+fi
+
+# For request_profile, prefer policy.request over policy.target to avoid stale target shadowing.
+if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "request_profile" ] && [ -f "$REQUEST_FILE" ]; then
+    desired_profile="$(cat "$REQUEST_FILE" 2>/dev/null)"
+    [ -n "$desired_profile" ] && log_policy "Using policy.request for request_profile target_profile=$desired_profile"
+fi
+
 # Otherwise, use existing target file.
 if [ -z "$desired_profile" ] && [ -f "$TARGET_FILE" ]; then
     desired_profile="$(cat "$TARGET_FILE" 2>/dev/null)"
@@ -556,6 +567,10 @@ fi
 if [ "$run_calibrate" -eq 1 ]; then
     heavy_load_now=$(getprop "$HEAVY_LOAD_PROP" 2>/dev/null | tr -d '\r\n')
     heavy_load_now="$(uint_or_default "$heavy_load_now" "0")"
+
+    # TODO(kitsunping): revisar gate heavy_load/lock para user_requested_calibrate.
+    # Se observa transición idle->postponed recurrente en sesiones con actividad router-heavy.
+    # Evaluar bypass controlado para calibración forzada o ventana de espera más robusta.
 
     if [ "$heavy_load_now" -gt "$HEAVY_LOAD_MAX_FOR_CALIBRATE" ]; then
         if [ "$CALIBRATE_FORCE_PRIORITY" -eq 1 ]; then
