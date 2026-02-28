@@ -30,3 +30,4 @@ tools/filter_getprop_qcom_wifi.py
 tools/filter_wifi_dump.py
 tools/merge_wifi_profiles.py
 Docs/qosFlowMVP.md
+tools/adb_nonroot_net_scan.ps1
