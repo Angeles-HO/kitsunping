@@ -117,4 +117,75 @@ if [[ -d "$NVBASE/modules/$MODID" ]]; then
   fi
 fi
 
+# =============================================================================
+# Eliminar los props del módulo si existen.
+# =============================================================================
+
+clear_module_prop() {
+  local prop current
+  prop="$1"
+  current="$(getprop "$prop" 2>/dev/null | tr -d '\r\n')"
+
+  if [[ -n "$current" ]]; then
+    if command -v resetprop >/dev/null 2>&1; then
+      resetprop -n "$prop" "" >/dev/null 2>&1 || setprop "$prop" ""
+    else
+      setprop "$prop" ""
+    fi
+    echo "Cleared prop: $prop"
+  fi
+}
+
+MODULE_PROPS="
+kitsunping.calibration.priority
+kitsunping.daemon.interval
+kitsunping.daemon.net_probe_interval
+kitsunping.daemon.signal_poll_interval
+kitsunping.event.debounce_sec
+kitsunping.heavy_load
+kitsunping.router.cache_ttl
+kitsunping.router.debug
+kitsunping.router.experimental
+kitsunping.router.infer_width
+kitsunping.router.openwrt_mode
+kitsunping.sigmoid.alpha
+kitsunping.sigmoid.beta
+kitsunping.sigmoid.gamma
+kitsunping.wifi.speed_threshold
+kitsunrouter.debug
+kitsunrouter.enable
+persist.kitsunping.calibrate_cache_enable
+persist.kitsunping.calibrate_cache_loss_pct
+persist.kitsunping.calibrate_cache_max_age_sec
+persist.kitsunping.calibrate_cache_rtt_ms
+persist.kitsunping.calibrate_cache_transport_strict
+persist.kitsunping.calibrate_dns_setprop_fallback
+persist.kitsunping.debug
+persist.kitsunping.dev_score_divisor
+persist.kitsunping.dev_score_sim_enable
+persist.kitsunping.direct_broadcast
+persist.kitsunping.emit_events
+persist.kitsunping.event_debounce_sec
+persist.kitsunping.paired
+persist.kitsunping.ping_timeout
+persist.kitsunping.ram.class
+persist.kitsunping.ram.size
+persist.kitsunping.router.cache_ttl
+persist.kitsunping.router.debug
+persist.kitsunping.router.experimental
+persist.kitsunping.router.infer_width
+persist.kitsunping.router.openwrt_mode
+persist.kitsunping.target_prop_enable
+persist.kitsunping.target_request_cooldown_sec
+persist.kitsunping.user_event
+persist.kitsunping.user_event_data
+persist.kitsunrouter.debug
+persist.kitsunrouter.enable
+persist.kitsunrouter.paired
+"
+
+for prop in $MODULE_PROPS; do
+  clear_module_prop "$prop"
+done
+
 exit 0
