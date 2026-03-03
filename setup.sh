@@ -17,7 +17,7 @@ improviserr="@Angeles_ho"
 # --- Complements ---
 complemento_kitsutils="addon/functions/utils/Kitsutils.sh"
 complemento_debug="addon/functions/debug/shared_errors.sh"
-complemento_net_calibrate="addon/Net_Calibrate/calibrate.sh"
+complemento_net_calibrate="calibration/calibrate.sh"
 complemento_VKS="addon/Volume-Key-Selector/utils.sh"
 
 # --- Path normalization ---
@@ -62,8 +62,20 @@ divider="═══════════════════════�
 
 # Initial backup (only once)
 log_info "Creating backup of original settings..."
-create_backup
-log_info "Backup created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
+backup_base_file="$NEWMODPATH/configs/kitsuneping_original_backup.conf"
+backup_base_preexisting=0
+[ -f "$backup_base_file" ] && backup_base_preexisting=1
+
+if create_backup; then
+    backup_created_path="${BACKUP_FILE:-$backup_base_file}"
+    if [ "$backup_base_preexisting" -eq 1 ]; then
+        log_info "Backup base already existed; new snapshot saved at $backup_created_path"
+    else
+        log_info "Backup created at $backup_created_path"
+    fi
+else
+    log_warning "Backup could not be created"
+fi
 
 # --- Installation info ---
 echo "${divider}"
@@ -132,7 +144,11 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     log_info "Automatic Mode selected"
     log_info "Starting network calibration..."
     log_info "This may take a while; ensure good connection and be patient"
-    log_info "Backup already created at $NEWMODPATH/configs/kitsuneping_original_backup.conf"
+    if [ -n "${backup_created_path:-}" ]; then
+        log_info "Backup ready at $backup_created_path"
+    else
+        log_info "Backup path unavailable; continuing with calibration"
+    fi
 
     log_info "Starting calibration process..."
     log_info "This process will run multiple tests to determine the optimal network settings for your device."

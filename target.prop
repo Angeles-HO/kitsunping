@@ -1,6 +1,5 @@
 # target.prop
-# package.name = profile, priority
-# package.name = priority, profile
+# package.name = profile:<profile>, priority:<priority>
 #
 # profile: gaming | speed | stable
 # priority: low | medium | high
@@ -8,17 +7,20 @@
 # Notes:
 # - The daemon reads this file every cycle.
 # - If foreground app matches, it forces `policy.request` to that profile.
-# - Priority is currently informational (logged in events), profile is applied.
+# - Priority now maps QoS metadata (`priority_weight`, `priority_min_mbit`) for router push.
+# - Legacy format (`gaming, high` / `high, gaming`) is still accepted as fallback.
 #
 # Examples:
-# com.instagram.android = speed, low
-# com.warzone.mobile = high, gaming
-# com.spotify.music = medium, stable
-# app.kitsunping = high, stable
-# # com.brave.browser_nightly=gaming, high
+# com.instagram.android = profile:speed, priority:low
+# com.warzone.mobile = profile:gaming, priority:high
+# com.spotify.music = profile:stable, priority:medium
+# app.kitsunping = profile:stable, priority:high
+# # com.brave.browser_nightly = profile:gaming, priority:high
 
-com.mobile.legends=gaming, medium
-com.brave.browser=gaming, high
-com.spotify.music=speed, medium
-com.whatsapp=speed, medium
-com.instagram.android=speed, low
+com.mobile.legends=profile:gaming, priority:medium
+com.brave.browser=profile:gaming, priority:high
+com.spotify.music=profile:speed, priority:medium
+com.whatsapp=profile:speed, priority:medium
+com.whatsapp.w4b=profile:speed, priority:medium
+com.google.android.youtube=profile:speed, priority:medium
+com.instagram.android=profile:speed, priority:low                   
