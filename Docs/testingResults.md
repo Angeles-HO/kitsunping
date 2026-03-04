@@ -20,15 +20,15 @@ Notes:
 | Test 4   | 23.38           | 18.61         | 22        |
 | Test 5   | 37.56           | 21.97         | 20        |
 
-Line green = With module active. Line blue = baseline.
+Chart convention for all sections: first line = previous/baseline series (blue), second line = current version (green).
 
 ```mermaid
 xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "Before module" [36.26, 36.26, 36.26, 36.26, 36.26]
-	line "With module" [48.74, 48.80, 38.27, 23.38, 37.56]
+	line "Previous/Baseline series" [36.26, 36.26, 36.26, 36.26, 36.26]
+	line "Current version (4.85)" [48.74, 48.80, 38.27, 23.38, 37.56]
 ```
 
 ```mermaid
@@ -36,8 +36,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "Before module" [8.12, 8.12, 8.12, 8.12, 8.12]
-	line "With module" [32.14, 34.36, 28.46, 18.61, 21.97]
+	line "Previous/Baseline series" [8.12, 8.12, 8.12, 8.12, 8.12]
+	line "Current version (4.85)" [32.14, 34.36, 28.46, 18.61, 21.97]
 ```
 
 ```mermaid
@@ -45,8 +45,8 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "Before module" [26, 26, 26, 26, 26]
-	line "With module" [22, 22, 21, 22, 20]
+	line "Previous/Baseline series" [26, 26, 26, 26, 26]
+	line "Current version (4.85)" [22, 22, 21, 22, 20]
 ```
 
 > Lower values indicate better latency.
@@ -72,8 +72,8 @@ xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "Before module" [36.26, 36.26, 36.26, 36.26, 36.26]
-	line "With module" [47.25, 48.71, 47.30, 55.00, 48.63]
+	line "Previous version (4.85)" [48.74, 48.80, 38.27, 23.38, 37.56]
+	line "Current version (4.89)" [47.25, 48.71, 47.30, 55.00, 48.63]
 ```
 
 ```mermaid
@@ -81,8 +81,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "Before module" [8.12, 8.12, 8.12, 8.12, 8.12]
-	line "With module" [28.05, 32.01, 28.30, 29.71, 26.45]
+	line "Previous version (4.85)" [32.14, 34.36, 28.46, 18.61, 21.97]
+	line "Current version (4.89)" [28.05, 32.01, 28.30, 29.71, 26.45]
 ```
 
 ```mermaid
@@ -90,8 +90,8 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "Before module" [26, 26, 26, 26, 26]
-	line "With module" [26, 22, 21, 20, 21]
+	line "Previous version (4.85)" [22, 22, 21, 22, 20]
+	line "Current version (4.89)" [26, 22, 21, 20, 21]
 ```
 
 - Best gains vs baseline: +52% download (55.00 Mbps), +294% upload (32.01 Mbps), -23% ping (20 ms).
@@ -119,8 +119,8 @@ xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "4.89 version" [47.25, 48.71, 47.30, 55.00, 48.63]
-	line "With module" [51.37, 45.82, 44.65, 44.08, 46.37]
+	line "Previous version (4.89)" [47.25, 48.71, 47.30, 55.00, 48.63]
+	line "Current version (5.0 - Beta)" [51.37, 45.82, 44.65, 44.08, 46.37]
 ```
 
 ```mermaid
@@ -128,8 +128,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "4.89 version" [28.05, 32.01, 28.30, 29.71, 26.45]
-	line "With module" [22.61, 33.51, 32.93, 28.49, 34.31]
+	line "Previous version (4.89)" [28.05, 32.01, 28.30, 29.71, 26.45]
+	line "Current version (5.0 - Beta)" [22.61, 33.51, 32.93, 28.49, 34.31]
 ```
 
 ```mermaid
@@ -137,8 +137,8 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "4.89 version" [26, 22, 21, 20, 21]
-	line "With module" [21, 22, 20, 20, 21]
+	line "Previous version (4.89)" [26, 22, 21, 20, 21]
+	line "Current version (5.0 - Beta)" [21, 22, 20, 20, 21]
 ```
 
 - Best gains vs baseline: +4% download (51.37 Mbps), +19% upload (34.31 Mbps), -9% ping (20 ms).
@@ -163,8 +163,8 @@ xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Beta non APK" [51.37, 45.82, 44.65, 44.08, 46.37]
-	line "v5.00 - Release + APK" [48.51, 50.42, 48.66, 53.01, 46.37]
+	line "Previous version (5.0 - Beta non APK)" [51.37, 45.82, 44.65, 44.08, 46.37]
+	line "Current version (5.0 - Release + APK)" [48.51, 50.42, 48.66, 53.01, 46.37]
 ```
 
 ```mermaid
@@ -172,8 +172,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Beta non APK" [22.61, 33.51, 32.93, 28.49, 34.31]
-	line "v5.00 - Release + APK" [40.54, 36.80, 35.69, 35.54, 33.37]
+	line "Previous version (5.0 - Beta non APK)" [22.61, 33.51, 32.93, 28.49, 34.31]
+	line "Current version (5.0 - Release + APK)" [40.54, 36.80, 35.69, 35.54, 33.37]
 ```
 
 ```mermaid
@@ -181,8 +181,8 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "v5.00 - Beta non APK" [21, 22, 20, 20, 21]
-	line "v5.00 - Release + APK" [18, 21, 21, 19, 19]
+	line "Previous version (5.0 - Beta non APK)" [21, 22, 20, 20, 21]
+	line "Current version (5.0 - Release + APK)" [18, 21, 21, 19, 19]
 ```
 
 - Best gains vs baseline: +14% download (53.01 Mbps), +34% upload (40.54 Mbps), -13% ping (18 ms).
@@ -207,8 +207,8 @@ xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Release + APK" [48.51, 50.42, 48.66, 53.01, 46.37]
-	line "v5.4 - Local + APK" [54.8, 53.9, 51.8, 52.6, 54.1]
+	line "Previous version (5.0 - Release + APK)" [48.51, 50.42, 48.66, 53.01, 46.37]
+	line "Current version (5.4 - Local + APK)" [54.8, 53.9, 51.8, 52.6, 54.1]
 ```
 
 ```mermaid
@@ -216,8 +216,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Release + APK" [40.54, 36.80, 35.69, 35.54, 33.37]
-	line "v5.4 - Local + APK" [61.1, 48.6, 63.7, 64.0, 61.9]
+	line "Previous version (5.0 - Release + APK)" [40.54, 36.80, 35.69, 35.54, 33.37]
+	line "Current version (5.4 - Local + APK)" [61.1, 48.6, 63.7, 64.0, 61.9]
 ```
 
 ```mermaid
@@ -225,8 +225,8 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "v5.00 - Release + APK" [18, 21, 21, 19, 19]
-	line "v5.4 - Local + APK" [16, 18, 17, 16, 17]
+	line "Previous version (5.0 - Release + APK)" [18, 21, 21, 19, 19]
+	line "Current version (5.4 - Local + APK)" [16, 18, 17, 16, 17]
 ```
 
 - Best gains vs baseline: +11% download (54.8 Mbps), +76% upload (64.0 Mbps), -18% ping (16 ms).
@@ -254,8 +254,8 @@ xychart-beta
 	title "Download (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Release + APK" [48.51, 50.42, 48.66, 53.01, 46.37]
-	line "v5.7 - Local + APK + Router_agent + Policy_v1" [51.58, 51.57, 51.69, 52.57, 49.37]
+	line "Previous version (5.0 - Release + APK)" [48.51, 50.42, 48.66, 53.01, 46.37]
+	line "Current version (5.7 - Local + APK + Router_agent + Policy_v1)" [51.58, 51.57, 51.69, 52.57, 49.37]
 ```
 
 ```mermaid
@@ -263,8 +263,8 @@ xychart-beta
 	title "Upload (Mbps)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "Mbps"
-	line "v5.00 - Release + APK" [40.54, 36.80, 35.69, 35.54, 33.37]
-	line "v5.7 - Local + APK + Router_agent + Policy_v1" [62.91, 62.55, 62.37, 63.27, 63.23]
+	line "Previous version (5.0 - Release + APK)" [40.54, 36.80, 35.69, 35.54, 33.37]
+	line "Current version (5.7 - Local + APK + Router_agent + Policy_v1)" [62.91, 62.55, 62.37, 63.27, 63.23]
 ```
 
 ```mermaid
@@ -272,16 +272,108 @@ xychart-beta
 	title "Ping (ms)"
 	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
 	y-axis "ms"
-	line "v5.00 - Release + APK" [18, 21, 21, 19, 19]
-	line "v5.7 - Local + APK + Router_agent + Policy_v1" [19, 18, 19, 19, 17]
+	line "Previous version (5.0 - Release + APK)" [18, 21, 21, 19, 19]
+	line "Current version (5.7 - Local + APK + Router_agent + Policy_v1)" [19, 18, 19, 19, 17]
 ```
 
 - Best gains vs baseline: +6% download (52.57 Mbps), +74% upload (63.27 Mbps), -13% ping (17 ms).
 - Average over 5 runs vs baseline: +4% download (51.36 Mbps), +73% upload (62.87 Mbps), -6% ping (18.4 ms).
 - Average over 5 runs vs version 5.00 - Release + APK: +4% download (51.36 Mbps), +73% upload (62.87 Mbps), -6% ping (18.4 ms).
 
+# Version 5.8 - Local + APK + Router_agent + Policy_v1 + nftables (Gaming/High)
 
-## Comparison (4.85 vs 4.89 vs 5.0 - Beta non APK vs 5.0 - Release + APK vs 5.4 - Local + APK vs 5.7 - Local + APK + Router_agent + Policy_v1)
+Context for this run:
+- Foreground app: Brave + Speedtest
+- Target profile: gaming
+- Priority target: high
+
+| Run      | Download (Mbps) | Upload (Mbps) | Ping (ms) | Jitter (ms) |
+| -------- | --------------- | ------------- | --------- | ----------- |
+| Baseline | 49.39           | 36.39         | 19.6      | -           |
+| Test 1   | 63.29           | 63.53         | 18        | 5           |
+| Test 2   | 60.98           | 63.33         | 18        | 2           |
+| Test 3   | 62.52           | 63.80         | 19        | 1           |
+| Test 4   | 63.17           | 65.74         | 19        | 3           |
+| Test 5   | 63.83           | 63.23         | 18        | 2           |
+
+- Baseline reference: v5.00 - Release + APK (49.39 down / 36.39 up / 19.6 ms ping).
+- Average with v5.8 (Gaming/High): 62.76 Mbps down / 63.93 Mbps up / 18.4 ms ping / 2.6 ms jitter.
+
+```mermaid
+xychart-beta
+	title "Download (Mbps)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "Previous version (5.7 - Local + APK + Router_agent + Policy_v1)" [51.58, 51.57, 51.69, 52.57, 49.37]
+	line "Current version (5.8 - Gaming/High + nftables)" [63.29, 60.98, 62.52, 63.17, 63.83]
+```
+
+```mermaid
+xychart-beta
+	title "Upload (Mbps)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "Previous version (5.7 - Local + APK + Router_agent + Policy_v1)" [62.91, 62.55, 62.37, 63.27, 63.23]
+	line "Current version (5.8 - Gaming/High + nftables)" [63.53, 63.33, 63.80, 65.74, 63.23]
+```
+
+```mermaid
+xychart-beta
+	title "Ping (ms)"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "ms"
+	line "Previous version (5.7 - Local + APK + Router_agent + Policy_v1)" [19, 18, 19, 19, 17]
+	line "Current version (5.8 - Gaming/High + nftables)" [18, 18, 19, 19, 18]
+```
+
+- Best gains vs baseline: +29% download (63.83 Mbps), +81% upload (65.74 Mbps), -8% ping (18 ms).
+- Average over 5 runs vs baseline: +27% download (62.76 Mbps), +76% upload (63.93 Mbps), -6% ping (18.4 ms).
+- Average over 5 runs vs version 5.7: +22% download (62.76 Mbps), +2% upload (63.93 Mbps), 0% ping (18.4 ms).
+
+
+## Comparison (4.85 vs 4.89 vs 5.0 - Beta non APK vs 5.0 - Release + APK vs 5.4 - Local + APK vs 5.7 - Local + APK + Router_agent + Policy_v1 vs 5.8 - Gaming/High + nftables)
+
+```mermaid
+xychart-beta
+	title "Download (Mbps) - All versions"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "Version 4.85" [48.74, 48.80, 38.27, 23.38, 37.56]
+	line "Version 4.89" [47.25, 48.71, 47.30, 55.00, 48.63]
+	line "Version 5.0 - Beta" [51.37, 45.82, 44.65, 44.08, 46.37]
+	line "Version 5.0 - Release + APK" [48.51, 50.42, 48.66, 53.01, 46.37]
+	line "Version 5.4 - Local + APK" [54.8, 53.9, 51.8, 52.6, 54.1]
+	line "Version 5.7 - Local + APK + Router_agent + Policy_v1" [51.58, 51.57, 51.69, 52.57, 49.37]
+	line "Version 5.8 - Gaming/High + nftables" [63.29, 60.98, 62.52, 63.17, 63.83]
+```
+
+```mermaid
+xychart-beta
+	title "Upload (Mbps) - All versions"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "Mbps"
+	line "Version 4.85" [32.14, 34.36, 28.46, 18.61, 21.97]
+	line "Version 4.89" [28.05, 32.01, 28.30, 29.71, 26.45]
+	line "Version 5.0 - Beta" [22.61, 33.51, 32.93, 28.49, 34.31]
+	line "Version 5.0 - Release + APK" [40.54, 36.80, 35.69, 35.54, 33.37]
+	line "Version 5.4 - Local + APK" [61.1, 48.6, 63.7, 64.0, 61.9]
+	line "Version 5.7 - Local + APK + Router_agent + Policy_v1" [62.91, 62.55, 62.37, 63.27, 63.23]
+	line "Version 5.8 - Gaming/High + nftables" [63.53, 63.33, 63.80, 65.74, 63.23]
+```
+
+```mermaid
+xychart-beta
+	title "Ping (ms) - All versions"
+	x-axis ["Test 1", "Test 2", "Test 3", "Test 4", "Test 5"]
+	y-axis "ms"
+	line "Version 4.85" [22, 22, 21, 22, 20]
+	line "Version 4.89" [26, 22, 21, 20, 21]
+	line "Version 5.0 - Beta" [21, 22, 20, 20, 21]
+	line "Version 5.0 - Release + APK" [18, 21, 21, 19, 19]
+	line "Version 5.4 - Local + APK" [16, 18, 17, 16, 17]
+	line "Version 5.7 - Local + APK + Router_agent + Policy_v1" [19, 18, 19, 19, 17]
+	line "Version 5.8 - Gaming/High + nftables" [18, 18, 19, 19, 18]
+```
 
 
 Observations:
@@ -290,3 +382,9 @@ Observations:
 - Latency: best-case ping is still 16 ms on 5.4; 5.7 reaches 17 ms best-case and remains below the earlier branches on average.
 - Percentage values are consistent with the table data and are rounded to the nearest integer in the summary bullets.
 
+
+## Additional notes:
+
+- These results are based on a single device and location, so they may not be representative of all scenarios. More testing with different devices, locations, and carriers would be needed for a comprehensive evaluation.
+- This old device have a top speed of around 65Mbps, so the improvements are significant in terms of percentage, but the absolute values are still limited by the hardware capabilities.
+- I consider that the improvements in upload speed are particularly noteworthy, as they can have a significant impact on user experience in activities like watching videos, downloading files, online gaming (with gaming profile), and uploading content to the cloud. The reduction in ping is also beneficial for real-time applications, although the improvements in this area are more modest compared to the upload speed gains.

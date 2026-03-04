@@ -277,6 +277,16 @@ if [ -f "$MODDIR/addon/functions/daemon_transitions.sh" ]; then
     . "$MODDIR/addon/functions/daemon_transitions.sh"
 fi
 
+# New modular layers (non-breaking): shared lib + network wrappers
+[ -f "$MODDIR/lib/time_helpers.sh" ] && . "$MODDIR/lib/time_helpers.sh"
+[ -f "$MODDIR/lib/json_helpers.sh" ] && . "$MODDIR/lib/json_helpers.sh"
+[ -f "$MODDIR/lib/validation.sh" ] && . "$MODDIR/lib/validation.sh"
+[ -f "$MODDIR/lib/lock.sh" ] && . "$MODDIR/lib/lock.sh"
+[ -f "$MODDIR/network/wifi/cycle.sh" ] && . "$MODDIR/network/wifi/cycle.sh"
+[ -f "$MODDIR/network/mobile/cycle.sh" ] && . "$MODDIR/network/mobile/cycle.sh"
+[ -f "$MODDIR/network/app/cycle.sh" ] && . "$MODDIR/network/app/cycle.sh"
+[ -f "$MODDIR/core/runtime.sh" ] && . "$MODDIR/core/runtime.sh"
+
 if [ -f "$shared_errors" ]; then 
     . "$shared_errors"
     command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@";  } 
@@ -430,23 +440,27 @@ wifi_probe_fail_streak=0
 wifi_probe_ok=1
 last_router_paired="$(get_router_paired_flag)"
 
-while true; do
-    daemon_run_app_event_cycle
-    daemon_run_pairing_sync_cycle
+if command -v core_daemon_main_loop >/dev/null 2>&1; then
+    core_daemon_main_loop
+else
+    while true; do
+        daemon_run_app_event_cycle
+        daemon_run_pairing_sync_cycle
 
-    current_iface="$(get_current_iface)"
-    [ -z "$current_iface" ] && current_iface="none"
+        current_iface="$(get_current_iface)"
+        [ -z "$current_iface" ] && current_iface="none"
 
-    daemon_run_wifi_cycle
-    daemon_run_mobile_cycle
-    daemon_run_wifi_transport_cycle
-    daemon_run_mobile_transport_cycle
-    daemon_run_target_profile_cycle
-    daemon_run_router_status_push_cycle
+        daemon_run_wifi_cycle
+        daemon_run_mobile_cycle
+        daemon_run_wifi_transport_cycle
+        daemon_run_mobile_transport_cycle
+        daemon_run_target_profile_cycle
+        daemon_run_router_status_push_cycle
 
-    daemon_run_transition_cycle
-    daemon_run_tick_cycle
+        daemon_run_transition_cycle
+        daemon_run_tick_cycle
 
-    daemon_write_state_file
-    sleep "$INTERVAL"
-done
+        daemon_write_state_file
+        sleep "$INTERVAL"
+    done
+fi
