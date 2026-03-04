@@ -55,7 +55,7 @@ EOF
 
 # IPv6: conservative values and moderate increases if applicable
 apply_param_set <<'EOF'
-1|/proc/sys/net/ipv6/ip6frag_high_thresh|ip6frag_high_thresh 16MiB
+16777216|/proc/sys/net/ipv6/ip6frag_high_thresh|ip6frag_high_thresh 16MiB
 12582912|/proc/sys/net/ipv6/ip6frag_low_thresh|ip6frag_low_thresh 12MiB
 EOF
 

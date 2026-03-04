@@ -3,7 +3,7 @@
 # This version applies conservative values to avoid overloading CPU/memory.
 # It is recommended to measure before/after and adjust incrementally.
 # exist a better profile to low lñatenc but with more risk of instability variables.
-# Part of Kitsunping - addon/policy/net_profiles
+# Part of Kitsunping - net_profiles (applied via policy/executor layer)
 # When sourced by executor/profile_runner, preserve caller-provided NEWMODPATH.
 if [ -z "${NEWMODPATH:-}" ] || [ ! -d "${NEWMODPATH:-/}" ]; then
 	_caller_dir="${0%/*}"
@@ -31,7 +31,7 @@ apply_param_set <<'EOF'
 16777216|/proc/sys/net/core/bpf_jit_limit|bpf_jit_limit=16MiB (conservative)
 0|/proc/sys/net/core/busy_poll|busy_poll disabled for CPU/battery savings
 50|/proc/sys/net/core/busy_read|busy_read enabled for lower latency
-fq_codel|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq_codel
+fq|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq (lower scheduler overhead)
 100|/proc/sys/net/core/dev_weight|dev_weight optimized
 2|/proc/sys/net/core/dev_weight_rx_bias|dev_weight_rx_bias moderately increased
 2|/proc/sys/net/core/dev_weight_tx_bias|dev_weight_tx_bias moderately increased
@@ -40,8 +40,8 @@ fq_codel|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq_codel
 20|/proc/sys/net/core/max_skb_frags|max_skb_frags increased
 20|/proc/sys/net/core/message_burst|message_burst moderately increased
 10|/proc/sys/net/core/message_cost|message_cost adjusted
-600|/proc/sys/net/core/netdev_budget|netdev_budget optimized
-2000|/proc/sys/net/core/netdev_budget_usecs|netdev_budget_usecs (µs) moderate
+384|/proc/sys/net/core/netdev_budget|netdev_budget latency-biased
+1200|/proc/sys/net/core/netdev_budget_usecs|netdev_budget_usecs latency-biased
 1000|/proc/sys/net/core/netdev_max_backlog|netdev_max_backlog moderately increased
 0|/proc/sys/net/core/netdev_tstamp_prequeue|netdev_tstamp_prequeue disabled for latency
 12582912|/proc/sys/net/core/wmem_max|wmem_max=12MiB
@@ -63,7 +63,7 @@ echo "[PROFILE] gaming (safe) done" >> "$profile_aplicated"
 
 # TCP / IP / UDP conservative tunings (safe, incremental)
 apply_param_set <<'EOF'
-1|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn enabled (conservative)
+0|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn disabled (latency/stability bias)
 1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled
 1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled
 1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled
