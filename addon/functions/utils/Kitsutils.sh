@@ -61,6 +61,9 @@ set_permissions_module() {
         done
 
         [ -e "$modpath/addon/daemon/daemon.sh" ] && set_perm "$modpath/addon/daemon/daemon.sh" 0 0 0755
+        [ -e "$modpath/installer/service.sh" ] && set_perm "$modpath/installer/service.sh" 0 0 0755
+        [ -e "$modpath/installer/post-fs-data.sh" ] && set_perm "$modpath/installer/post-fs-data.sh" 0 0 0755
+        [ -e "$modpath/installer/uninstall.sh" ] && set_perm "$modpath/installer/uninstall.sh" 0 0 0755
         [ -e "$modpath/scripts/service.sh" ] && set_perm "$modpath/scripts/service.sh" 0 0 0755
         [ -e "$modpath/service.sh" ] && set_perm "$modpath/service.sh" 0 0 0755
         [ -e "$modpath/post-fs-data.sh" ] && set_perm "$modpath/post-fs-data.sh" 0 0 0755
@@ -109,8 +112,12 @@ set_permissions_module() {
         done
 
         for f in \
+            "$modpath/installer/service.sh" \
+            "$modpath/installer/post-fs-data.sh" \
+            "$modpath/installer/uninstall.sh" \
             "$modpath/scripts/service.sh" \
             "$modpath/scripts/post-fs-data.sh" \
+            "$modpath/scripts/uninstall.sh" \
             "$modpath/service.sh" \
             "$modpath/post-fs-data.sh" \
             "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" \
@@ -625,7 +632,7 @@ apply_profile_runtime_resetprops() {
 }
 
 
-# how_to_proceed_with_calibration moved to addon/Net_Calibrate/calibrate.sh
+# how_to_proceed_with_calibration moved to calibration/calibrate.sh
 
 
 # Normaliza valores de sysctl (convierte comas a espacios cuando aplica)
