@@ -31,3 +31,15 @@ tools/filter_wifi_dump.py
 tools/merge_wifi_profiles.py
 Docs/qosFlowMVP.md
 tools/adb_nonroot_net_scan.ps1
+Docs/architecture_migration_phase1.md
+Docs/compat_cleanup_major_plan.md
+Docs/features.md
+Docs/features.md
+Docs/implementation.md
+Docs/speedProfiles.md
+tools/collect_device_cache_logs.ps1
+analytics.md
+bug_report.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+custom.md

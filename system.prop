@@ -82,6 +82,10 @@ kitsunping.router.cache_ttl=3600
 # Infer channel width from link speed when width is not explicit (0: disable | 1: enable)
 persist.kitsunping.router.infer_width=1
 kitsunping.router.infer_width=1
+# Optional: infer 2.4GHz channel width when driver omits it (0: disable | 1: enable)
+# Heuristic only (low confidence): >=120 Mbps -> 40MHz, else 20MHz
+persist.kitsunping.router.infer_width_2g=1
+kitsunping.router.infer_width_2g=1
 
 # ====== Calibration cache (Net_Calibrate) ======
 # Reuse previous BEST_* values when the provider/operator is the same and a quick ping validation looks good.
@@ -97,8 +101,22 @@ persist.kitsunping.calibrate_cache_transport_strict=1
 # If ndc is unavailable, optionally set global net.dns* fallback props.
 # 0: disabled (recommended, avoid noisy/non-effective writes) | 1: enabled
 persist.kitsunping.calibrate_dns_setprop_fallback=0
+# Optional IPv6 calibration path controls.
+# 0: disabled (default) | 1: enabled
+persist.kitsunping.calibrate_ipv6_enable=1
+# IPv6 target used only when calibrate_ipv6_enable=1.
+persist.kitsunping.calibrate_ipv6_target=2001:4860:4860::8888
+# Enable granular latency scoring path in calibrate.sh (P90/P99).
+# 0: legacy scoring (avg+jitter+loss) | 1: granular scoring (avg+jitter+loss+p90+p99)
+persist.kitsunping.calibrate_granular_latency_enable=1
+# Optional custom profile applied once at daemon boot.
+# Values: none | stable | speed | gaming | benchmark
+persist.kitsunping.boot_profile=none
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.
+
+persist.kitsunping.target_request_cooldown_sec=8
+
 
 # ====== End of Kitsunping section ======
 

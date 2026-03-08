@@ -52,6 +52,7 @@ daemon_write_state_file() {
     local lownet_offset
     local out_wifi_score out_mobile_score out_composite out_composite_ema
     local out_wifi_rssi out_rsrp out_sinr out_wifi_latency_score out_rsrp_score out_sinr_score
+    local target_state target_state_reason target_state_ts
 
     lownet_offset="$(daemon_read_lownet_offset)"
 
@@ -65,6 +66,10 @@ daemon_write_state_file() {
     out_wifi_latency_score="${wifi_latency_score:--}"
     out_rsrp_score="${rsrp_score:-0}"
     out_sinr_score="${sinr_score:-0}"
+
+    target_state="$(cat "$MODDIR/cache/target.state" 2>/dev/null || echo "IDLE")"
+    target_state_reason="$(cat "$MODDIR/cache/target.state.reason" 2>/dev/null || echo "")"
+    target_state_ts="$(cat "$MODDIR/cache/target.state.ts" 2>/dev/null || echo "0")"
 
     case "$lownet_offset" in
         ''|0) ;;
@@ -97,7 +102,16 @@ wifi.quality=$wifi_quality_reason
 wifi.rssi_dbm=$out_wifi_rssi
 wifi.latency_ms=${wifi_latency_ms:--}
 wifi.latency_ema_ms=${wifi_latency_ema_ms:--}
+wifi.latency_p95_ms=${wifi_latency_p95_ms:-}
+wifi.latency_p99_ms=${wifi_latency_p99_ms:-}
 wifi.latency_score=$out_wifi_latency_score
+wifi.jitter_ms=${wifi_jitter_ms:--}
+wifi.jitter_p95_ms=${wifi_jitter_p95_ms:--}
+wifi.jitter_p99_ms=${wifi_jitter_p99_ms:--}
+wifi.jitter_score=${wifi_jitter_score:--}
+wifi.loss_pct=${wifi_loss_pct:--}
+wifi.loss_trend_pct=${wifi_loss_trend_pct:--}
+wifi.loss_score=${wifi_loss_score:--}
 wifi.probe_ok=$wifi_probe_ok
 wifi.bssid=${wifi_bssid:-}
 wifi.band=${wifi_band:-}
@@ -121,5 +135,8 @@ composite_score=$out_composite
 composite_ema=$out_composite_ema
 lownet.offset=$lownet_offset
 profile=${profile:-unknown}
+target.state=${target_state:-IDLE}
+target.state.reason=${target_state_reason:-}
+target.state.ts=${target_state_ts:-0}
 EOF
 }

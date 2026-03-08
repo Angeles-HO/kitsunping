@@ -198,6 +198,9 @@ CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
 CALIBRATE_CACHE_ENV="$NEWMODPATH/cache/calibrate.best.env"
 CALIBRATE_CACHE_META="$NEWMODPATH/cache/calibrate.best.meta"
 
+# Defensive: installation zips may omit empty directories, so create cache/log paths explicitly.
+mkdir -p "$CACHE_DIR_cln" "${NETMETER_FILE%/*}" "$cache_dir" 2>/dev/null || true
+
 calibrate_cache_load_vars() {
     local env_file="$1"
     [ -f "$env_file" ] || return 1

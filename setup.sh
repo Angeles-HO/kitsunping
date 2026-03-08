@@ -47,6 +47,9 @@ if [ -z "${MODPATH:-}" ]; then
     MODPATH="$NEWMODPATH"
 fi
 
+# Ensure runtime directories exist even when ZIP packaging omits empty folders.
+mkdir -p "$NEWMODPATH/cache" "$NEWMODPATH/logs" "$NEWMODPATH/calibration/data/cache" 2>/dev/null || true
+
 # Load base utilities and permissions
 . "$NEWMODPATH/$complemento_kitsutils"
 set_permissions

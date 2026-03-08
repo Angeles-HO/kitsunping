@@ -19,8 +19,6 @@
 
 com.mobile.legends=profile:gaming, priority:medium
 com.brave.browser=profile:gaming, priority:high
-com.spotify.music=profile:speed, priority:medium
 com.whatsapp=profile:speed, priority:medium
-com.whatsapp.w4b=profile:speed, priority:medium
 com.google.android.youtube=profile:speed, priority:medium
 com.instagram.android=profile:speed, priority:low                   

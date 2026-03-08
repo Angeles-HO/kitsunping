@@ -64,10 +64,8 @@ set_permissions_module() {
         [ -e "$modpath/installer/service.sh" ] && set_perm "$modpath/installer/service.sh" 0 0 0755
         [ -e "$modpath/installer/post-fs-data.sh" ] && set_perm "$modpath/installer/post-fs-data.sh" 0 0 0755
         [ -e "$modpath/installer/uninstall.sh" ] && set_perm "$modpath/installer/uninstall.sh" 0 0 0755
-        [ -e "$modpath/scripts/service.sh" ] && set_perm "$modpath/scripts/service.sh" 0 0 0755
         [ -e "$modpath/service.sh" ] && set_perm "$modpath/service.sh" 0 0 0755
         [ -e "$modpath/post-fs-data.sh" ] && set_perm "$modpath/post-fs-data.sh" 0 0 0755
-        [ -e "$modpath/scripts/post-fs-data.sh" ] && set_perm "$modpath/scripts/post-fs-data.sh" 0 0 0755
         set_perm "$modpath/addon/policy/executor.sh" 0 0 0755
         set_perm "$modpath/addon/functions/utils/Kitsutils.sh" 0 0 0755
         set_perm "$modpath/addon/functions/net_math.sh" 0 0 0755
@@ -115,9 +113,6 @@ set_permissions_module() {
             "$modpath/installer/service.sh" \
             "$modpath/installer/post-fs-data.sh" \
             "$modpath/installer/uninstall.sh" \
-            "$modpath/scripts/service.sh" \
-            "$modpath/scripts/post-fs-data.sh" \
-            "$modpath/scripts/uninstall.sh" \
             "$modpath/service.sh" \
             "$modpath/post-fs-data.sh" \
             "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" \
@@ -392,11 +387,11 @@ is_mtk() {
 }
 
 # usage normalize_profile_name
-# Normalize the profile name to expected values (speed, stable, gaming)
+# Normalize the profile name to expected values (speed, stable, gaming, benchmark)
 # If the value is not recognized, it returns "speed" by default
 normalize_profile_name() {
     case "$1" in
-        speed|stable|gaming) printf '%s' "$1" ;;
+        speed|stable|gaming|benchmark) printf '%s' "$1" ;;
         *) printf '%s' "speed" ;;
     esac
 }
@@ -598,7 +593,7 @@ apply_profile_runtime_resetprops() {
     
     if is_mtk; then
         case "$profile_name" in
-            gaming)
+            gaming|benchmark)
                 apply_prop "sys.wifi6.enable" "1"
                 apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
                 ;;
@@ -615,7 +610,7 @@ apply_profile_runtime_resetprops() {
 
     if is_qualcomm; then
         case "$profile_name" in
-            gaming|speed)
+            gaming|benchmark|speed)
                 apply_prop "sys.wifi6.enable" "1"
                 apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
                 ;;

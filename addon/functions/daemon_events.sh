@@ -2,11 +2,28 @@
 # Event and router identity helpers for daemon.sh
 
 get_router_paired_flag() {
-    local raw
+    local raw cache_file cache_paired
     raw="$(getprop persist.kitsunrouter.paired)"
     case "${raw:-}" in
         1|true|TRUE|yes|YES|on|ON) printf '1' ;;
-        *) printf '0' ;;
+        *)
+            cache_file="${ROUTER_PAIRING_CACHE_FILE:-${MODDIR}/cache/router.pairing.json}"
+            if [ -f "$cache_file" ]; then
+                cache_paired="$(grep -o '"paired"[[:space:]]*:[[:space:]]*[^,}]*' "$cache_file" 2>/dev/null | head -n 1)"
+                case "${cache_paired:-}" in
+                    *true*|*TRUE*|*1*)
+                        if [ -n "$RESET_PROP_BIN" ]; then
+                            "$RESET_PROP_BIN" persist.kitsunrouter.paired 1 >/dev/null 2>&1 || setprop persist.kitsunrouter.paired 1
+                        else
+                            setprop persist.kitsunrouter.paired 1
+                        fi
+                        printf '1'
+                        return 0
+                        ;;
+                esac
+            fi
+            printf '0'
+            ;;
     esac
 }
 
@@ -92,6 +109,7 @@ broadcast_event_to_apk() {
     [ -n "$payload" ] || return 0
 
     am broadcast -a com.kitsunping.ACTION_UPDATE -p app.kitsunping \
+        --include-stopped-packages \
         --es payload "$payload" \
         --es event "$name" \
         --es ts "$ts" \
@@ -133,12 +151,25 @@ emit_event() {
 
 handle_router_identity_change_unpair() {
     local old_sig="$1" new_sig="$2" bssid="$3"
-    local paired_prop ts
+    local paired_prop ts old_bssid new_bssid
     paired_prop="$(getprop persist.kitsunrouter.paired)"
     case "$paired_prop" in
         1|true|TRUE|yes|YES|on|ON) ;;
         *) return 0 ;;
     esac
+
+    old_bssid="${old_sig%%|*}"
+    new_bssid="${new_sig%%|*}"
+
+    if [ -z "$old_sig" ] || [ -z "$new_sig" ]; then
+        log_info "router identity changed with incomplete DNI; keep pairing old=${old_sig:-none} new=${new_sig:-none}"
+        return 0
+    fi
+
+    if [ -n "$old_bssid" ] && [ -n "$new_bssid" ] && [ "$old_bssid" = "$new_bssid" ]; then
+        log_info "router identity changed but same bssid=$new_bssid; keep pairing old=${old_sig:-none} new=${new_sig:-none}"
+        return 0
+    fi
 
     ts="$(now_epoch)"
 
