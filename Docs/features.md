@@ -13,7 +13,7 @@ Kitsunping uses a small set of filesystem locks and Android/system properties to
 
 ### `EXECUTOR_LOCK_DIR` (runtime: `cache/executor.lock`)
 Single-run lock for the executor.
-- **Implemented in:** [Kitsunping/addon/policy/executor.sh](Kitsunping/addon/policy/executor.sh#L1-L120)
+- **Implemented in:** [Kitsunping/policy/executor/executor.sh](../policy/executor/executor.sh)
 - **Managed by:** `acquire_executor_lock` / `release_executor_lock`
 - **Purpose:** Prevents overlapping executor runs
 
@@ -53,6 +53,6 @@ If postpone count or age exceed configured thresholds (`CALIBRATE_FORCE_AFTER_PO
 
 ## Maintenance and references
 
-- **Executor:** [Kitsunping/addon/policy/executor.sh](../addon/policy/executor.sh)
+- **Executor:** [Kitsunping/policy/executor/executor.sh](../policy/executor/executor.sh)
 - **Helper functions:** [Kitsunping/addon/functions](../addon/functions)
-- **Calibrator:** [Kitsunping/addon/Net_Calibrate/calibrate.sh](../addon/Net_Calibrate/calibrate.sh)
+- **Calibrator:** [Kitsunping/calibration/calibrate.sh](../calibration/calibrate.sh)

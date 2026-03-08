@@ -71,4 +71,14 @@ EOF
 
 echo "[PROFILE] speed: skip tx_queue_len override (driver default preferred)" >> "$LOG_OUT"
 
+# Prefer BBR on throughput-first profile when the kernel exposes it.
+if [ -f /proc/sys/net/ipv4/tcp_available_congestion_control ]; then
+	if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control; then
+		echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null || true
+		echo "[PROFILE] speed: tcp_congestion_control set to bbr" >> "$LOG_OUT"
+	else
+		echo "[PROFILE] speed: bbr not available; keeping cubic" >> "$LOG_OUT"
+	fi
+fi
+
 echo "[PROFILE] speed done" >> "$LOG_OUT"

@@ -31,7 +31,7 @@ apply_param_set <<'EOF'
 16777216|/proc/sys/net/core/bpf_jit_limit|bpf_jit_limit=16MiB (conservative)
 0|/proc/sys/net/core/busy_poll|busy_poll disabled for CPU/battery savings
 50|/proc/sys/net/core/busy_read|busy_read enabled for lower latency
-fq|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq (lower scheduler overhead)
+fq_codel|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq_codel (lower queueing latency)
 100|/proc/sys/net/core/dev_weight|dev_weight optimized
 2|/proc/sys/net/core/dev_weight_rx_bias|dev_weight_rx_bias moderately increased
 2|/proc/sys/net/core/dev_weight_tx_bias|dev_weight_tx_bias moderately increased
@@ -74,7 +74,7 @@ apply_param_set <<'EOF'
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled (if supported)
 3|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 reduced
 8|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 moderate
-2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=2MiB (conservative)
+1048576|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=1MiB (lower queueing latency)
 2|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries conservative
 2048|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog increased
 32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans conservative

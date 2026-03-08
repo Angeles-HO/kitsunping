@@ -18,17 +18,19 @@ umask "$UMASK"
 ui_print() { echo "$@"; }
 log_line() { [ -n "$LOGFILE" ] && echo "$1" | tee -a "$LOGFILE" || echo "$1"; }
 
-copy_file_if_exists() {
-  local src="$TMPDIR/scripts/$1"
-  local dest="$MODPATH/$1"
+copy_boot_script() {
+  local name="$1"
+  local src_installer="$TMPDIR/installer/$name"
+  local dest="$MODPATH/$name"
 
-  if [ -f "$src" ]; then
-    cp -af "$src" "$dest" || { log_line " [x] Error al copiar $1"; exit 1; }
-    log_line " [✓] Copiado: [$src] --> [$dest]"
-  else
-    log_line " [x] Archivo faltante: $1"
+  if [ ! -f "$src_installer" ]; then
+    log_line " [x] Archivo faltante: $name (installer)"
     exit 1
   fi
+
+  cp -af "$src_installer" "$dest" || { log_line " [x] Error al copiar $name"; exit 1; }
+  chmod 0755 "$dest" 2>/dev/null || true
+  log_line " [✓] Copiado: [$src_installer] --> [$dest]"
 }
 
 # --- Setup environment ---
@@ -104,9 +106,9 @@ else
   exit 1
 fi
 
-copy_file_if_exists "service.sh"
-copy_file_if_exists "uninstall.sh"
-copy_file_if_exists "post-fs-data.sh"
+copy_boot_script "service.sh"
+copy_boot_script "uninstall.sh"
+copy_boot_script "post-fs-data.sh"
 
 # Re-apply module-specific permissions AFTER copying root boot scripts.
 # Important: Magisk's default set_permissions may chmod bundled binaries (ping/ip/jq/bc) to 0644,

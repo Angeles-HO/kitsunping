@@ -4,13 +4,15 @@ This page keeps deeper implementation details out of the main README, while docu
 
 ## Boot stages (Magisk)
 
-- `scripts/post-fs-data.sh`: early boot stage
+- `installer/post-fs-data.sh` (compat: `scripts/post-fs-data.sh`): early boot stage
   - Sets permissions / prepares the module environment.
   - Does early boot prep only; does not start runtime services.
-- `scripts/service.sh`: late boot stage
+- `installer/service.sh` (compat: `scripts/service.sh`): late boot stage
   - Waits for `sys.boot_completed=1`.
   - Applies baseline network tuning.
   - Starts the daemon.
+- `installer/uninstall.sh` (compat: `scripts/uninstall.sh`): uninstall stage
+  - Restores/removes module-managed artifacts and clears module props.
 
 ## Runtime components
 
@@ -25,7 +27,7 @@ This page keeps deeper implementation details out of the main README, while docu
 
 ### Policy executor (applier)
 
-- Script: `addon/policy/executor.sh`
+- Script: `policy/executor/executor.sh` (compat: `addon/policy/executor.sh`)
 - Purpose:
   - Applies the target profile when it differs from the current profile.
   - Runs calibration conditionally (cooldown + low-score streak) and applies BEST_* results via `resetprop`.
@@ -48,14 +50,14 @@ Key time-based controls used by the daemon and executor:
 
 ### Policy selection (optional)
 
-- Script: `addon/policy/network_policy.sh`
+- Script: `policy/engine/network_policy.sh` (compat: `addon/policy/network_policy.sh`)
 - Purpose:
-  - Reads `cache/daemon.state` + `cache/daemon.last` and chooses a profile via `addon/policy/decide_profile.sh`.
+  - Reads `cache/daemon.state` + `cache/daemon.last` and chooses a profile via `policy/rules/decide_profile.sh`.
   - Writes the chosen profile to `cache/policy.request` (informational) and triggers the executor via a `PROFILE_CHANGED` context.
 
 ## Provider mapping / calibration data
 
-- Directory: `addon/Net_Calibrate/data/`
+- Directory: `calibration/data/` (compat wrapper in `addon/Net_Calibrate/calibrate.sh`)
   - Country/provider JSONs for DNS/ping targets.
   - Includes an `unknown.json` fallback when carrier/country cannot be detected.
 
