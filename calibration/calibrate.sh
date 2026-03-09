@@ -179,9 +179,9 @@ NETMETER_FILE="$NEWMODPATH/logs/calibrate.log"
 trace_log="/sdcard/trace_log.log"
 
 # Binarys Variables
-jqbin="$NEWMODPATH/addon/jq/arm64/jq"
-ipbin="$NEWMODPATH/addon/ip/ip" 
-pingbin="$NEWMODPATH/addon/ping"
+jqbin=""
+ipbin=""
+pingbin=""
 
 # Cache for Calibrate.sh optimizations
 CACHE_DIR_cln="$NEWMODPATH/cache"
@@ -388,6 +388,11 @@ verify_scripts "$NEWMODPATH/addon/functions/network_utils.sh"
 # Generic utils
 verify_scripts "$NEWMODPATH/addon/functions/utils/Kitsutils.sh"
 
+# Ensure bundled binary directories are available in PATH before detection.
+if command -v export_kitsunping_bin_path >/dev/null 2>&1; then
+    export_kitsunping_bin_path
+fi
+
 # Description: Backup current network-related properties to a file.
 echo "$(date +%s)" | atomic_write "$CALIBRATE_LAST_RUN"
 echo "running" | atomic_write "$CALIBRATE_STATE_RUN"
@@ -402,6 +407,12 @@ check_and_detect_commands() {
     check_core_commands ip ndc resetprop awk || return 1
     detect_ip_binary || return 1
     ipbin="$IP_BIN"
+    detect_jq_binary || true
+    jqbin="$JQ_BIN"
+    [ -n "$jqbin" ] || {
+        log_error "jq binary not found" >> "$trace_log"
+        return 1
+    }
 
     # returns 0 = OK, 1 = ping binary not found, 2 = ping not functional
     check_and_prepare_ping "$pingbin"

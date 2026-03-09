@@ -41,7 +41,7 @@ APP_EVENT_PROP_LEGACY="persist.kitsunping.user_event"
 APP_EVENT_DATA_PROP_LEGACY="persist.kitsunping.user_event_data"
 
 # ============== PATH Setup ==============
-# Add /data/local/tmp to PATH for wget wrapper and other utilities
+# Add /data/local/tmp first for wget wrapper, then prepend module binary dirs.
 export PATH="/data/local/tmp:$PATH"
 
 # ============== Dev Hot-Reload ==============
@@ -308,6 +308,11 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 # Source all modular components (dev hot-reload aware)
 _dev_reload_all
+
+# Prepend bundled binary directories once helpers are loaded.
+if command -v export_kitsunping_bin_path >/dev/null 2>&1; then
+    export_kitsunping_bin_path
+fi
 
 # ============= Signal Handling ==============
 # Handle TERM/INT signals to cleanup pidfile

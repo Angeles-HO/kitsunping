@@ -51,6 +51,7 @@ set_permissions_module() {
     if command -v set_perm_recursive >/dev/null 2>&1; then
         set_perm_recursive "$modpath" 0 0 0755 0644
         for d in \
+            "$modpath/addon/bin" \
             "$modpath/addon/jq" \
             "$modpath/addon/bc" \
             "$modpath/addon/ip" \
@@ -93,6 +94,7 @@ set_permissions_module() {
 
         # Ensure specific executables/scripts have executable permission and proper owner; log if any step fails.
         for dir in \
+            "$modpath/addon/bin" \
             "$modpath/addon/bc" \
             "$modpath/addon/jq" \
             "$modpath/addon/ip" \
