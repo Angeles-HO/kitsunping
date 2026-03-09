@@ -300,36 +300,86 @@ iw_is_usable() {
 
 infer_wifi_width_mhz() {
     local band="$1" width="$2" link_speed="$3" inferred_width="" width_source="" width_confidence=""
+    local infer_width_flag="${ROUTER_INFER_WIDTH:-0}" infer_width_2g_flag="${ROUTER_INFER_WIDTH_2G:-0}" gpbin=""
+
+    if [ -x /system/bin/getprop ]; then
+        gpbin=/system/bin/getprop
+    elif command -v getprop >/dev/null 2>&1; then
+        gpbin=getprop
+    fi
+
+    if [ "$infer_width_flag" -ne 1 ] && [ -n "$gpbin" ]; then
+        case "$($gpbin persist.kitsunping.router.infer_width 2>/dev/null || true)" in
+            1|true|TRUE|yes|YES|on|ON) infer_width_flag=1 ;;
+        esac
+    fi
+
+    if [ "$infer_width_2g_flag" -ne 1 ] && [ -n "$gpbin" ]; then
+        case "$($gpbin persist.kitsunping.router.infer_width_2g 2>/dev/null || true)" in
+            1|true|TRUE|yes|YES|on|ON) infer_width_2g_flag=1 ;;
+        esac
+    fi
 
     if [ -n "$width" ]; then
         printf '%s|%s|%s' "$width" "explicit" "high"
         return 0
     fi
 
-    if [ "${ROUTER_INFER_WIDTH:-0}" -ne 1 ]; then
+    if [ "$infer_width_flag" -ne 1 ]; then
         printf '%s|%s|%s' "" "" "" 
         return 0
     fi
 
-    if [ "$band" != "5g" ]; then
-        printf '%s|%s|%s' "" "" ""
-        return 0
-    fi
-
     if ! printf '%s' "$link_speed" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
-        printf '%s|%s|%s' "" "" ""
-        return 0
+        case "$band" in
+            2g)
+                [ "$infer_width_2g_flag" -eq 1 ] || {
+                    printf '%s|%s|%s' "" "" ""
+                    return 0
+                }
+                # Conservative fallback when drivers omit both width and rate.
+                printf '%s|%s|%s' "20" "inferred" "low"
+                return 0
+                ;;
+            *)
+                printf '%s|%s|%s' "" "" ""
+                return 0
+                ;;
+        esac
     fi
 
-    if awk "BEGIN{exit !($link_speed > 900)}"; then
-        inferred_width="160"
-        width_source="inferred"
-        width_confidence="medium"
-    elif awk "BEGIN{exit !($link_speed > 600)}"; then
-        inferred_width="80"
-        width_source="inferred"
-        width_confidence="low"
-    fi
+    case "$band" in
+        5g|6g)
+            if awk "BEGIN{exit !($link_speed > 900)}"; then
+                inferred_width="160"
+                width_source="inferred"
+                width_confidence="medium"
+            elif awk "BEGIN{exit !($link_speed > 600)}"; then
+                inferred_width="80"
+                width_source="inferred"
+                width_confidence="low"
+            fi
+            ;;
+        2g)
+            # Optional heuristic for 2.4GHz where drivers often omit channel width.
+            # Conservative mapping:
+            # - >=120 Mbps likely 40MHz
+            # - otherwise assume 20MHz
+            [ "$infer_width_2g_flag" -eq 1 ] || {
+                printf '%s|%s|%s' "" "" ""
+                return 0
+            }
+            if awk "BEGIN{exit !($link_speed >= 120)}"; then
+                inferred_width="40"
+            else
+                inferred_width="20"
+            fi
+            width_source="inferred"
+            width_confidence="low"
+            ;;
+        *)
+            ;;
+    esac
 
     printf '%s|%s|%s' "$inferred_width" "$width_source" "$width_confidence"
 }
@@ -550,9 +600,13 @@ detect_router_vendor() {
     esac
 
     bssid_lc=$(printf '%s' "$bssid" | tr '[:upper:]' '[:lower:]')
-    IFS=: read -r o1 o2 o3 _rest <<EOF
-$bssid_lc
-EOF
+    old_ifs="$IFS"
+    IFS=:
+    set -- $bssid_lc
+    IFS="$old_ifs"
+    o1="$1"
+    o2="$2"
+    o3="$3"
     oui="${o1}:${o2}:${o3}"
 
     case "$oui" in

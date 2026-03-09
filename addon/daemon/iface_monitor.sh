@@ -189,15 +189,13 @@ get_signal_quality() {
         fi
     fi
 
-    cat <<EOF
-{
-  "technology": "${tech:-unknown}",
-  "rsrp_dbm": "${rsrp:--}",
-  "rssi_dbm": "${rssi:--}",
-  "sinr_db": "${sinr:--}",
-  "asu": "${asu:--}",
-  "quality_score": $quality_score,
-  "timestamp": $ts
-}
-EOF
+        printf '%s\n' '{'
+        printf '  "technology": "%s",\n' "${tech:-unknown}"
+        printf '  "rsrp_dbm": "%s",\n' "${rsrp:--}"
+        printf '  "rssi_dbm": "%s",\n' "${rssi:--}"
+        printf '  "sinr_db": "%s",\n' "${sinr:--}"
+        printf '  "asu": "%s",\n' "${asu:--}"
+        printf '  "quality_score": %s,\n' "$quality_score"
+        printf '  "timestamp": %s\n' "$ts"
+        printf '%s\n' '}'
 }

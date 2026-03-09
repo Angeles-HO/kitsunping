@@ -206,8 +206,12 @@ getprop_or_default() {
 # Atomic write helper
 # usage: 
 atomic_write() {
-    local target="$1" tmp
-    tmp=$(mktemp "${target}.XXXXXX") || tmp="${target}.$$.$(date +%s).tmp"
+    local target="$1" tmp target_dir
+    [ -n "$target" ] || return 1
+    target_dir="$(dirname "$target")"
+    [ -n "$target_dir" ] || target_dir="."
+    mkdir -p "$target_dir" 2>/dev/null || return 1
+    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
     if cat - > "$tmp" 2>/dev/null; then
         mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
     else
@@ -232,6 +236,7 @@ update_prop_in_file() {
 
 # Detect total RAM once and write properties into system.prop for profile logic
 # Thresholds (MB, with margin): 2560 (2.5GB -> 3GB class), 5120 (5GB -> 6GB class), 12288 (12GB), 16384 (16GB)
+# TODO: use this for add better staility on executor, daemon, logs.
 detect_and_write_ram_props() {
     modpath="$1"
     [ -z "$modpath" ] && modpath="${NEWMODPATH:-.}"
@@ -387,11 +392,12 @@ is_mtk() {
 }
 
 # usage normalize_profile_name
-# Normalize the profile name to expected values (speed, stable, gaming, benchmark)
+# Normalize the profile name to expected values.
 # If the value is not recognized, it returns "speed" by default
 normalize_profile_name() {
     case "$1" in
-        speed|stable|gaming|benchmark) printf '%s' "$1" ;;
+        benchmark) printf '%s' "benchmark_gaming" ;;
+        speed|stable|gaming|benchmark_gaming|benchmark_speed) printf '%s' "$1" ;;
         *) printf '%s' "speed" ;;
     esac
 }
@@ -593,11 +599,11 @@ apply_profile_runtime_resetprops() {
     
     if is_mtk; then
         case "$profile_name" in
-            gaming|benchmark)
+            gaming|benchmark_gaming)
                 apply_prop "sys.wifi6.enable" "1"
                 apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
                 ;;
-            speed)
+            speed|benchmark_speed)
                 apply_prop "sys.wifi6.enable" "1"
                 ;;
             stable)
@@ -610,7 +616,7 @@ apply_profile_runtime_resetprops() {
 
     if is_qualcomm; then
         case "$profile_name" in
-            gaming|benchmark|speed)
+            gaming|benchmark_gaming|benchmark_speed|speed)
                 apply_prop "sys.wifi6.enable" "1"
                 apply_prop "persist.vendor.connmgr.wifi.bss_coloring" "1"
                 ;;

@@ -4,7 +4,11 @@
 command -v command_exists >/dev/null 2>&1 || command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 command -v atomic_write >/dev/null 2>&1 || atomic_write() {
-    local target="$1" tmp
+    local target="$1" tmp target_dir
+    [ -n "$target" ] || return 1
+    target_dir="$(dirname "$target")"
+    [ -n "$target_dir" ] || target_dir="."
+    mkdir -p "$target_dir" 2>/dev/null || return 1
     tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
     if cat - > "$tmp" 2>/dev/null; then
         mv "$tmp" "$target" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
