@@ -34,9 +34,8 @@ write_event_json() {
     local name="$1" ts="$2" details jsonfile="$LAST_EVENT_JSON"
     details="$(json_escape "$3")"
 
-    cat <<EOF | atomic_write "$jsonfile"
-{"event":"$name","ts":$ts,"details":"$details","iface":"$current_iface","wifi_state":"$wifi_state","wifi_score":$wifi_score}
-EOF
+    printf '%s\n' "{\"event\":\"$name\",\"ts\":$ts,\"details\":\"$details\",\"iface\":\"$current_iface\",\"wifi_state\":\"$wifi_state\",\"wifi_score\":$wifi_score}" \
+        | atomic_write "$jsonfile"
 }
 
 ## Determine if event should be emitted based on debounce time
@@ -179,9 +178,8 @@ handle_router_identity_change_unpair() {
         setprop persist.kitsunrouter.paired 0
     fi
 
-    cat <<EOF | atomic_write "$ROUTER_PAIRING_CACHE_FILE"
-{"router_ip":"","token":"","router_id":"","paired":false,"updated_ts":${ts:-0},"reason":"router_identity_changed"}
-EOF
+    printf '%s\n' "{\"router_ip\":\"\",\"token\":\"\",\"router_id\":\"\",\"paired\":false,\"updated_ts\":${ts:-0},\"reason\":\"router_identity_changed\"}" \
+        | atomic_write "$ROUTER_PAIRING_CACHE_FILE"
 
     emit_event "$EV_ROUTER_UNPAIRED" "reason=router_changed bssid=$bssid from=${old_sig:-none} to=${new_sig:-none}"
     log_info "router pairing reset due identity change: from=${old_sig:-none} to=${new_sig:-none}"

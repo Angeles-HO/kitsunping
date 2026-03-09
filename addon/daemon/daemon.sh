@@ -16,6 +16,10 @@
 SCRIPT_DIR="${0%/*}"
 ADDON_DIR="${SCRIPT_DIR%/*}"
 MODDIR="${ADDON_DIR%/*}"
+TMPDIR="${TMPDIR:-$MODDIR/cache/tmp}"
+mkdir -p "$TMPDIR" 2>/dev/null || TMPDIR="/data/local/tmp"
+mkdir -p "$TMPDIR" 2>/dev/null || true
+export TMPDIR
 LOG_DIR="$MODDIR/logs"
 LOG_FILE="$LOG_DIR/daemon.log"
 POLICY_DIR="$MODDIR/addon/policy"
@@ -30,8 +34,83 @@ ROUTER_PAIRING_CACHE_FILE="$MODDIR/cache/router.pairing.json"
 shared_errors="$MODDIR/addon/functions/debug/shared_errors.sh"
 POLICY_COMMON_SH="$MODDIR/addon/functions/policy_common.sh"
 EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
-APP_EVENT_PROP="persist.kitsunping.user_event"
-APP_EVENT_DATA_PROP="persist.kitsunping.user_event_data"
+APP_EVENT_PROP="persist.kitsuneping.user_event"
+APP_EVENT_DATA_PROP="persist.kitsuneping.user_event_data"
+# Backward compatibility with older typoed property names.
+APP_EVENT_PROP_LEGACY="persist.kitsunping.user_event"
+APP_EVENT_DATA_PROP_LEGACY="persist.kitsunping.user_event_data"
+
+# ============== PATH Setup ==============
+# Add /data/local/tmp to PATH for wget wrapper and other utilities
+export PATH="/data/local/tmp:$PATH"
+
+# ============== Dev Hot-Reload ==============
+# Usage:
+#   mkdir -p /data/local/tmp/kitsunping_dev/<relative-path>
+#   adb push <file> /data/local/tmp/kitsunping_dev/<relative-path>
+#   touch /data/local/tmp/kitsunping_dev/.enabled
+#   kill -USR1 $(cat /data/adb/modules/Kitsunping/cache/daemon.pid)
+# Disable: rm /data/local/tmp/kitsunping_dev/.enabled
+DEV_OVERRIDE_DIR="/data/local/tmp/kitsunping_dev"
+
+_source_or_dev() {
+    _sod_path="$1"
+    _sod_rel="${_sod_path#$MODDIR/}"
+    _sod_override="$DEV_OVERRIDE_DIR/$_sod_rel"
+    if [ -f "$DEV_OVERRIDE_DIR/.enabled" ] && [ -f "$_sod_override" ]; then
+        printf '[DEV][HOT] override: %s\n' "$_sod_rel" >> "$LOG_FILE" 2>/dev/null || true
+        . "$_sod_override"
+    elif [ -f "$_sod_path" ]; then
+        . "$_sod_path"
+    fi
+}
+
+_dev_reload_all() {
+    printf '[DEV][HOT] reload triggered\n' >> "$LOG_FILE" 2>/dev/null || true
+    _source_or_dev "$MODDIR/addon/functions/core.sh"
+    _source_or_dev "$POLICY_COMMON_SH"
+    _source_or_dev "$MODDIR/addon/functions/utils/env_detect.sh"
+    _source_or_dev "$MODDIR/addon/functions/net_math.sh"
+    _source_or_dev "$MODDIR/addon/daemon/iface_monitor.sh"
+    _source_or_dev "$MODDIR/addon/functions/utils/Kitsutils.sh"
+    _source_or_dev "$MODDIR/addon/functions/network_utils.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_utils.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_static.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_events.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_wifi_cycle.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_mobile_cycle.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_app_cycle.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_state_writer.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_transitions.sh"
+    _source_or_dev "$MODDIR/lib/time_helpers.sh"
+    _source_or_dev "$MODDIR/lib/json_helpers.sh"
+    _source_or_dev "$MODDIR/lib/validation.sh"
+    _source_or_dev "$MODDIR/lib/lock.sh"
+    _source_or_dev "$MODDIR/network/wifi/cycle.sh"
+    _source_or_dev "$MODDIR/network/mobile/cycle.sh"
+    # Load app submodules explicitly before the orchestrator to avoid missing
+    # symbols when cycle.sh cannot source one of its internal dependencies.
+    _source_or_dev "$MODDIR/network/app/state_io.sh"
+    _source_or_dev "$MODDIR/network/app/pairing_gate.sh"
+    _source_or_dev "$MODDIR/network/app/target_engine.sh"
+    _source_or_dev "$MODDIR/network/app/router_push.sh"
+    _source_or_dev "$MODDIR/network/app/router_channel.sh"
+    _source_or_dev "$MODDIR/network/app/cycle.sh"
+    _source_or_dev "$MODDIR/core/runtime.sh"
+    _source_or_dev "$shared_errors"
+    if command -v network__app__event_cycle >/dev/null 2>&1; then
+        printf '[DEV][HOT] symbol ok: network__app__event_cycle\n' >> "$LOG_FILE" 2>/dev/null || true
+    else
+        printf '[DEV][HOT] symbol missing: network__app__event_cycle\n' >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    if command -v network__app__read_state_field >/dev/null 2>&1; then
+        printf '[DEV][HOT] symbol ok: network__app__read_state_field\n' >> "$LOG_FILE" 2>/dev/null || true
+    else
+        printf '[DEV][HOT] symbol missing: network__app__read_state_field\n' >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@"; }
+    printf '[DEV][HOT] reload complete\n' >> "$LOG_FILE" 2>/dev/null || true
+}
 
 uint_or_default() {
     local raw="$1" def="$2"
@@ -58,6 +137,8 @@ EV_USER_REQUESTED_START="user_requested_start"
 EV_USER_REQUESTED_CALIBRATE="user_requested_calibrate"
 EV_USER_REQUESTED_RESTART="user_requested_restart"
 EV_REQUEST_PROFILE="request_profile"
+EV_REQUEST_CHANNEL_SCAN="request_channel_scan"
+EV_REQUEST_CHANNEL_CHANGE="channel_change_request"
 # For pairing router from app
 EV_ROUTER_PAIRED="ROUTER_PAIRED"
 EV_ROUTER_UNPAIRED="ROUTER_UNPAIRED"
@@ -93,6 +174,8 @@ ROUTER_CACHE_TTL_RAW=$(getprop persist.kitsunping.router.cache_ttl)
 ROUTER_CACHE_TTL_RAW_2=$(getprop kitsunping.router.cache_ttl)
 ROUTER_INFER_WIDTH_RAW=$(getprop persist.kitsunping.router.infer_width)
 ROUTER_INFER_WIDTH_RAW_2=$(getprop kitsunping.router.infer_width)
+ROUTER_INFER_WIDTH_2G_RAW=$(getprop persist.kitsunping.router.infer_width_2g)
+ROUTER_INFER_WIDTH_2G_RAW_2=$(getprop kitsunping.router.infer_width_2g)
 
 # Wifi serction
 WIFI_SPEED_THRESHOLD="$(getprop kitsunping.wifi.speed_threshold | tr -d '\r\n')" # Mbps, above this is GOOD, below is LIMBO/BAD
@@ -188,6 +271,12 @@ case "${ROUTER_INFER_WIDTH:-}" in
     *) ROUTER_INFER_WIDTH=0 ;;
 esac
 
+ROUTER_INFER_WIDTH_2G="${ROUTER_INFER_WIDTH_2G:-${ROUTER_INFER_WIDTH_2G_RAW:-$ROUTER_INFER_WIDTH_2G_RAW_2}}"
+case "${ROUTER_INFER_WIDTH_2G:-}" in
+    1|true|TRUE|yes|YES|on|ON) ROUTER_INFER_WIDTH_2G=1 ;;
+    *) ROUTER_INFER_WIDTH_2G=0 ;;
+esac
+
 # Policy file ownership conventions:
 # - `cache/policy.request`: written by the daemon to indicate the desired/profile chosen
 # - `cache/policy.target`: written atomically by the executor when it accepts an event (target to apply)
@@ -217,86 +306,13 @@ log_error() { printf '[DAEMON][ERROR] %s\n' "$*" >&2; }
 log_policy() { printf '[POLICY] %s\n' "$*" >&2; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-# TODO: try to reduce code whit a 1 funciton 
-
-# Source modular components
-if [ -f "$MODDIR/addon/functions/core.sh" ]; then
-    . "$MODDIR/addon/functions/core.sh"
-fi
-if [ -f "$POLICY_COMMON_SH" ]; then
-    . "$POLICY_COMMON_SH"
-fi
-if [ -f "$MODDIR/addon/functions/utils/env_detect.sh" ]; then
-    . "$MODDIR/addon/functions/utils/env_detect.sh"
-fi
-if [ -f "$MODDIR/addon/functions/net_math.sh" ]; then
-    . "$MODDIR/addon/functions/net_math.sh"
-fi
-if [ -f "$MODDIR/addon/daemon/iface_monitor.sh" ]; then
-    . "$MODDIR/addon/daemon/iface_monitor.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/utils/Kitsutils.sh" ]; then
-    . "$MODDIR/addon/functions/utils/Kitsutils.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/network_utils.sh" ]; then
-    . "$MODDIR/addon/functions/network_utils.sh"
-fi
-
-# Daemon helpers extracted from daemon.sh
-if [ -f "$MODDIR/addon/functions/daemon_utils.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_utils.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_static.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_static.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_events.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_events.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_wifi_cycle.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_wifi_cycle.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_mobile_cycle.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_mobile_cycle.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_app_cycle.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_app_cycle.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_state_writer.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_state_writer.sh"
-fi
-
-if [ -f "$MODDIR/addon/functions/daemon_transitions.sh" ]; then
-    . "$MODDIR/addon/functions/daemon_transitions.sh"
-fi
-
-# New modular layers (non-breaking): shared lib + network wrappers
-[ -f "$MODDIR/lib/time_helpers.sh" ] && . "$MODDIR/lib/time_helpers.sh"
-[ -f "$MODDIR/lib/json_helpers.sh" ] && . "$MODDIR/lib/json_helpers.sh"
-[ -f "$MODDIR/lib/validation.sh" ] && . "$MODDIR/lib/validation.sh"
-[ -f "$MODDIR/lib/lock.sh" ] && . "$MODDIR/lib/lock.sh"
-[ -f "$MODDIR/network/wifi/cycle.sh" ] && . "$MODDIR/network/wifi/cycle.sh"
-[ -f "$MODDIR/network/mobile/cycle.sh" ] && . "$MODDIR/network/mobile/cycle.sh"
-[ -f "$MODDIR/network/app/cycle.sh" ] && . "$MODDIR/network/app/cycle.sh"
-[ -f "$MODDIR/core/runtime.sh" ] && . "$MODDIR/core/runtime.sh"
-
-if [ -f "$shared_errors" ]; then 
-    . "$shared_errors"
-    command -v log_daemon >/dev/null 2>&1 && log_info() { log_daemon "$@";  } 
-else
-    log_warning "Shared_errors no encontrado: $shared_errors (usando logger interno)"
-fi
+# Source all modular components (dev hot-reload aware)
+_dev_reload_all
 
 # ============= Signal Handling ==============
 # Handle TERM/INT signals to cleanup pidfile
 trap 'log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
+trap '_dev_reload_all; log_info "hot-reload complete (USR1)"' USR1
 
 # ============== Singleton Enforcement ==============
 ## Ensure only one instance of the daemon is running 
@@ -356,10 +372,63 @@ check_and_detect_commands() {
     detect_bc_binary
 }
 
+preflight_check_caps() {
+    # Check once at startup which optional cmd wifi subcommands are available.
+    # Results cached in cache/preflight.state so profile_runner.sh can gate tweaks.
+    local caps_file cmd_wifi_low_latency=0 cmd_wifi_hi_perf=0
+    caps_file="$MODDIR/cache/preflight.state"
+    mkdir -p "$MODDIR/cache" 2>/dev/null || true
+
+    if command -v cmd >/dev/null 2>&1; then
+        _caps_out="$(cmd wifi 2>&1)"
+        printf '%s' "$_caps_out" | grep -q 'force-low-latency-mode' && cmd_wifi_low_latency=1
+        printf '%s' "$_caps_out" | grep -q 'force-hi-perf-mode'      && cmd_wifi_hi_perf=1
+    fi
+
+    printf 'cmd_wifi_low_latency=%s\ncmd_wifi_hi_perf=%s\n' \
+        "$cmd_wifi_low_latency" "$cmd_wifi_hi_perf" > "$caps_file" 2>/dev/null || true
+    log_info "preflight: cmd_wifi_low_latency=$cmd_wifi_low_latency cmd_wifi_hi_perf=$cmd_wifi_hi_perf"
+}
+
+apply_boot_custom_profile_once() {
+    local boot_profile_raw boot_profile policy_request_file policy_request_priority_file
+
+    boot_profile_raw="$(getprop persist.kitsunping.boot_profile | tr -d '\r\n')"
+    boot_profile="$(printf '%s' "$boot_profile_raw" | tr '[:upper:]' '[:lower:]')"
+
+    case "$boot_profile" in
+        stable|speed|gaming|benchmark_gaming|benchmark_speed) ;;
+        benchmark|benchmarks) boot_profile="benchmark_gaming" ;;
+        none|"") return 0 ;;
+        *)
+            log_warning "boot profile inválido: ${boot_profile_raw:-empty}"
+            return 0
+            ;;
+    esac
+
+    policy_request_file="$MODDIR/cache/policy.request"
+    policy_request_priority_file="$MODDIR/cache/policy.request.priority"
+
+    printf '%s' "$boot_profile" > "$policy_request_file" 2>/dev/null || true
+    printf '%s' "high" > "$policy_request_priority_file" 2>/dev/null || true
+
+    # L2.5: record boot profile timestamp so the Wi-Fi transport cycle respects
+    # WIFI_SWITCH_MIN_HOLD_SEC and does not immediately override the boot profile.
+    _boot_ts_file="$MODDIR/cache/policy.boot.ts"
+    printf '%s' "$(date +%s 2>/dev/null || echo 0)" > "$_boot_ts_file" 2>/dev/null || true
+
+    if command -v emit_event >/dev/null 2>&1; then
+        emit_event "$EV_REQUEST_PROFILE" "source=boot_custom_profile to=$boot_profile from=boot"
+    fi
+    log_info "boot custom profile aplicado: $boot_profile"
+}
+
 # Initial delay to allow system to stabilize
 sleep 5
 check_and_detect_commands
+preflight_check_caps
 ensure_singleton
+apply_boot_custom_profile_once
 
 # Fallback to env var if prop not set
 [ -z "$interval_prop" ] && interval_prop="$DAEMON_INTERVAL"
