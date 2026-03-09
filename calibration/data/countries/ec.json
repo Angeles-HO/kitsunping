@@ -1,0 +1,30 @@
+{
+  "entries": [
+    {
+      "mcc": 740,
+      "mnc": "001",
+      "provider": "Claro Ecuador",
+      "dns": ["8.8.8.8", "1.1.1.1", "190.57.128.34"],
+      "ping": "www.claro.com.ec"
+    },
+    {
+      "mcc": 740,
+      "mnc": "002",
+      "provider": "CNT Móvil",
+      "dns": ["8.8.8.8", "1.1.1.1", "186.46.128.10"],
+      "ping": "www.cnt.gob.ec"
+    },
+    {
+      "mcc": 740,
+      "mnc": "000",
+      "provider": "Movistar Ecuador",
+      "dns": ["8.8.8.8", "1.1.1.1", "190.152.0.10"],
+      "ping": "www.movistar.com.ec"
+    }
+  ],
+  "default": {
+    "provider": "Ntp Pool Ecuador",
+    "dns": ["8.8.8.8", "1.1.1.1"],
+    "ping": "ec.pool.ntp.org"
+  }
+}
