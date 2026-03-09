@@ -32,8 +32,9 @@ by applying suitable profiles for the active network.
 - DNS tweak references for faster browsing and reduced DNS lookup delay.
 - Bufferbloat reduction strategy through profile-based tuning and safer defaults.
 - Automatic profile switching (`speed`, `stable`, `gaming`) based on connectivity events.
-- Optional custom profile on boot (`none`, `stable`, `speed`, `gaming`, `benchmark`).
+- Optional custom profile on boot (`none`, `stable`, `speed`, `gaming`, `benchmark_gaming`, `benchmark_speed`).
 - Local logs and cache diagnostics for troubleshooting without telemetry.
+- Router protocol client for compatible external router agents via documented HTTP/JSON endpoints.
 
 ## Keyword Index
 
@@ -75,6 +76,14 @@ Android lag fix, Android ping reducer, Magisk network module, rooted Android net
 - Router/App integration: [Docs/routerIntegration.md](Docs/routerIntegration.md)
 
 > Note: Advanced parameters (technical props/tunables) are documented in the files above to keep this main page simple.
+
+## Router Integration Boundary
+
+Kitsunping includes only the client-side integration needed to exchange data with a compatible router agent.
+That integration is limited to documented protocol calls such as authenticated `POST` and `GET` requests.
+
+Router-side implementations, including KitsunpingRouter, are distributed separately, are not part of this MIT repository,
+may use a different license, and may evolve independently as long as they remain protocol-compatible.
 
 ## GitHub Topics
 
@@ -118,4 +127,6 @@ Detailed reference: [Docs/privacy.md](Docs/privacy.md)
 ## License
 
 This project is released under the MIT License.
+This MIT distribution covers the Kitsunping module and its client-side router integration code in this repository only.
+Compatible router agents are separate distributions and may use different licensing terms.
 See [LICENSE](LICENSE).

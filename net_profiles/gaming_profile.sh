@@ -40,9 +40,9 @@ fq_codel|/proc/sys/net/core/default_qdisc|default_qdisc changed to fq_codel (low
 20|/proc/sys/net/core/max_skb_frags|max_skb_frags increased
 20|/proc/sys/net/core/message_burst|message_burst moderately increased
 10|/proc/sys/net/core/message_cost|message_cost adjusted
-384|/proc/sys/net/core/netdev_budget|netdev_budget latency-biased
-1200|/proc/sys/net/core/netdev_budget_usecs|netdev_budget_usecs latency-biased
-1000|/proc/sys/net/core/netdev_max_backlog|netdev_max_backlog moderately increased
+256|/proc/sys/net/core/netdev_budget|netdev_budget tighter latency bias
+800|/proc/sys/net/core/netdev_budget_usecs|netdev_budget_usecs tighter latency bias
+512|/proc/sys/net/core/netdev_max_backlog|netdev_max_backlog reduced to avoid queue growth
 0|/proc/sys/net/core/netdev_tstamp_prequeue|netdev_tstamp_prequeue disabled for latency
 12582912|/proc/sys/net/core/wmem_max|wmem_max=12MiB
 12582912|/proc/sys/net/core/rmem_max|rmem_max=12MiB
@@ -70,11 +70,12 @@ apply_param_set <<'EOF'
 4096 87380 12582912|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem (min,default,max=12MiB)
 4096 87380 12582912|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem (min,default,max=12MiB)
 262144 524288 1048576|/proc/sys/net/ipv4/tcp_mem|tcp_mem conservative
+cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control kept on cubic for stable RTT
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled (if supported)
 3|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 reduced
 8|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 moderate
-1048576|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=1MiB (lower queueing latency)
+393216|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=384KiB to limit queueing
 2|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries conservative
 2048|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog increased
 32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans conservative
@@ -108,13 +109,3 @@ apply_param_set <<'EOF'
 1024 65000|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range wide
 0 2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range optimized
 EOF
-
-# Conditional: enable BBR only if kernel supports it
-if [ -f /proc/sys/net/ipv4/tcp_available_congestion_control ]; then
-	if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control; then
-		echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null || true
-		echo "[PROFILE] gaming: tcp_congestion_control set to bbr" >> "$profile_aplicated"
-	else
-		echo "[PROFILE] gaming: bbr not available; leaving congestion_control as-is" >> "$profile_aplicated"
-	fi
-fi

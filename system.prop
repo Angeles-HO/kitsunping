@@ -110,7 +110,7 @@ persist.kitsunping.calibrate_ipv6_target=2001:4860:4860::8888
 # 0: legacy scoring (avg+jitter+loss) | 1: granular scoring (avg+jitter+loss+p90+p99)
 persist.kitsunping.calibrate_granular_latency_enable=1
 # Optional custom profile applied once at daemon boot.
-# Values: none | stable | speed | gaming | benchmark
+# Values: none | stable | speed | gaming | benchmark_gaming | benchmark_speed
 persist.kitsunping.boot_profile=none
 # If an empty value is detected, use_daemon_local_vars will be applied.
 # Modify the daemon to handle empty values from build.prop correctly.

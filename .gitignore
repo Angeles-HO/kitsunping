@@ -4,9 +4,7 @@
 # Cache
 cache/*
 
-# Configs
-configs/default.conf
-configs/games_backup.conf
+
 
 # Logs
 logs/*
