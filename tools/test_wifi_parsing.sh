@@ -1,8 +1,14 @@
 #!/system/bin/sh
-# Test parsing Wi-Fi link info using a sample iw output dump.
+# Test parsing Wi-Fi link info using sample iw/dumpsys dumps.
 
-SCRIPT_DIR="${0%/*}"
-MODDIR="${SCRIPT_DIR%/*}"
+SCRIPT_PATH="$0"
+case "$SCRIPT_PATH" in
+    /*) : ;;
+    *) SCRIPT_PATH="$PWD/$SCRIPT_PATH" ;;
+esac
+
+SCRIPT_DIR=${SCRIPT_PATH%/*}
+MODDIR=${SCRIPT_DIR%/*}
 
 . "$MODDIR/addon/functions/core.sh"
 . "$MODDIR/addon/functions/network_utils.sh"
