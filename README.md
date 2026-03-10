@@ -66,6 +66,8 @@ Android lag fix, Android ping reducer, Magisk network module, rooted Android net
 3) Reboot the device.
 4) Check `logs/` and `cache/` to review activity and results.
 
+> Tip: You can start with a static fix for a fast first boot, then reboot and run manual calibration later when you have stable signal/time available.
+
 ### Documentation by topic
 
 - Daemon flow and events: [Docs/daemon.md](Docs/daemon.md)

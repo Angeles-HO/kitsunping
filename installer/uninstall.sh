@@ -152,6 +152,33 @@ clear_module_props_by_prefix() {
   done
 }
 
+restore_props_from_base_backup() {
+  backup_file="$MODPATH/configs/kitsuneping_original_backup.conf"
+  [ -f "$backup_file" ] || {
+    echo "Base backup not found: $backup_file"
+    return 0
+  }
+
+  echo "Restoring properties from base backup: $backup_file"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+      *=*) : ;;
+      *) continue ;;
+    esac
+
+    key=${line%%=*}
+    val=${line#*=}
+    [ -n "$key" ] || continue
+
+    if command -v resetprop >/dev/null 2>&1; then
+      resetprop -n "$key" "$val" >/dev/null 2>&1 || setprop "$key" "$val" >/dev/null 2>&1 || true
+    else
+      setprop "$key" "$val" >/dev/null 2>&1 || true
+    fi
+  done < "$backup_file"
+}
+
 MODULE_PROPS="
 kitsunping.calibration.priority
 kitsunping.daemon.interval
@@ -215,6 +242,9 @@ persist.kitsunrouter.debug
 persist.kitsunrouter.enable
 persist.kitsunrouter.paired
 "
+
+# Attempt to restore original values captured at first install.
+restore_props_from_base_backup
 
 for prop in $MODULE_PROPS; do
   clear_module_prop "$prop"

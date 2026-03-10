@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 
+## 6.0 - Beta
+
+- [new] Router-aware app/module flow hardened with pairing-gated remote operations while keeping local profiles always functional.
+- [new] Channel recommendation and channel-change request flow integrated from app to daemon with explicit user confirmation path.
+- [new] Runtime observability improved with richer cache/state exports and local telemetry counters.
+- [updated] Wi-Fi decision logic tuned with anti-churn guards, hold period handling, and improved 2.4GHz/5GHz behavior.
+- [updated] Installer/runtime shell compatibility hardening for broader `sh` portability.
+- [fix] Critical POSIX incompatibilities removed from install/uninstall paths and key selector utilities.
+- [fix] Local test workflow improved with reproducible checks (`tools/check_posix_compat.sh`, `tools/test_all_local.sh`, `tools/test_wifi_parsing.sh`).
+
 ## 5.01 - Release
 
 - [new] New integration with future KitsunApp for better user experience and easier configuration.

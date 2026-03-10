@@ -127,6 +127,7 @@ if $VKSEL 60; then
     echo "=============================="
     MODE_SELECTION=0
     log_info "Fixed mode selected"
+    log_info "Tip: apply static fix now, reboot, then run manual calibration later if needed"
 
     # Fixed values
     echo "ro.ril.hsupa.category=6" >> "$NEWMODPATH/configs/kitsuneping_static.conf"

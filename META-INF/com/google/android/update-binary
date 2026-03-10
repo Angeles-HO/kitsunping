@@ -2,7 +2,7 @@
 
 # Flashable installer for the Kitsunping Magisk module.
 # - Prepares a temporary workspace via Magisk utilities.
-# - Extracts module files and runs setup.sh to stage assets.
+# - Extracts module files and runs customize.sh (or setup.sh fallback) to stage assets.
 # - Copies service scripts, applies permissions, and cleans build-only files.
 # - Leaves a concise install log under /data/adb/logs.
 
@@ -31,6 +31,36 @@ copy_boot_script() {
   cp -af "$src_installer" "$dest" || { log_line " [x] Error al copiar $name"; exit 1; }
   chmod 0755 "$dest" 2>/dev/null || true
   log_line " [✓] Copiado: [$src_installer] --> [$dest]"
+}
+
+preserve_existing_backups() {
+  PREV_BACKUP_STASH="$TMPDIR/.prev_backups"
+  PREV_BACKUP_FOUND=0
+
+  if [ -d "$MODPATH/configs" ]; then
+    mkdir -p "$PREV_BACKUP_STASH" 2>/dev/null || true
+    # Preserve base and rotated snapshots from previous install.
+    for bf in "$MODPATH/configs"/kitsuneping_original_backup*.conf; do
+      [ -f "$bf" ] || continue
+      cp -af "$bf" "$PREV_BACKUP_STASH/" 2>/dev/null && PREV_BACKUP_FOUND=1
+    done
+  fi
+
+  if [ "$PREV_BACKUP_FOUND" = "1" ]; then
+    log_line " [i] Previous backups preserved before update"
+  fi
+}
+
+restore_preserved_backups() {
+  [ "${PREV_BACKUP_FOUND:-0}" = "1" ] || return 0
+  [ -d "$PREV_BACKUP_STASH" ] || return 0
+
+  mkdir -p "$MODPATH/configs" 2>/dev/null || true
+  for bf in "$PREV_BACKUP_STASH"/kitsuneping_original_backup*.conf; do
+    [ -f "$bf" ] || continue
+    cp -af "$bf" "$MODPATH/configs/" 2>/dev/null || true
+  done
+  log_line " [i] Previous backups restored into new installation"
 }
 
 # --- Setup environment ---
@@ -76,6 +106,7 @@ fi
 
 # Clean up previous installation
 if [ -d "$MODPATH" ]; then
+  preserve_existing_backups
   log_line " [i] Previous installation detected, removing old module files..."
   rm -rf "$MODPATH" || { log_line " [SYS] [up-bi] Failed to remove old module files"; exit 1; }
 fi
@@ -94,15 +125,24 @@ else
   exit 1
 fi
 
-# Ejecutar setup
-if [ -f "$MODPATH/setup.sh" ]; then
-  log_line " [i] setup.sh file found, setting executable permissions and continuing installation"
-  chmod +x "$MODPATH/setup.sh" || { log_line " [x] Failed to set executable permissions on setup.sh"; exit 1; }
-  set_perm "$MODPATH/setup.sh" 0 0 0755 u:object_r:system_file:s0
+restore_preserved_backups
+
+INSTALL_SCRIPT=""
+if [ -f "$MODPATH/customize.sh" ]; then
+  INSTALL_SCRIPT="$MODPATH/customize.sh"
+elif [ -f "$MODPATH/setup.sh" ]; then
+  INSTALL_SCRIPT="$MODPATH/setup.sh"
+fi
+
+# Ejecutar script de instalación (prefer customize.sh, fallback setup.sh)
+if [ -n "$INSTALL_SCRIPT" ]; then
+  log_line " [i] install script found: $INSTALL_SCRIPT"
+  chmod +x "$INSTALL_SCRIPT" || { log_line " [x] Failed to set executable permissions on install script"; exit 1; }
+  set_perm "$INSTALL_SCRIPT" 0 0 0755 u:object_r:system_file:s0
   set_perm "$MODPATH/addon/Net_Calibrate/calibrate.sh" 0 0 0755 u:object_r:system_file:s0
-  . "$MODPATH/setup.sh"
+  . "$INSTALL_SCRIPT"
 else
-  log_line " [x] setup.sh not found, canceling installation"
+  log_line " [x] install script not found (expected customize.sh or setup.sh), canceling installation"
   exit 1
 fi
 
@@ -147,6 +187,7 @@ fi
 rm -rf "$MODPATH/scripts"
 rm -rf "$MODPATH/META-INF"
 rm -rf "$MODPATH/setup.sh"
+rm -rf "$MODPATH/customize.sh"
 rm -rf "$MODPATH/CHANGELOG.md"
 
 
