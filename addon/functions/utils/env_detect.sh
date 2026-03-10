@@ -125,25 +125,44 @@ check_core_commands() {
     return 0
 }
 
+# Returns 0 if candidate ip binary can execute a simple route query.
+kp_ip_binary_is_usable() {
+    [ -n "$1" ] || return 1
+    [ -x "$1" ] || return 1
+    "$1" route show >/dev/null 2>&1
+}
+
 # Detect ip binary; prefer system, fallback to bundled addon ip.
 detect_ip_binary() {
-    local base addon_ip addon_bin_ip
+    local base addon_ip addon_bin_ip c
     unset IP_BIN
     base=$(_kp_base_dir)
     addon_ip="$base/addon/ip/ip"
     addon_bin_ip="$base/addon/bin/$(kp_detect_abi)/ip"
-    if command_exists ip; then
-        IP_BIN=$(command -v ip 2>/dev/null)
-    elif [ -x "$addon_bin_ip" ]; then
-        IP_BIN="$addon_bin_ip"
-    elif [ -x "$addon_ip" ]; then
-        IP_BIN="$addon_ip"
+
+    # Prefer known system locations first to avoid selecting broken bundled builds.
+    for c in /system/bin/ip /system/xbin/ip /vendor/bin/ip; do
+        kp_ip_binary_is_usable "$c" && { IP_BIN="$c"; break; }
+    done
+
+    # Next try whatever ip currently resolves in PATH.
+    if [ -z "$IP_BIN" ] && command_exists ip; then
+        c=$(command -v ip 2>/dev/null)
+        kp_ip_binary_is_usable "$c" && IP_BIN="$c"
     fi
+
+    # Finally try bundled binaries.
+    if [ -z "$IP_BIN" ]; then
+        for c in "$addon_bin_ip" "$addon_ip"; do
+            kp_ip_binary_is_usable "$c" && { IP_BIN="$c"; break; }
+        done
+    fi
+
     if [ -z "$IP_BIN" ]; then
         log_error "ip binary not found"
         return 1
     fi
-    # log_debug "IP_BIN resolved to: $IP_BIN" 
+    log_info "IP_BIN resolved to: $IP_BIN"
     export IP_BIN
     return 0
 }

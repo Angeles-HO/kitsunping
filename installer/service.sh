@@ -453,6 +453,12 @@ start_daemon_supervisor() {
 
     (
         while true; do
+            if daemon_pid_is_running; then
+                echo "[SYS][SERVICE] Daemon already running with PID $(cat \"$DAEMON_PID_FILE\" 2>/dev/null); supervisor skip launch" >> "$SERVICES_LOGS"
+                sleep 5
+                continue
+            fi
+
             rm -f "$DAEMON_PID_FILE" 2>/dev/null
             $daemon_shell "$DAEMON_SH" >> "$SERVICES_LOGS" 2>&1
             rc=$?

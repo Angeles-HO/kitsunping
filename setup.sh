@@ -115,6 +115,7 @@ echo "❖ Installation in progress..."
 echo "${divider}"
 
 # --- Mode selection ---
+log_info "Tip: you can apply static fix first, reboot, then run manual calibration later"
 log_info "Select operation mode:"
 log_info "  [Vol+] Fixed mode"
 log_info "  [Vol-] Automatic mode (~4 mins)"
@@ -127,7 +128,6 @@ if $VKSEL 60; then
     echo "=============================="
     MODE_SELECTION=0
     log_info "Fixed mode selected"
-    log_info "Tip: apply static fix now, reboot, then run manual calibration later if needed"
 
     # Fixed values
     echo "ro.ril.hsupa.category=6" >> "$NEWMODPATH/configs/kitsuneping_static.conf"
