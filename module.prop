@@ -1,6 +1,6 @@
 id=Kitsunping
 name=Kitsunping
-version=6.0-beta
+version=6.0
 versionCode=600
 author=@Angeles_ho
 description=Improved data transfer over both Wi-Fi and mobile data. Network timeout has also been increased, so you can stay connected even in areas with weak signals. Stability improvements have also been made for a number of devices.

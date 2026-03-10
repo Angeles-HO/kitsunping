@@ -1,6 +1,6 @@
 {
-  "version": "6.0-beta",
+  "version": "6.0",
   "versionCode": "600",
-  "zipUrl": "https://github.com/Angeles-HO/kitsunping/releases/download/v6.0-beta/Kitsunping.zip",
+  "zipUrl": "https://github.com/Angeles-HO/kitsunping/releases/download/v6.0/Kitsunping.zip",
   "changelog": "https://raw.githubusercontent.com/Angeles-HO/kitsunping/refs/heads/main/CHANGELOG.md"
 }
