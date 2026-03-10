@@ -63,9 +63,40 @@ verify_complemento "$complemento_net_calibrate"
 
 divider="══════════════════════════════════════════════════"
 
+# Legacy fix: if base backup exists but is empty (tracked placeholder from old builds),
+# repopulate it from the oldest non-empty timestamped snapshot.
+repair_base_backup_if_empty() {
+    base_backup_file="$1"
+    base_backup_dir="${base_backup_file%/*}"
+    donor_backup=""
+
+    [ -f "$base_backup_file" ] || return 0
+    [ -s "$base_backup_file" ] && return 0
+
+    for candidate_backup in "$base_backup_dir"/kitsuneping_original_backup_*.conf; do
+        [ -f "$candidate_backup" ] || continue
+        [ -s "$candidate_backup" ] || continue
+        donor_backup="$candidate_backup"
+        break
+    done
+
+    if [ -z "$donor_backup" ]; then
+        log_warning "Base backup is empty and no snapshot is available to repair it"
+        return 0
+    fi
+
+    if cp -f "$donor_backup" "$base_backup_file" 2>/dev/null; then
+        chmod 0644 "$base_backup_file" 2>/dev/null || true
+        log_info "Repaired empty base backup from snapshot: $donor_backup"
+    else
+        log_warning "Failed to repair empty base backup from: $donor_backup"
+    fi
+}
+
 # Initial backup (only once)
 log_info "Creating backup of original settings..."
 backup_base_file="$NEWMODPATH/configs/kitsuneping_original_backup.conf"
+repair_base_backup_if_empty "$backup_base_file"
 backup_base_preexisting=0
 [ -f "$backup_base_file" ] && backup_base_preexisting=1
 

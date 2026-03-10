@@ -154,8 +154,29 @@ clear_module_props_by_prefix() {
 
 restore_props_from_base_backup() {
   backup_file="$MODPATH/configs/kitsuneping_original_backup.conf"
-  [ -f "$backup_file" ] || {
-    echo "Base backup not found: $backup_file"
+  if [ ! -s "$backup_file" ]; then
+    backup_dir="${backup_file%/*}"
+    snapshot_file=""
+
+    for candidate in "$backup_dir"/kitsuneping_original_backup_*.conf; do
+      [ -f "$candidate" ] || continue
+      [ -s "$candidate" ] || continue
+      snapshot_file="$candidate"
+      break
+    done
+
+    if [ -n "$snapshot_file" ]; then
+      if cp -f "$snapshot_file" "$backup_file" 2>/dev/null; then
+        chmod 0644 "$backup_file" 2>/dev/null || true
+        echo "Repaired empty/missing base backup from snapshot: $snapshot_file"
+      else
+        echo "Warning: failed to repair base backup from snapshot: $snapshot_file"
+      fi
+    fi
+  fi
+
+  [ -s "$backup_file" ] || {
+    echo "Base backup not found or empty: $backup_file"
     return 0
   }
 
