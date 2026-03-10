@@ -4,6 +4,12 @@
 # Cache
 cache/*
 
+# Generated configs/backups (created at install/runtime)
+configs/kitsuneping_original_backup*.conf
+configs/kitsuneping_optimal.conf
+configs/kitsuneping_static.conf
+!configs/.gitkeep
+
 
 
 # Logs
