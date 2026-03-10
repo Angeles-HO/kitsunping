@@ -157,9 +157,19 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     log_info "This process will run multiple tests to determine the optimal network settings for your device."
     log_info "Please wait and do not interrupt the process/move the device. It may take several minutes to complete."
     
-    calibrate_network_settings 10 2> >(tee "/sdcard/trace_log2.log" >&2) \
+    # POSIX-safe stderr handling: capture once, then mirror to installer stderr and persistent trace log.
+    trace_log_file="/sdcard/trace_log2.log"
+    trace_tmp_err="$NEWMODPATH/logs/calibration.stderr.log"
+    : > "$trace_tmp_err"
+
+    calibrate_network_settings 10 2>"$trace_tmp_err" \
         | grep -E '^BEST_[A-Za-z0-9_]+=' \
         | tee "$NEWMODPATH/logs/results.env"
+
+    if [ -s "$trace_tmp_err" ]; then
+        cat "$trace_tmp_err" >&2
+        cat "$trace_tmp_err" >> "$trace_log_file" 2>/dev/null || true
+    fi
 
     if [ -s "$NEWMODPATH/logs/results.env" ]; then
         . "$NEWMODPATH/logs/results.env"

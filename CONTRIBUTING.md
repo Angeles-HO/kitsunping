@@ -69,6 +69,7 @@ This project contains POSIX-compatible shell scripts. Follow these rules:
 - If you discover a security issue, do not open a public issue. Contact the
   maintainers at `angelesho@pm.me` and provide reproducible steps and impact
   details. The maintainers will follow up privately.
+- Read [SECURITY.md](SECURITY.md) for disclosure workflow and binary update requirements.
 
 ## Pull request checklist
 

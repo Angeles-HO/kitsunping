@@ -124,6 +124,10 @@ Kitsunping does **not** send data to remote servers and does **not** use telemet
 
 Detailed reference: [Docs/privacy.md](Docs/privacy.md)
 
+## Security
+
+For vulnerability reporting and security contribution rules (including binary provenance requirements), see [SECURITY.md](SECURITY.md).
+
 ## License
 
 This project is released under the MIT License.
