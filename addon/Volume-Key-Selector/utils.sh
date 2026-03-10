@@ -11,17 +11,20 @@ get_cpu_arch() {
         return 1
     fi
 
-    # Determinar arquitectura sin usar case
-    if [[ "$cpu_abi" == *arm* || "$cpu_abi" == *aarch* ]]; then
-        echo "arm"
-        return 0
-    elif [[ "$cpu_abi" == *x86* || "$cpu_abi" == *amd64* ]]; then
-        echo "x86"
-        return 0
-    else
-        echo "Error: Arquitectura no soportada: $cpu_abi" >&2
-        return 2
-    fi
+    case "$cpu_abi" in
+        *arm*|*aarch*)
+            echo "arm"
+            return 0
+            ;;
+        *x86*|*amd64*)
+            echo "x86"
+            return 0
+            ;;
+        *)
+            echo "Error: Arquitectura no soportada: $cpu_abi" >&2
+            return 2
+            ;;
+    esac
 }
 
 chooseport_legacy() {

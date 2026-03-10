@@ -184,14 +184,21 @@ set_permissions() {
 
 progress_bar() {
     local rueda='-\|/'
+    local spin
     local progress=""
     local completed=0
 
     while [ $completed -le 10 ]; do
         progress=$(printf "%-${completed}s" | tr ' ' "=")$(printf "%$((10-completed))s" | tr ' ' "-")
-        echo -ne "[${progress}] ${rueda:$((completed % 4)):1}"
+        case $((completed % 4)) in
+            0) spin='-' ;;
+            1) spin='\\' ;;
+            2) spin='|' ;;
+            3) spin='/' ;;
+        esac
+        printf '[%s] %s' "$progress" "$spin"
         sleep 0.5
-        echo -ne "\r"
+        printf '\r'
         completed=$((completed+1))
     done
 }
