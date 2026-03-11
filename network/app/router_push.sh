@@ -224,23 +224,34 @@ network__app__router_status_push_cycle() {
     width="${wifi_width:-}"
     profile_current="$(cat "$MODDIR/cache/policy.current"          2>/dev/null || echo "")"
     profile_target="$(cat "$MODDIR/cache/policy.target"            2>/dev/null || echo "")"
-    # L3: derive priority_target from active profile semantics.
-    # Latency-first profiles stay in high priority; throughput-first speed biases toward bulk.
-    case "${profile_current:-}" in
-        gaming|benchmark|benchmark_gaming) priority_target="high" ;;
-        speed|benchmark_speed)             priority_target="low" ;;
-        *)
-            priority_target="$(cat "$MODDIR/cache/policy.priority" 2>/dev/null || echo "medium")"
-            case "$priority_target" in high|medium|low) ;; *) priority_target="medium" ;; esac
-            ;;
-    esac
+    # Derive priority_target from explicit policy cache first.
+    priority_target="$(cat "$MODDIR/cache/policy.priority" 2>/dev/null || echo "")"
+    case "$priority_target" in high|medium|low) ;; *) priority_target="" ;; esac
+
+    # Fallback: parse active target_state reason (e.g. "... priority=high").
+    target_state_reason="$(cat "$MODDIR/cache/target.state.reason" 2>/dev/null || echo "")"
+    if [ -z "$priority_target" ] && [ -n "$target_state_reason" ]; then
+        case "$target_state_reason" in
+            *"priority=high"*) priority_target="high" ;;
+            *"priority=medium"*) priority_target="medium" ;;
+            *"priority=low"*) priority_target="low" ;;
+        esac
+    fi
+
+    # Final fallback by coarse profile class only when no explicit priority was found.
+    if [ -z "$priority_target" ]; then
+        case "${profile_current:-}" in
+            gaming|benchmark|benchmark_gaming) priority_target="high" ;;
+            speed|benchmark_speed)             priority_target="medium" ;;
+            *)                                 priority_target="medium" ;;
+        esac
+    fi
     priority_weight="$(cat "$MODDIR/cache/policy.priority.weight"  2>/dev/null || echo "50")"
     priority_min_mbit="$(cat "$MODDIR/cache/policy.priority.min_mbit" 2>/dev/null || echo "20")"
     policy_version="$(network__app__policy_version_get)"
     status_seq="$(network__app__router_status_next_seq)"
     module_boot_id="$(network__app__module_boot_id_get)"
     target_state="$(network__app__target_state_get)"
-    target_state_reason="$(cat "$MODDIR/cache/target.state.reason" 2>/dev/null || echo "")"
     transport="${transport:-unknown}"
     client_mac="$(network__app__get_wifi_client_mac)"
     # ---- telemetry counters ----
