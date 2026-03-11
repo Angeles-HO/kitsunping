@@ -52,4 +52,3 @@ Keep the boundary at the protocol level:
 
 - Kitsunping owns the client-side calls and public docs.
 - Router implementations own their internal scripts and deployment model.
-- Do not copy router-side private implementation files into this MIT repository.
