@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 6.1 - Release
+
+- [new] Finalized the 6.0 stable line for the Kitsunping module.
+- [fix] End-to-end router pairing hardened, including compatibility with legacy app flows and stricter remote operation gating.
+- [fix] Priority propagation corrected across app, module, and router so the selected runtime target reaches the router consistently.
+- [fix] Channel recommendation flow completed with a visible channel-switch action when the recommended channel differs from the active one.
+- [fix] Launcher asset pipeline aligned with the stable release so the app/module bundle ships with the corrected icon setup.
+
+> Note: The 6.01 release includes all features introduced in the 6.01 beta, plus the stability and integration fixes required for the final stable rollout.
 
 ## 6.0 - Beta
 
