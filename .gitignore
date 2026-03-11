@@ -2,7 +2,7 @@
 
 
 # Cache
-cache/*
+cache/
 
 # Generated configs/backups (created at install/runtime)
 configs/kitsuneping_original_backup*.conf
@@ -13,7 +13,7 @@ configs/kitsuneping_static.conf
 
 
 # Logs
-logs/*
+logs/
 
 # Temporary files
 kUtils.txt

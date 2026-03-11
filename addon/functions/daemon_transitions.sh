@@ -1,13 +1,31 @@
 #!/bin/bash
 # Daemon transition logic for Kitsunping. This script is sourced by the main daemon loop and contains functions related to detecting and handling state transitions, such as interface changes, Wi-Fi connectivity changes
 daemon_run_transition_cycle() {
+    if [ "$wifi_state" = "connected" ] && [ "$last_wifi_state" = "connected" ]; then
+        if daemon_is_mac_bssid "${wifi_bssid:-}" && daemon_is_mac_bssid "${link_last_bssid:-}" && [ "$wifi_bssid" != "$link_last_bssid" ]; then
+            link_roaming_count=$((link_roaming_count + 1))
+            log_info "wifi_roaming_detected: ${link_last_bssid:-unknown} -> ${wifi_bssid:-unknown} count=$link_roaming_count"
+            command -v daemon_link_context_refresh_vendor_oui >/dev/null 2>&1 && daemon_link_context_refresh_vendor_oui "$wifi_bssid"
+            command -v daemon_link_context_write >/dev/null 2>&1 && daemon_link_context_write
+        fi
+    fi
+
     if [ "$current_iface" != "$last_iface" ]; then
+        if [ -n "${last_iface:-}" ]; then
+            link_route_changes=$((link_route_changes + 1))
+            command -v daemon_link_context_write >/dev/null 2>&1 && daemon_link_context_write
+        fi
         log_info "iface_changed: $last_iface -> $current_iface"
         emit_event "$EV_IFACE_CHANGED" "from=$last_iface to=$current_iface"
         last_iface="$current_iface"
     fi
 
     if [ "$wifi_state" != "$last_wifi_state" ]; then
+        if [ "$last_wifi_state" = "connected" ] || [ "$wifi_state" = "connected" ]; then
+            link_flap_count=$((link_flap_count + 1))
+            link_last_wifi_state="$wifi_state"
+            command -v daemon_link_context_write >/dev/null 2>&1 && daemon_link_context_write
+        fi
         log_info "wifi_state_changed: $last_wifi_state -> $wifi_state ($wifi_details)"
         if [ "$wifi_state" = "connected" ] && [ "$last_wifi_state" != "connected" ]; then
             verify_router_identity_on_wifi_join "$wifi_bssid" "$wifi_band" "$wifi_chan" "$wifi_freq" "$wifi_width" "$wifi_width_source" "$wifi_width_confidence" "$wifi_caps"
@@ -19,6 +37,14 @@ daemon_run_transition_cycle() {
             emit_event "$EV_WIFI_JOINED" "iface=$WIFI_IFACE $wifi_details"
         fi
         last_wifi_state="$wifi_state"
+    fi
+
+    if [ "$wifi_state" = "connected" ] && daemon_is_mac_bssid "${wifi_bssid:-}"; then
+        if [ "${link_last_bssid:-}" != "$wifi_bssid" ]; then
+            link_last_bssid="$wifi_bssid"
+            command -v daemon_link_context_refresh_vendor_oui >/dev/null 2>&1 && daemon_link_context_refresh_vendor_oui "$wifi_bssid"
+            command -v daemon_link_context_write >/dev/null 2>&1 && daemon_link_context_write
+        fi
     fi
 }
 

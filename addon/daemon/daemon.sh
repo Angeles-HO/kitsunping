@@ -28,6 +28,7 @@ STATE_FILE="$MODDIR/cache/daemon.state"
 PID_FILE="$MODDIR/cache/daemon.pid"
 LAST_EVENT_FILE="$MODDIR/cache/daemon.last"
 LAST_EVENT_JSON="$MODDIR/cache/event.last.json"
+LINK_CONTEXT_FILE="$MODDIR/cache/link_context.state"
 ROUTER_DNI_FILE="$MODDIR/cache/router.dni"
 ROUTER_LAST_FILE="$MODDIR/cache/router.last"
 ROUTER_PAIRING_CACHE_FILE="$MODDIR/cache/router.pairing.json"
@@ -315,6 +316,11 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 # Source all modular components (dev hot-reload aware)
 _dev_reload_all
+
+# Restore persistent link context counters/state before entering runtime loops.
+if command -v daemon_link_context_load >/dev/null 2>&1; then
+    daemon_link_context_load
+fi
 
 # Prepend bundled binary directories once helpers are loaded.
 if command -v export_kitsunping_bin_path >/dev/null 2>&1; then

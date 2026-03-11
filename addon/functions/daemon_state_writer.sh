@@ -48,6 +48,78 @@ daemon_subtract_numeric() {
     }'
 }
 
+daemon_is_mac_bssid() {
+    case "$1" in
+        [0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]) return 0 ;;
+    esac
+    return 1
+}
+
+daemon_vendor_oui_from_bssid() {
+    local bssid="$1"
+    daemon_is_mac_bssid "$bssid" || return 1
+    printf '%s' "$bssid" | awk -F: '{printf "%s:%s:%s", tolower($1), tolower($2), tolower($3)}'
+}
+
+daemon_link_context_write() {
+    mkdir -p "${LINK_CONTEXT_FILE%/*}" 2>/dev/null || true
+    {
+        printf 'vendor_oui=%s\n' "${link_vendor_oui:-}"
+        printf 'route_changes=%s\n' "${link_route_changes:-0}"
+        printf 'roaming_count=%s\n' "${link_roaming_count:-0}"
+        printf 'flap_count=%s\n' "${link_flap_count:-0}"
+        printf 'last_bssid=%s\n' "${link_last_bssid:-}"
+        printf 'last_wifi_state=%s\n' "${link_last_wifi_state:-unknown}"
+    } | atomic_write "$LINK_CONTEXT_FILE"
+}
+
+daemon_link_context_load() {
+    local value
+
+    link_vendor_oui=""
+    link_route_changes=0
+    link_roaming_count=0
+    link_flap_count=0
+    link_last_bssid=""
+    link_last_wifi_state="unknown"
+
+    [ -f "$LINK_CONTEXT_FILE" ] || {
+        daemon_link_context_write
+        return 0
+    }
+
+    value="$(awk -F= '$1=="vendor_oui" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    [ -n "$value" ] && link_vendor_oui="$value"
+
+    value="$(awk -F= '$1=="route_changes" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    case "$value" in ''|*[!0-9]* ) value=0 ;; esac
+    link_route_changes="$value"
+
+    value="$(awk -F= '$1=="roaming_count" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    case "$value" in ''|*[!0-9]* ) value=0 ;; esac
+    link_roaming_count="$value"
+
+    value="$(awk -F= '$1=="flap_count" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    case "$value" in ''|*[!0-9]* ) value=0 ;; esac
+    link_flap_count="$value"
+
+    value="$(awk -F= '$1=="last_bssid" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    [ -n "$value" ] && link_last_bssid="$value"
+
+    value="$(awk -F= '$1=="last_wifi_state" {print substr($0, index($0,"=")+1)}' "$LINK_CONTEXT_FILE" 2>/dev/null | tail -n1)"
+    [ -n "$value" ] && link_last_wifi_state="$value"
+}
+
+daemon_link_context_refresh_vendor_oui() {
+    local bssid="$1" oui=""
+    oui="$(daemon_vendor_oui_from_bssid "$bssid" 2>/dev/null || true)"
+    [ -n "$oui" ] || return 0
+    if [ "$oui" != "${link_vendor_oui:-}" ]; then
+        link_vendor_oui="$oui"
+        daemon_link_context_write
+    fi
+}
+
 daemon_write_state_file() {
     local lownet_offset
     local out_wifi_score out_mobile_score out_composite out_composite_ema
@@ -70,6 +142,8 @@ daemon_write_state_file() {
     target_state="$(cat "$MODDIR/cache/target.state" 2>/dev/null || echo "IDLE")"
     target_state_reason="$(cat "$MODDIR/cache/target.state.reason" 2>/dev/null || echo "")"
     target_state_ts="$(cat "$MODDIR/cache/target.state.ts" 2>/dev/null || echo "0")"
+
+    daemon_link_context_refresh_vendor_oui "${wifi_bssid:-}"
 
     case "$lownet_offset" in
         ''|0) ;;
@@ -138,5 +212,9 @@ daemon_write_state_file() {
         printf 'target.state=%s\n' "${target_state:-IDLE}"
         printf 'target.state.reason=%s\n' "${target_state_reason:-}"
         printf 'target.state.ts=%s\n' "${target_state_ts:-0}"
+        printf 'link.vendor_oui=%s\n' "${link_vendor_oui:-}"
+        printf 'link.route_changes=%s\n' "${link_route_changes:-0}"
+        printf 'link.roaming_count=%s\n' "${link_roaming_count:-0}"
+        printf 'link.flap_count=%s\n' "${link_flap_count:-0}"
     } | atomic_write "$STATE_FILE"
 }
