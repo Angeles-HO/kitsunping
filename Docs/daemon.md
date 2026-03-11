@@ -2,11 +2,12 @@
 
 ### Description
 
-Daemon is a background service that continuously monitors network connectivity and performance. Kitsunping daemon specifically focuses on pinging predefined servers to assess network latency, packet loss, and overall stability. It helps in determining the quality of the network connection and can trigger events based on the network status.
+The daemon is a background service that continuously monitors network connectivity and quality.
+Kitsunping uses it to evaluate latency, packet loss, and stability, then emit events and trigger profile application when conditions change.
 
 ### Features
 
-- **Continuous Monitoring**: exists 2 type of monitoring, interval-based and event-based. This reduce battery, cpu, ram usage.
+- **Continuous Monitoring**: Supports interval-based and event-based monitoring to balance responsiveness with battery, CPU, and RAM usage.
 - **Customizable Ping Targets**: Users can define which servers to ping for more relevant results.
 - **Adaptive Algorithms**: Utilizes algorithms like sigmoid to evaluate network status more accurately in such way that it adapts to changing network conditions in smoother way.
 - **Event Emission**: Can emit events based on network status changes, useful for apps that need to respond to connectivity changes.
@@ -22,27 +23,27 @@ When the module is installed the user can select Static (Stable) or Dynamic (Ada
 
 ### Usage
 
-The module works whit autonomously once installed and configured. Users can monitor network performance through the Kitsunping logs.
+The module works autonomously once installed and configured. Users can monitor behavior through the Kitsunping logs and cache state files.
 
-### Simulate ejecution
+### Execution summary
 
-Below is a mind map showing how the execution of Daemon would be.
+Below is a diagram showing the daemon execution flow.
 
-Before of installation of Kitsunping.zip and reebot the device the daemon is execute on late-service of android, so the user don't need to do anything else after installation.
+After installing `Kitsunping.zip` and rebooting, the daemon starts from Android late-service (`installer/service.sh`) without additional manual steps.
 
-Before in the use cotidian every 30 minutes (can be configured by the user) the daemon will check the network status and adapt the parameters to the current network conditions, also if daemon detect a change on the network through the event-based monitoring it will do a check immediately.
+During normal use, the daemon checks network state on the configured interval and can also react immediately on event-based transitions.
 
 When conditions are met, the daemon emits events and spawns the **Executor**. The executor applies the target profile and decides if a calibration should run (cooldown + low-score streak).
 
-When calibration is ongoing, the **executor/calibration pipeline** writes `cache/calibrate.state` and `cache/calibrate.ts`. These files can be read by the Kitsunping App (Not yet implemented) to show the user the current status of the calibration.
+When calibration is ongoing, the **executor/calibration pipeline** writes `cache/calibrate.state` and `cache/calibrate.ts`. These files can be polled by external clients (including the app) to display calibration status.
 
 To avoid interference between daemon probing and calibration pings, the daemon skips Wi‑Fi probes/penalties while `cache/calibrate.state=running`.
 
-Before apply the best parameters obtained from the last calibration and applycated whit resetprop for not reboot the device, the Executor will write the current profile applied in the policy.current file. The daemon (or an external policy selector) may write the desired profile to policy.request (informational) and trigger the executor.
+Before applying BEST values from calibration via `resetprop` (without requiring reboot), the executor writes the currently applied profile to `policy.current`. The daemon (or an external policy selector) may write the desired profile to `policy.request` (informational) and trigger the executor.
 
 Executor reads policy.target (target profile) and compares it to policy.current (last applied). If they differ, the executor applies the profile and updates policy.current, plus calibrate.* state to avoid repeated runs.
 
-also if determinate to need change de profile uses decide profile and execute a x_profile.sh script located on Kitsunping/net_profiles/ folder to apply additional configurations for the selected profile.
+When a profile change is required, the policy path resolves and executes the corresponding `*_profile.sh` script in `net_profiles/`.
 
 ---
 
@@ -274,7 +275,8 @@ flowchart TD
 ### Property convention (recommended)
 - **persist.kitsunping.x**: runtime toggles meant to be switched by user/tests without rebuilding the module.
 - **kitsunping.daemon.x**: daemon behavior and cadence settings.
-- **kitsunping.router.x**: router-specific logic namespace (experimental in 6.0).
+- **kitsunping.router.x**: legacy/compat fallback namespace for router options.
+- **persist.kitsunrouter.x**: current router namespace used for runtime toggles such as `enable` and `debug`.
 
 ### Debugging and Performance Tuning
 - **kitsunping.daemon.interval**: Sets the interval for daemon checks in seconds (default: 10 seconds).
@@ -284,10 +286,11 @@ flowchart TD
 - **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 5; auto-raised to at least `kitsunping.daemon.interval`).
 - **persist.kitsunping.direct_broadcast**: Optional direct daemon->APK broadcast (`com.kitsunping.ACTION_UPDATE`) for immediate UI refresh without waiting for file polling (default: enabled).
 
-### Router / OpenWrt (6.0 experimental)
+### Router / OpenWrt
 - **persist.kitsunping.router.experimental**: Master gate for router fingerprint/cache logic (default: 0).
 - **persist.kitsunping.router.openwrt_mode**: Enables router capability event emission path for OpenWrt lab setup (default: 0).
-- **persist.kitsunping.router.debug**: Verbose router parsing/debug logs in daemon (default recommended: 0; enable only in tests).
+- **persist.kitsunrouter.debug**: Preferred verbose router parsing/debug flag in daemon (default recommended: 0; enable only in tests).
+- **kitsunping.router.debug**: Legacy fallback read by daemon when `persist.kitsunrouter.debug` is unset.
 - **persist.kitsunping.router.cache_ttl**: TTL in seconds for `cache/router_<bssid>.info` (default: 3600).
 
 When `router.experimental=0`, daemon skips router parsing/signature pipeline and behaves as stable baseline.
@@ -301,9 +304,8 @@ When `router.experimental=0`, daemon skips router parsing/signature pipeline and
 - **persist.kitsunping.calibrate_cache_rtt_ms**: Max RTT (ms) allowed to reuse cache.
 - **persist.kitsunping.calibrate_cache_loss_pct**: Max packet loss (%) allowed to reuse cache.
 
-### Kitsunping daemon functions calibration
+### Scoring weights
 
-- **kitsunping.daemon.algorithm=sigmoid** : Sets the algorithm used for network status evaluation to sigmoid (planned; may be a no-op depending on version).
 - **kitsunping.sigmoid.alpha**: Alpha parameter for composite scoring (default fallback is applied if unset).
 - **kitsunping.sigmoid.beta**: Beta parameter for composite scoring (default fallback is applied if unset).
 - **kitsunping.sigmoid.gamma**: Gamma parameter for composite scoring (default fallback is applied if unset).

@@ -1,10 +1,12 @@
-# WiFi Properties MANUAL.md
+# Wi-Fi Properties Reference
 
 ## Description
 
-This document serves as a reference for various WiFi-related properties that Kitsunping may interact with, modify, or monitor. It is designed to help users and developers understand which properties are relevant to WiFi performance and how they can be utilized within the context of Kitsunping's functionality.
+This document serves as a reference for various Wi-Fi-related properties that Kitsunping may interact with, modify, or monitor. It helps users and developers understand which properties are relevant to Wi-Fi performance.
 
-Some properties are straightforward to use, while others may require specific conditions to be effective. This guide aims to simplify the complex landscape of WiFi properties on Android devices.
+Some properties are straightforward to use, while others require specific vendor/kernel conditions to have any effect.
+
+> Note: This is a technical reference list, not a strict list of properties that are always changed by the module runtime.
 
 ---
 
@@ -181,17 +183,7 @@ Some properties are straightforward to use, while others may require specific co
 - **ro.telephony.default_network**: Configures the preferred network type for better connectivity.
 
 #### Wi-Fi
-- **ro.wifi.direct.interface**: Specifies the interface for peer-to-peer WiFi connections.
-
-#### VoLTE / VoWiFi
-- **persist.vendor.mtk.volte.enable**: Activates VoLTE for high-quality voice calls over LTE.
-- **persist.vendor.volte_support**: Ensures compatibility with VoLTE networks.
-
-#### Default Network Configuration
-- **ro.telephony.default_network**: Configures the preferred network type for better connectivity.
-
-#### Wi-Fi
-- **ro.wifi.direct.interface**: Specifies the interface for peer-to-peer WiFi connections.
+- **ro.wifi.direct.interface**: Specifies the interface for peer-to-peer Wi-Fi connections.
 
 #### VoLTE / VoWiFi
 - **persist.vendor.mtk.volte.enable**: Activates VoLTE for high-quality voice calls over LTE.
