@@ -94,6 +94,7 @@ _dev_reload_all() {
     _source_or_dev "$MODDIR/lib/json_helpers.sh"
     _source_or_dev "$MODDIR/lib/validation.sh"
     _source_or_dev "$MODDIR/lib/lock.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_failsafe.sh"
     _source_or_dev "$MODDIR/network/wifi/cycle.sh"
     _source_or_dev "$MODDIR/network/mobile/cycle.sh"
     # Load app submodules explicitly before the orchestrator to avoid missing
@@ -322,6 +323,13 @@ if command -v daemon_link_context_load >/dev/null 2>&1; then
     daemon_link_context_load
 fi
 
+# Initialize failsafe: detect state corruption and enable safe_mode if needed
+if command -v daemon_init_safe_mode >/dev/null 2>&1; then
+    daemon_init_safe_mode
+    daemon_write_rescue_instructions
+    daemon_safe_mode_log_status
+fi
+
 # Prepend bundled binary directories once helpers are loaded.
 if command -v export_kitsunping_bin_path >/dev/null 2>&1; then
     export_kitsunping_bin_path
@@ -531,7 +539,18 @@ if command -v core_daemon_main_loop >/dev/null 2>&1; then
     core_daemon_main_loop
 else
     while true; do
-        daemon_run_app_event_cycle
+        # Check if rescue was requested and perform recovery before cycles
+        if command -v daemon_check_rescue_request >/dev/null 2>&1 && daemon_check_rescue_request; then
+            if command -v daemon_perform_rescue >/dev/null 2>&1; then
+                daemon_perform_rescue
+            fi
+        fi
+
+        # Skip non-critical cycles if in safe_mode (app and policy triggers)
+        if ! daemon_safe_mode_skip_cycle app; then
+            daemon_run_app_event_cycle
+        fi
+        
         daemon_run_pairing_sync_cycle
 
         current_iface="$(get_current_iface)"
@@ -541,13 +560,20 @@ else
         daemon_run_mobile_cycle
         daemon_run_wifi_transport_cycle
         daemon_run_mobile_transport_cycle
-        daemon_run_target_profile_cycle
+        
+        if ! daemon_safe_mode_skip_cycle policy_check; then
+            daemon_run_target_profile_cycle
+        fi
+        
         daemon_run_router_status_push_cycle
 
         daemon_run_transition_cycle
         daemon_run_tick_cycle
 
         daemon_write_state_file
-        sleep "$INTERVAL"
+        
+        # Adjust sleep interval in safe_mode (degrade polling frequency)
+        INTERVAL_ADJUSTED="$(daemon_safe_mode_adjust_sleep "$INTERVAL")"
+        sleep "$INTERVAL_ADJUSTED"
     done
 fi
