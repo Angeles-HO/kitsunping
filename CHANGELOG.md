@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - [fix] Channel recommendation flow completed with a visible channel-switch action when the recommended channel differs from the active one.
 - [fix] Launcher asset pipeline aligned with the stable release so the app/module bundle ships with the corrected icon setup.
 
-> Note: The 6.01 release includes all features introduced in the 6.01 beta, plus the stability and integration fixes required for the final stable rollout.
+> Note: The 6.01 release includes all features introduced in the 6.0 beta, plus the stability and integration fixes required for the final stable rollout.
 
 ## 6.0 - Beta
 
