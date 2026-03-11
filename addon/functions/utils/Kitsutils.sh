@@ -67,7 +67,8 @@ set_permissions_module() {
         [ -e "$modpath/installer/uninstall.sh" ] && set_perm "$modpath/installer/uninstall.sh" 0 0 0755
         [ -e "$modpath/service.sh" ] && set_perm "$modpath/service.sh" 0 0 0755
         [ -e "$modpath/post-fs-data.sh" ] && set_perm "$modpath/post-fs-data.sh" 0 0 0755
-        set_perm "$modpath/addon/policy/executor.sh" 0 0 0755
+        [ -e "$modpath/policy/executor/executor.sh" ] && set_perm "$modpath/policy/executor/executor.sh" 0 0 0755
+        [ -e "$modpath/addon/policy/executor.sh" ] && set_perm "$modpath/addon/policy/executor.sh" 0 0 0755
         set_perm "$modpath/addon/functions/utils/Kitsutils.sh" 0 0 0755
         set_perm "$modpath/addon/functions/net_math.sh" 0 0 0755
         set_perm "$modpath/addon/functions/core.sh" 0 0 0755
@@ -127,6 +128,7 @@ set_permissions_module() {
             "$modpath/addon/functions/net_math.sh" \
             "$modpath/addon/functions/core.sh" \
             "$modpath/addon/functions/daemon_static.sh" \
+            "$modpath/policy/executor/executor.sh" \
             "$modpath/addon/policy/executor.sh"; do
             if [ -e "$f" ]; then
                 if ! chmod 0755 "$f" 2>/dev/null; then

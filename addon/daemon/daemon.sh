@@ -33,7 +33,14 @@ ROUTER_LAST_FILE="$MODDIR/cache/router.last"
 ROUTER_PAIRING_CACHE_FILE="$MODDIR/cache/router.pairing.json"
 shared_errors="$MODDIR/addon/functions/debug/shared_errors.sh"
 POLICY_COMMON_SH="$MODDIR/addon/functions/policy_common.sh"
-EXECUTOR_SH="$MODDIR/addon/policy/executor.sh"
+EXECUTOR_CANONICAL_SH="$MODDIR/policy/executor/executor.sh"
+EXECUTOR_COMPAT_SH="$MODDIR/addon/policy/executor.sh"
+if [ -f "$EXECUTOR_CANONICAL_SH" ]; then
+    EXECUTOR_SH="$EXECUTOR_CANONICAL_SH"
+else
+    # Keep legacy wrapper as compatibility fallback for old package layouts.
+    EXECUTOR_SH="$EXECUTOR_COMPAT_SH"
+fi
 APP_EVENT_PROP="persist.kitsuneping.user_event"
 APP_EVENT_DATA_PROP="persist.kitsuneping.user_event_data"
 # Backward compatibility with older typoed property names.
