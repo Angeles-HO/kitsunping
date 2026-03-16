@@ -237,7 +237,7 @@ network__wifi__cycle() {
     wifi_loss_trend_pct=""
     wifi_loss_score=""
     wifi_bssid=""; wifi_band=""; wifi_caps=""; wifi_freq=""; wifi_chan=""; wifi_ssid=""; wifi_width=""
-    wifi_width_source=""; wifi_width_confidence=""
+    wifi_width_source=""; wifi_width_confidence=""; wifi_standard=""
     wifi_link_speed=""; wifi_signal_dbm=""; wifi_rx_rate=""; wifi_tx_rate=""
     wifi_detected_iface="none"
     for kv in $wifi_readout; do
@@ -326,6 +326,7 @@ network__wifi__cycle() {
                             signal_dbm=*) wifi_signal_dbm="${kv#signal_dbm=}" ;;
                             rx_rate=*) wifi_rx_rate="${kv#rx_rate=}" ;;
                             tx_rate=*) wifi_tx_rate="${kv#tx_rate=}" ;;
+                            wifi_standard=*) wifi_standard="${kv#wifi_standard=}" ;;
                         esac
                     done
                     if [ -z "$wifi_width" ] && [ "$wifi_band" = "2g" ]; then

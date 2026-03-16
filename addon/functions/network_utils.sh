@@ -385,7 +385,7 @@ infer_wifi_width_mhz() {
 }
 
 parse_iw_link_info_text() {
-    local out="$1" bssid ssid freq signal rx_rate tx_rate link_speed caps band chan width width_source width_confidence width_guess kv
+    local out="$1" bssid ssid freq signal rx_rate tx_rate link_speed caps band chan width width_source width_confidence width_guess wifi_standard kv
     if [ -z "$out" ]; then
         out=$(cat 2>/dev/null)
     fi
@@ -404,6 +404,18 @@ parse_iw_link_info_text() {
     width=$(printf '%s' "$out" | grep -Eo 'width:[[:space:]]*[0-9]+' | awk '{print $2; exit}')
     if [ -z "$width" ]; then
         width=$(printf '%s' "$out" | awk '/bitrate:/ {for (i=1;i<=NF;i++) if ($i ~ /MHz/) {gsub(/[^0-9]/, "", $i); if ($i!="") {print $i; exit}}}')
+    fi
+
+    # Derive wifi_standard from bitrate modulation: EHT→be, HE→ax, VHT→ac, HT→n
+    wifi_standard=""
+    if printf '%s\n%s' "$rx_rate" "$tx_rate" | grep -qi 'EHT-MCS'; then
+        wifi_standard="be"
+    elif printf '%s\n%s' "$rx_rate" "$tx_rate" | grep -qi 'HE-MCS'; then
+        wifi_standard="ax"
+    elif printf '%s\n%s' "$rx_rate" "$tx_rate" | grep -qi 'VHT-MCS'; then
+        wifi_standard="ac"
+    elif printf '%s\n%s' "$rx_rate" "$tx_rate" | grep -qi 'HT-MCS\|MCS [0-9]'; then
+        wifi_standard="n"
     fi
 
     freq=$(normalize_freq_mhz "$freq")
@@ -449,6 +461,7 @@ parse_iw_link_info_text() {
     [ -n "$rx_rate" ] && kv="$kv rx_rate=$rx_rate"
     [ -n "$tx_rate" ] && kv="$kv tx_rate=$tx_rate"
     [ -n "$caps" ] && kv="$kv caps=$caps"
+    [ -n "$wifi_standard" ] && kv="$kv wifi_standard=$wifi_standard"
 
     printf '%s' "${kv# }"
 }
@@ -465,7 +478,7 @@ parse_iw_link_info() {
 }
 
 parse_dumpsys_wifi_info_text() {
-    local out="$1" bssid ssid freq caps link_speed band chan width width_source width_confidence width_guess kv
+    local out="$1" bssid ssid freq caps link_speed band chan width width_source width_confidence width_guess wifi_standard wifi_std_raw kv
     if [ -z "$out" ]; then
         out=$(cat 2>/dev/null)
     fi
@@ -519,6 +532,7 @@ parse_dumpsys_wifi_info_text() {
     [ -n "$width_source" ] && kv="$kv width_source=$width_source"
     [ -n "$width_confidence" ] && kv="$kv width_confidence=$width_confidence"
     [ -n "$caps" ] && kv="$kv caps=$caps"
+    [ -n "$wifi_standard" ] && kv="$kv wifi_standard=$wifi_standard"
 
     printf '%s' "${kv# }"
 }

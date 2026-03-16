@@ -163,6 +163,15 @@ run_calibration_phase() {
         esac
     fi
 
+    # --- mobile_pending recalibration trigger ---
+    # When calibrate.sh ran LTE/LTEA/5G via WiFi, it writes a mobile_pending marker.
+    # Once transport switches to mobile, force recalibration with real cellular metrics.
+    MOBILE_PENDING_FILE="${MODDIR}/cache/calibrate.mobile_pending"
+    if [ "$transport_context" = "mobile" ] && [ -f "$MOBILE_PENDING_FILE" ]; then
+        force_calibrate=1
+        log_policy "Mobile pending recalibration triggered (LTE/LTEA/5G calibrated via WiFi; now on mobile)"
+    fi
+
     # --- per-transport tunables ---
     calibrate_cooldown_wifi="$(uint_or_default "${CALIBRATE_COOLDOWN_WIFI:-$calibrate_cooldown}" "$calibrate_cooldown")"
     calibrate_cooldown_mobile="$(uint_or_default "${CALIBRATE_COOLDOWN_MOBILE:-$calibrate_cooldown}" "$calibrate_cooldown")"
@@ -425,6 +434,13 @@ run_calibration_phase() {
                 echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
                 echo "cooling" | atomic_write "$CALIBRATE_STATE_FILE"
                 echo 0 | atomic_write "$CALIBRATE_STREAK_FILE"
+
+                # Clear the mobile_pending marker after successful calibration on mobile transport
+                if [ -f "${MOBILE_PENDING_FILE:-}" ] && [ "$transport_context" = "mobile" ]; then
+                    rm -f "$MOBILE_PENDING_FILE" 2>/dev/null
+                    log_policy "Cleared mobile_pending marker (recalibrated on mobile transport)"
+                fi
+
                 log_policy "Calibration applied: props_applied=$props_applied; entering cooling state"
             elif [ "$calib_rc" -eq 3 ]; then
                 log_policy "Calibrate postponed by child (rc=3); deferring next run"

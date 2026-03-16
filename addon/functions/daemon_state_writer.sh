@@ -194,6 +194,7 @@ daemon_write_state_file() {
         printf 'wifi.width=%s\n' "${wifi_width:-}"
         printf 'wifi.width_source=%s\n' "${wifi_width_source:-}"
         printf 'wifi.width_confidence=%s\n' "${wifi_width_confidence:-}"
+        printf 'wifi.standard=%s\n' "${wifi_standard:-}"
         printf 'wifi.ssid=%s\n' "${wifi_ssid:-}"
         printf 'mobile.iface=%s\n' "$mobile_iface"
         printf 'mobile.link=%s\n' "$mobile_link"
