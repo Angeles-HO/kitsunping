@@ -51,6 +51,33 @@ is_granular_latency_enabled() {
     is_enabled_token "$raw"
 }
 
+network_hints_load() {
+    [ "${NETWORK_HINTS_LOADED:-0}" = "1" ] && return 0
+
+    NETWORK_HINTS_LOADED=1
+    NETWORK_HINTS_SOURCE=""
+
+    for candidate in \
+        "$MODDIR/cache/network_hints.env" \
+        "$MODDIR/configs/network_hints.env"
+    do
+        [ -f "$candidate" ] || continue
+        . "$candidate" 2>/dev/null || continue
+        NETWORK_HINTS_SOURCE="$candidate"
+        break
+    done
+}
+
+network_hints_iso_country() {
+    network_hints_load
+    printf '%s' "${NETWORK_HINTS_ACTIVE_ISO:-}"
+}
+
+network_hints_numeric() {
+    network_hints_load
+    printf '%s' "${NETWORK_HINTS_ACTIVE_NUMERIC:-}"
+}
+
 get_active_default_iface() {
     local iface
 
@@ -192,6 +219,7 @@ cache_dir="$data_dir/cache"
 ## Cache for states
 CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
 CALIBRATE_LAST_RUN="$NEWMODPATH/cache/calibrate.ts"
+CALIBRATE_PROGRESS_FILE="$NEWMODPATH/cache/calibrate.progress"
 
 # Calibration cache (best values) - avoids re-calibrating from scratch every boot.
 # Cache is keyed by provider/operator string (from configure_network JSON).
@@ -200,6 +228,34 @@ CALIBRATE_CACHE_META="$NEWMODPATH/cache/calibrate.best.meta"
 
 # Defensive: installation zips may omit empty directories, so create cache/log paths explicitly.
 mkdir -p "$CACHE_DIR_cln" "${NETMETER_FILE%/*}" "$cache_dir" 2>/dev/null || true
+
+# Persist coarse calibration progress to a separate file consumed by setup.sh.
+# This keeps stdout clean so ONLY BEST_* lines are parsed for system.prop injection.
+calibrate_progress_update() {
+    local pct="$1" stage="$2" msg="$3"
+
+    case "$pct" in
+        ''|*[!0-9]*) pct=0 ;;
+    esac
+    [ "$pct" -lt 0 ] && pct=0
+    [ "$pct" -gt 100 ] && pct=100
+
+    if command -v atomic_write >/dev/null 2>&1; then
+        {
+            printf 'pct=%s\n' "$pct"
+            printf 'stage=%s\n' "$stage"
+            printf 'msg=%s\n' "$msg"
+            printf 'ts=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        } | atomic_write "$CALIBRATE_PROGRESS_FILE"
+    else
+        {
+            printf 'pct=%s\n' "$pct"
+            printf 'stage=%s\n' "$stage"
+            printf 'msg=%s\n' "$msg"
+            printf 'ts=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        } > "$CALIBRATE_PROGRESS_FILE" 2>/dev/null
+    fi
+}
 
 calibrate_cache_load_vars() {
     local env_file="$1"
@@ -311,6 +367,7 @@ calibrate_cache_try_use() {
         fi
 
         log_info "Using calibration cache for provider=$provider (rtt=${PROBE_RTT_MS}ms loss=${PROBE_LOSS_PCT}%)" >> "$trace_log"
+        calibrate_progress_update 100 "done" "cache hit: reused previous calibration"
 
         # Mark calibration as cooling and refresh last-run timestamp.
         echo "cooling" | atomic_write "$CALIBRATE_STATE_RUN"
@@ -351,8 +408,11 @@ calibrate_cache_save() {
 }
 
 # Getprops variables
-ping_count="$(getprop persist.kitsunping.ping_timeout | tr -d '\r\n')"
-ping_count="$(uint_or_default "$ping_count" "7")"
+calibrate_ping_count="$(getprop persist.kitsunping.calibrate_ping_count 2>/dev/null | tr -d '\r\n')"
+[ -z "$calibrate_ping_count" ] && calibrate_ping_count="$(getprop persist.kitsunping.ping_timeout 2>/dev/null | tr -d '\r\n')"
+ping_count="$(uint_or_default "$calibrate_ping_count" "5")"
+[ "$ping_count" -lt 3 ] && ping_count=3
+[ "$ping_count" -gt 10 ] && ping_count=10
 CALIBRATE_PING_BIN=""
 CALIBRATE_TARGET_IS_IPV6=0
 PING6_BIN=""
@@ -465,6 +525,7 @@ calibrate_network_settings() {
     fi
 
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log" 
+    calibrate_progress_update 2 "startup" "checking required tools"
     # Ensure core commands and ping functionality
     check_and_detect_commands
     local calibrate_ping_status=$?
@@ -474,6 +535,7 @@ calibrate_network_settings() {
     case "$calibrate_ping_status" in
         0)
             log_info "Ping functional; proceeding with calibration" >> "$NETMETER_FILE"
+            calibrate_progress_update 8 "startup" "network probe available"
             ;;
         1)
             log_error "Ping binary not found; aborting calibration" >> "$NETMETER_FILE"
@@ -503,6 +565,7 @@ calibrate_network_settings() {
 
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Execution trace, delay: $delay seconds" >> "$trace_log"
+    calibrate_progress_update 12 "bootstrap" "loading provider config"
     config_json=$(configure_network) # get network configuration
     log_info "====================== calibrate_property =========================" >> "$trace_log"
     log_info "Network configuration obtained (config_json): $config_json" >> "$trace_log"
@@ -532,6 +595,7 @@ calibrate_network_settings() {
     if calibrate_cache_try_use "$provider_name" "$PING_VAL" "$transport_key"; then
         return 0
     fi
+    calibrate_progress_update 20 "bootstrap" "cache miss: running full calibration"
 
     test_dns_ip "$dns1" "$dns2" "$PING_VAL"
     status=$?
@@ -550,6 +614,7 @@ calibrate_network_settings() {
     # hostname (so DNS resolution uses the provider DNS we just configured)
     # and choose the target with lower RTT.
     country_code=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$country_code" ] && country_code="$(network_hints_iso_country)"
     [ -z "$country_code" ] && country_code="global"
 
     if echo "$PING_VAL" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
@@ -616,10 +681,15 @@ calibrate_network_settings() {
         return 1
     else
         log_info "Connectivity test passed" >> "$trace_log"
+        calibrate_progress_update 28 "bootstrap" "connectivity verified"
     fi
 
-    local index=1
+    local index=1 total_primary current_pct
     export TEST_IP
+
+    total_primary=$(printf '%s\n' $NET_PROPERTIES_KEYS | wc -l | tr -d ' ')
+    [ -z "$total_primary" ] && total_primary=1
+    [ "$total_primary" -lt 1 ] && total_primary=1
 
     log_info "Starting calibration for $TEST_IP" >> "$trace_log"
     for prop in $NET_PROPERTIES_KEYS; do
@@ -638,6 +708,8 @@ calibrate_network_settings() {
             log_info "Empty value set for $prop" >> "$trace_log"
             continue
         fi
+        current_pct=$(awk -v idx="$index" -v total="$total_primary" 'BEGIN{v=30 + int((idx-1)*45/total); if(v<30)v=30; if(v>75)v=75; print v}')
+        calibrate_progress_update "$current_pct" "primary" "calibrating $prop"
         log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
         log_info "Calibrating properties: prop: [$prop] val: [$vals] delay: [$delay] at [${CACHE_DIR_cln}/$prop.best]" >> "$trace_log"
         calibrate_property "$prop" "$vals" "$delay" "$CACHE_DIR_cln/$prop.best"
@@ -659,18 +731,23 @@ calibrate_network_settings() {
     [ -z "$current_iface" ] && current_iface="unknown"
 
     sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$sim_iso" ] && sim_iso="$(network_hints_iso_country)"
 
 
     # Decide calibration path based on active transport.
     # IMPORTANT: avoid calibrating mobile (RIL LTE/LTEA/NR) with Wi-Fi-biased metrics.
     if echo "$current_iface" | grep -qi '^rmnet'; then
+        calibrate_progress_update 80 "secondary" "running mobile extended calibration"
         log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$trace_log"
         calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
     elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
+        calibrate_progress_update 86 "secondary" "wifi-only mode: skipping mobile extension"
         log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
     elif echo "$current_iface" | grep -qi '^wlan' && [ -n "$sim_iso" ]; then
+        calibrate_progress_update 86 "secondary" "wifi with SIM: skipping mobile extension"
         log_info "Wi-Fi mode with SIM detected ($sim_iso): calibrating only HSUPA/HSDPA to avoid mobile mis-tuning [detail:${current_iface}]" >> "$trace_log"
     else
+        calibrate_progress_update 86 "secondary" "unknown iface: mobile extension skipped"
         log_info "Unknown/non-rmnet iface: skipping mobile extended calibration to avoid cross-transport bias [detail:${current_iface}]" >> "$trace_log"
     fi
 
@@ -678,7 +755,10 @@ calibrate_network_settings() {
     log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
 
     # Persist cache for future runs (provider + transport keyed).
+    calibrate_progress_update 94 "finalize" "persisting best values"
     calibrate_cache_save "$provider_name" "$transport_key"
+
+    calibrate_progress_update 100 "done" "calibration finished"
 
     echo "BEST_ro_ril_hsupa_category=$BEST_ro_ril_hsupa_category"
     echo "BEST_ro_ril_hsdpa_category=$BEST_ro_ril_hsdpa_category"
@@ -736,6 +816,8 @@ calibrate_property() {
     local valid_count=0
     local equal_best_count=0
     local attempts=3
+    local attempts_raw=""
+    local active_iface=""
     local current_prop_val=""
     
     log_info "====================== calibrate_property =========================" >> "$trace_log"
@@ -753,24 +835,40 @@ calibrate_property() {
         return 1
     fi
     rm -f "$write_test"
+
+    # Adaptive attempts: mobile path keeps 3, Wi-Fi/default uses 2 for faster install.
+    attempts_raw="${CALIBRATE_ATTEMPTS:-$(getprop persist.kitsunping.calibrate_attempts 2>/dev/null | tr -d '\r\n')}"
+    attempts="$(uint_or_default "$attempts_raw" "")"
+    if [ -z "$attempts" ]; then
+        active_iface="$(get_active_default_iface)"
+        case "$active_iface" in
+            rmnet*) attempts=3 ;;
+            *) attempts=2 ;;
+        esac
+    fi
+    [ "$attempts" -lt 1 ] && attempts=1
+    [ "$attempts" -gt 4 ] && attempts=4
+    log_info "calibrate attempts for $property: $attempts (iface=${active_iface:-unknown})" >> "$trace_log"
     
     for candidate in $candidates; do
         local total_score=0
         
         resetprop "$property" "$candidate" >/dev/null 2>&1
-            log_info "using resetprop: property: $property | candidate: $candidate" >> "$trace_log"
+        log_info "using resetprop: property: $property | candidate: $candidate" >> "$trace_log"
 
         sleep 1
+        # Warm-up once per candidate to avoid skewed first sample.
+        $PING_BIN -c 3 -W 1 "$TEST_IP" >/dev/null 2>&1
         
         for i in $(seq 1 $attempts); do
-            local ping_result=$(test_configuration "$property" "$candidate" "$delay")
+            local ping_result=$(test_configuration "$delay")
             log_info "using ping_result: $ping_result" >> "$trace_log"
             local score=$(extract_scores "$ping_result")
             log_info "using score: $score" >> "$trace_log"
             
             total_score=$(awk "BEGIN {print $total_score + $score}")
             log_info "using total_score: $total_score" >> "$trace_log"
-            sleep 0.5
+            sleep 0.2
         done
         
         local avg_score=$(awk "BEGIN {print $total_score / $attempts}")
@@ -942,22 +1040,37 @@ extract_scores() {
 # Usage: configure_network
 configure_network() {
     local country_code mcc_raw mnc_raw mcc mnc json_file cache_file cache_ok
+    local numeric_hint hint_mcc hint_mnc
     local raw provider dns_list ping dns_json
 
-    country_code=$(getprop gsm.sim.operator.iso-country | tr '[:upper:]' '[:lower:]')
+    country_code=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$country_code" ] && country_code="$(network_hints_iso_country)"
     [ -z "$country_code" ] && country_code="unknow"
 
-    mcc_raw=$(getprop debug.tracing.mcc | tr -d '[]')
-    mnc_raw=$(getprop debug.tracing.mnc | tr -d '[]')
+    mcc_raw=$(getprop debug.tracing.mcc 2>/dev/null | tr -d '[]')
+    mnc_raw=$(getprop debug.tracing.mnc 2>/dev/null | tr -d '[]')
+    numeric_hint="$(network_hints_numeric)"
+    hint_mcc=""
+    hint_mnc=""
+    case "$numeric_hint" in
+        [0-9][0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9][0-9])
+            hint_mcc=$(printf '%s' "$numeric_hint" | cut -c1-3)
+            hint_mnc=$(printf '%s' "$numeric_hint" | cut -c4-)
+            ;;
+    esac
 
     if echo "$mcc_raw" | grep -qE '^[0-9]+$'; then
         mcc="$mcc_raw"
+    elif echo "$hint_mcc" | grep -qE '^[0-9]{3}$'; then
+        mcc="$hint_mcc"
     else
         mcc="000"
     fi
 
     if echo "$mnc_raw" | grep -qE '^[0-9]+$'; then
         mnc=$(printf "%03d" "$mnc_raw")
+    elif echo "$hint_mnc" | grep -qE '^[0-9]{2,3}$'; then
+        mnc=$(printf "%03d" "$hint_mnc")
     else
         mnc="000"
     fi
@@ -1122,29 +1235,20 @@ calibrate_secondary_network_settings() {
     done
 }
 
-# Description: Apply a property candidate and measure connectivity quality via ping.
-# Usage: test_configuration <property> <candidate> <delay_seconds>
+# Description: Measure connectivity quality via ping for the currently applied candidate.
+# Usage: test_configuration <delay_seconds>
 test_configuration() {
     log_info "====================== test_configuration =========================" >> "$trace_log"
-    local property="$1" 
-    local candidate="$2" 
-    local delay="$3"
-
-    log_info "property: $property | candidate: $candidate | delay: $delay" >> "$trace_log"
+    local delay="$1"
+    log_info "delay: $delay" >> "$trace_log"
 
 
     [ -z "${TEST_IP:-}" ] && { echo "9999 9999 100"; return 3; }
 
-    resetprop "$property" "$candidate" >/dev/null 2>&1 || { echo "9999 9999 100"; return 1; }
-    sleep 1
-
-    # Warm-up pings to avoid skewed first samples
-    $PING_BIN -c 3 -W 1 "$TEST_IP" >/dev/null 2>&1
-
     # Execute ping with consistent format
     # Binary -c 10 (10 packets), -i 0.5 (interval 500ms), -W 1 
 
-    ping_count="$(uint_or_default "$ping_count" "7")"
+    ping_count="$(uint_or_default "$ping_count" "5")"
     local output 
     output="$($PING_BIN -c "$ping_count" -i 0.5 -W 1 "$TEST_IP" 2>&1)"
     [ $? -ne 0 ] && { echo "9999 9999 100"; return 2; }

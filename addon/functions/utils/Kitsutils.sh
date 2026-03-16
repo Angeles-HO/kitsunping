@@ -174,9 +174,66 @@ set_permissions_module() {
         fi
     fi
 
+    # Ensure files touched at runtime keep explicit writable ownership/perms.
+    # This does not bypass read-only mounts, but gives deterministic perms after reinstall.
+    set_runtime_writable_permissions "$modpath" "$log_file"
+
     # Log success
     [ -n "$log_file" ] && echo "[OK] Permissions set in $modpath" >> "$log_file"
     # end closing function no return data 
+    return 0
+}
+
+# Ensure files that daemon/failsafe update at runtime have explicit ownership/perms.
+# Usage: set_runtime_writable_permissions <modpath> [log_file]
+set_runtime_writable_permissions() {
+    local modpath="$1"
+    local log_file="$2"
+    local runtime_dir runtime_file
+
+    [ -n "$modpath" ] || return 1
+
+    for runtime_dir in \
+        "$modpath/cache" \
+        "$modpath/logs" \
+        "$modpath/cache/tmp"; do
+        if [ -d "$runtime_dir" ] || mkdir -p "$runtime_dir" 2>/dev/null; then
+            chmod 0755 "$runtime_dir" 2>/dev/null || true
+            chown 0:0 "$runtime_dir" 2>/dev/null || true
+        else
+            [ -n "$log_file" ] && echo "[WARN] cannot create runtime dir: $runtime_dir" >> "$log_file"
+        fi
+    done
+
+    for runtime_file in \
+        "$modpath/module.prop" \
+        "$modpath/cache/daemon.state" \
+        "$modpath/cache/link_context.state" \
+        "$modpath/cache/kitsunping_runtime.json" \
+        "$modpath/cache/daemon.last" \
+        "$modpath/cache/event.last.json" \
+        "$modpath/cache/router.last" \
+        "$modpath/cache/router.dni" \
+        "$modpath/cache/router.pairing.json"; do
+        if [ ! -e "$runtime_file" ]; then
+            touch "$runtime_file" 2>/dev/null || {
+                [ -n "$log_file" ] && echo "[WARN] cannot create runtime file: $runtime_file" >> "$log_file"
+                continue
+            }
+        fi
+
+        chmod 0644 "$runtime_file" 2>/dev/null || {
+            [ -n "$log_file" ] && echo "[WARN] chmod 0644 failed on $runtime_file" >> "$log_file"
+        }
+        chown 0:0 "$runtime_file" 2>/dev/null || {
+            [ -n "$log_file" ] && echo "[WARN] chown failed on $runtime_file" >> "$log_file"
+        }
+
+        if [ ! -w "$runtime_file" ]; then
+            [ -n "$log_file" ] && echo "[WARN] not writable after permission set: $runtime_file (possible read-only mount/context issue)" >> "$log_file"
+        fi
+    done
+
     return 0
 }
 
@@ -185,12 +242,11 @@ set_permissions() {
 }
 
 progress_bar() {
-    local rueda='-\|/'
     local spin
     local progress=""
     local completed=0
 
-    while [ $completed -le 10 ]; do
+    while [ "$completed" -lt 10 ]; do
         progress=$(printf "%-${completed}s" | tr ' ' "=")$(printf "%$((10-completed))s" | tr ' ' "-")
         case $((completed % 4)) in
             0) spin='-' ;;
@@ -198,11 +254,13 @@ progress_bar() {
             2) spin='|' ;;
             3) spin='/' ;;
         esac
-        printf '[%s] %s' "$progress" "$spin"
+        printf '\r[%s] %s' "$progress" "$spin"
         sleep 0.5
-        printf '\r'
         completed=$((completed+1))
     done
+
+    # Render a stable final state and end with newline to avoid trailing spinner artifacts.
+    printf '\r[%s] %s\n' "==========" "OK"
 }
 
 get_time_stamp() {
@@ -222,13 +280,24 @@ atomic_write() {
     target_dir="$(dirname "$target")"
     [ -n "$target_dir" ] || target_dir="."
     mkdir -p "$target_dir" 2>/dev/null || return 1
-    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
-    if cat - > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
-    else
+    tmp=$(mktemp "$target_dir/.atomic_write.XXXXXX" 2>/dev/null) || tmp="$target_dir/.atomic_write.$$.$(date +%s).tmp"
+    if ! cat - > "$tmp" 2>/dev/null; then
         rm -f "$tmp"
         return 1
     fi
+
+    if mv -f "$tmp" "$target" 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback: overwrite in place when rename is blocked by FS constraints.
+    if cat "$tmp" > "$target" 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null || true
+        return 0
+    fi
+
+    rm -f "$tmp" 2>/dev/null || true
+    return 1
 }
 
 # Update or append a property in a file (portable)
@@ -335,6 +404,22 @@ debug.tracing.mcc
 debug.tracing.mnc
 sys.boot_completed
 logcat.live
+
+sys.wifi6.enable
+persist.vendor.connmgr.wifi.bss_coloring
+persist.vendor.data.mode
+persist.radio.def_network
+net.tcp.2g_init_rwnd
+net.tcp_def_init_rwnd
+sys.tcp_cubic.hystart
+persist.data.df.agg.dl_pkt
+persist.data.df.agg.dl_size
+persist.data.df.dl_mode
+persist.data.df.ul_mode
+persist.data.df.mux_count
+vendor.wlan.driver.version
+vendor.wlan.firmware.version
+ro.vendor.radio.default_network
 "
 
     # Write current properties to backup file atomically
@@ -380,25 +465,101 @@ set_selinux_enforce() {
     return 0
 }
 
-# simple check for Qualcomm SoC, can be better but no testers available
-is_qualcomm() {
-    case "$(getprop ro.soc.manufacturer | tr '[:upper:]' '[:lower:]')" in
-        qti|qualcomm)
-            return 0
-            ;;
+# ── SoC detection helpers ──────────────────────────────────────────
+# Multi-layered detection: manufacturer prop → board platform → hardware
+# paths → cpuinfo/device-tree fallback.  Cached after first call.
+_KITSUN_SOC_VENDOR=""   # cache: qualcomm | mtk | exynos | unknown
+
+_detect_soc_vendor() {
+    [ -n "$_KITSUN_SOC_VENDOR" ] && return 0
+
+    # Layer 1: ro.soc.manufacturer (most reliable on modern devices)
+    _soc_mfr="$(getprop ro.soc.manufacturer 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    case "$_soc_mfr" in
+        qti|qualcomm)   _KITSUN_SOC_VENDOR="qualcomm"; return 0 ;;
+        mediatek|mtk)   _KITSUN_SOC_VENDOR="mtk";      return 0 ;;
+        samsung|slsi)   _KITSUN_SOC_VENDOR="exynos";   return 0 ;;
     esac
+
+    # Layer 2: ro.board.platform / ro.hardware
+    _board="$(getprop ro.board.platform 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    case "$_board" in
+        msm*|sdm*|sm[0-9]*|qcom*|taro|kalama|pineapple|lahaina|waipio|crow|sun|parrot|cape)
+            _KITSUN_SOC_VENDOR="qualcomm"; return 0 ;;
+        mt*|mt[0-9]*)
+            _KITSUN_SOC_VENDOR="mtk"; return 0 ;;
+        exynos*|universal*|erd*|s5e*)
+            _KITSUN_SOC_VENDOR="exynos"; return 0 ;;
+    esac
+
+    _hw="$(getprop ro.hardware 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    case "$_hw" in
+        qcom|qualcomm) _KITSUN_SOC_VENDOR="qualcomm"; return 0 ;;
+        mt*|mediatek)  _KITSUN_SOC_VENDOR="mtk";      return 0 ;;
+        exynos*|samsung*|samsungexynos*) _KITSUN_SOC_VENDOR="exynos"; return 0 ;;
+    esac
+
+    # Layer 3: Qualcomm-specific sysfs (Adreno GPU path)
+    [ -d /sys/class/kgsl/kgsl-3d0/devfreq ] && {
+        _KITSUN_SOC_VENDOR="qualcomm"; return 0
+    }
+    # MediaTek-specific sysfs
+    [ -d /sys/kernel/ged/hal ] && {
+        _KITSUN_SOC_VENDOR="mtk"; return 0
+    }
+
+    # Layer 4: additional getprop fallbacks
+    for _p in ro.vendor.qti.soc_name ro.chipname ro.hardware.chipname; do
+        _v="$(getprop "$_p" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+        case "$_v" in
+            sm[0-9]*|sdm*|msm*|qcom*) _KITSUN_SOC_VENDOR="qualcomm"; return 0 ;;
+            mt[0-9]*)                  _KITSUN_SOC_VENDOR="mtk";      return 0 ;;
+            exynos*|s5e*)              _KITSUN_SOC_VENDOR="exynos";   return 0 ;;
+        esac
+    done
+
+    _KITSUN_SOC_VENDOR="unknown"
     return 1
 }
 
+is_qualcomm() {
+    _detect_soc_vendor
+    [ "$_KITSUN_SOC_VENDOR" = "qualcomm" ]
+}
+
 is_mtk() {
-    soc_mfr="$(getprop ro.soc.manufacturer | tr '[:upper:]' '[:lower:]')"
-    board="$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')"
-    case "$soc_mfr" in
-        mediatek|mtk) return 0 ;;
-    esac
-    case "$board" in
-        mt*) return 0 ;;
-    esac
+    _detect_soc_vendor
+    [ "$_KITSUN_SOC_VENDOR" = "mtk" ]
+}
+
+is_exynos() {
+    _detect_soc_vendor
+    [ "$_KITSUN_SOC_VENDOR" = "exynos" ]
+}
+
+# Return the cached vendor string (qualcomm|mtk|exynos|unknown)
+get_soc_vendor() {
+    _detect_soc_vendor
+    printf '%s' "$_KITSUN_SOC_VENDOR"
+}
+
+# Detect 5G radio capability (NSA or SA)
+is_5g_capable() {
+    # Check Samsung-specific ril props first
+    case "$(getprop ril.5g_rf 2>/dev/null)" in 1) return 0 ;; esac
+    case "$(getprop ril.enabled_5g_rf 2>/dev/null)" in 1) return 0 ;; esac
+    # Check ro.telephony.default_network >= 23 (NR preference modes)
+    _net="$(getprop ro.telephony.default_network 2>/dev/null)"
+    [ -n "$_net" ] && [ "$_net" -ge 23 ] 2>/dev/null && return 0
+    # Check NR band config
+    [ -n "$(getprop persist.vendor.radio.nr5g 2>/dev/null)" ] && return 0
+    return 1
+}
+
+# Detect Samsung SHS hardware offload (rmnet scheduler)
+is_shs_active() {
+    case "$(getprop persist.vendor.data.shs_ko_load 2>/dev/null)" in 1) return 0 ;; esac
+    [ -d /sys/module/rmnet_shs ] && return 0
     return 1
 }
 
@@ -454,10 +615,13 @@ apply_wcnss_profile_file() {
 
     [ -n "$profile_keys" ] || return 1
 
+    # Convert newlines to pipe — busybox awk rejects literal newlines in -v
+    profile_keys_flat="$(printf '%s' "$profile_keys" | tr '\n' '|')"
+
     tmp_file="${dst_file}.tmp.$$"
-    awk -v profile_file="$profile_file" -v keys="$profile_keys" '
+    awk -v profile_file="$profile_file" -v keys="$profile_keys_flat" '
         BEGIN {
-            n = split(keys, key_lines, "\n")
+            n = split(keys, key_lines, "|")
             for (i = 1; i <= n; i++) {
                 key = key_lines[i]
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
@@ -557,12 +721,33 @@ apply_qcom_wcnss_profile() {
 
     [ -n "$log_file" ] && echo "[SYS][WCNSS] Applying profile=$profile_name file=$(basename "$profile_file")" >> "$log_file"
 
+    # Deduplicate: /system/vendor/… and /vendor/… are the same physical file
+    # on most devices.  Keep only one cfg per basename-path, preferring the
+    # shorter (canonical) form.
+    _seen_wcnss=""
     for cfg in $cfgs; do
         [ -f "$cfg" ] || continue
 
-        dst="$modpath$cfg"
+        # Normalise to the Magisk systemless mount destination immediately
+        # so we never need the mv-at-the-end trick.
+        case "$cfg" in
+            /system/vendor/*)    dst="$modpath${cfg}" ;;
+            /system/product/*)   dst="$modpath${cfg}" ;;
+            /system/system_ext/*) dst="$modpath${cfg}" ;;
+            /vendor/*)           dst="$modpath/system${cfg}" ;;
+            /product/*)          dst="$modpath/system${cfg}" ;;
+            /system_ext/*)       dst="$modpath/system${cfg}" ;;
+            *)                   dst="$modpath${cfg}" ;;
+        esac
+
+        # Skip if we already processed an equivalent destination
+        case "$_seen_wcnss" in
+            *"|$dst|"*) continue ;;
+        esac
+        _seen_wcnss="${_seen_wcnss}|$dst|"
+
         mkdir -p "$(dirname "$dst")"
-        [ -n "$log_file" ] && echo "[SYS][WCNSS] Migrating $cfg" >> "$log_file"
+        [ -n "$log_file" ] && echo "[SYS][WCNSS] Migrating $cfg -> $dst" >> "$log_file"
         $cmdprefix cp -af "$cfg" "$dst" 2>>"$log_file"
 
         if apply_wcnss_profile_file "$dst" "$profile_file" "$log_file"; then
@@ -572,10 +757,6 @@ apply_qcom_wcnss_profile() {
         fi
     done
 
-    mkdir -p "$modpath/system"
-    mv -f "$modpath/vendor" "$modpath/system/vendor" 2>/dev/null
-    mv -f "$modpath/product" "$modpath/system/product" 2>/dev/null
-    mv -f "$modpath/system_ext" "$modpath/system/system_ext" 2>/dev/null
     return 0
 }
 
@@ -608,6 +789,36 @@ apply_profile_runtime_resetprops() {
 
     # TODO: create method to implement gaming profile when x app is lanched, com.app1=gaming
     
+    # ── Common tunables (all SoC vendors) applied per profile ──
+    case "$profile_name" in
+        gaming|benchmark_gaming|benchmark_speed|speed)
+            # Aggressive data aggregation for throughput
+            apply_prop "persist.data.df.agg.dl_pkt"  "20"
+            apply_prop "persist.data.df.agg.dl_size"  "8192"
+            apply_prop "persist.data.df.dl_mode"       "5"
+            apply_prop "persist.data.df.ul_mode"       "5"
+            apply_prop "persist.data.df.mux_count"     "8"
+            # Keep cubic hystart off for high-throughput profiles (avoids premature exit of slow-start)
+            apply_prop "sys.tcp_cubic.hystart"         "0"
+            # Larger initial receive window for fast connections
+            apply_prop "net.tcp_def_init_rwnd"         "80"
+            apply_prop "net.tcp.2g_init_rwnd"          "20"
+            ;;
+        stable)
+            # Conservative / stock-like data aggregation
+            apply_prop "persist.data.df.agg.dl_pkt"  "10"
+            apply_prop "persist.data.df.agg.dl_size"  "4096"
+            apply_prop "persist.data.df.dl_mode"       "2"
+            apply_prop "persist.data.df.ul_mode"       "2"
+            apply_prop "persist.data.df.mux_count"     "4"
+            # Re-enable hystart for safety on congested/weak links
+            apply_prop "sys.tcp_cubic.hystart"         "1"
+            apply_prop "net.tcp_def_init_rwnd"         "60"
+            apply_prop "net.tcp.2g_init_rwnd"          "10"
+            ;;
+    esac
+
+    # ── SoC-specific Wi-Fi resetprops ──
     if is_mtk; then
         case "$profile_name" in
             gaming|benchmark_gaming)
