@@ -40,6 +40,7 @@ cubic|/proc/sys/net/ipv4/tcp_congestion_control|use CUBIC by default
 0|/proc/sys/net/ipv4/tcp_mtu_probing|disabled (avoid overhead)
 1|/proc/sys/net/ipv4/tcp_timestamps|timestamps enabled
 1|/proc/sys/net/ipv4/tcp_tw_reuse|tw_reuse enabled
+3|/proc/sys/net/ipv4/tcp_fastopen|TFO client+server
 EOF
 
 # IPv4: conservative parameters for throughput without compromising security

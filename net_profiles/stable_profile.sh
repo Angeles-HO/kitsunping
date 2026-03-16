@@ -11,6 +11,8 @@ cubic|/proc/sys/net/ipv4/tcp_congestion_control|Cubic estable
 4096 87380 16777216|/proc/sys/net/ipv4/tcp_rmem|Buffer lectura balanceado (16MB)
 4096 65536 16777216|/proc/sys/net/ipv4/tcp_wmem|Buffer escritura balanceado (16MB)
 1|/proc/sys/net/ipv4/tcp_sack|SACK habilitado
+0|/proc/sys/net/ipv4/tcp_slow_start_after_idle|Evitar penalización tras idle WiFi/LTE
+3|/proc/sys/net/ipv4/tcp_fastopen|TFO cliente+servidor
 EOF
 
 echo "[PROFILE] stable done" >> "$LOG_OUT"

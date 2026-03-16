@@ -137,6 +137,12 @@ ro.wifi.direct.interface=p2p0
 # Temporal experimental
 net.ipv4.tcp_mtu_probing=1
 
+# --- TCP Initial Receive Window ---
+# Default init rwnd (stock 60 is conservative for LTE/5G)
+net.tcp_def_init_rwnd=80
+# 2G init rwnd (stock 10 is too low even for EDGE)
+net.tcp.2g_init_rwnd=20
+
 # --- VoLTE / VoWiFi ---
 persist.vendor.mtk.volte.enable=1
 persist.vendor.volte_support=1

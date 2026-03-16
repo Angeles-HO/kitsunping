@@ -73,6 +73,7 @@ apply_param_set <<'EOF'
 cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control kept on cubic for stable RTT
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
 3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled (if supported)
+0|/proc/sys/net/ipv4/tcp_slow_start_after_idle|disabled to avoid cwnd reset after idle
 3|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 reduced
 8|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 moderate
 393216|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=384KiB to limit queueing
