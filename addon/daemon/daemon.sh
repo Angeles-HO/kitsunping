@@ -88,7 +88,10 @@ _dev_reload_all() {
     _source_or_dev "$MODDIR/addon/functions/daemon_wifi_cycle.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_mobile_cycle.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_app_cycle.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_bootstrap.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_config.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_state_writer.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_adaptive_sampling.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_transitions.sh"
     _source_or_dev "$MODDIR/lib/time_helpers.sh"
     _source_or_dev "$MODDIR/lib/json_helpers.sh"
@@ -154,137 +157,7 @@ EV_ROUTER_UNPAIRED="ROUTER_UNPAIRED"
 EV_ROUTER_DNI_CHANGED="ROUTER_DNI_CHANGED"
 EV_ROUTER_CAPS_DETECTED="ROUTER_CAPS_DETECTED"
 
-# Configurable parameters
-DAEMON_INTERVAL="${DAEMON_INTERVAL:-10}" # seconds (default polling interval)
-LAST_TS_WIFI_LEFT=0
-LAST_TS_WIFI_JOINED=0
-LAST_TS_IFACE_CHANGED=0
-INTERVAL_DEFAULT=10 # seconds
-INTERVAL="$INTERVAL_DEFAULT"
-SIGNAL_POLL_INTERVAL=5 # poll signal quality every N loops when on mobile
-NET_PROBE_INTERVAL=3 # perform network probe every N loops when on Wi-Fi
-interval_prop="$(getprop kitsunping.daemon.interval | tr -d '\r\n')"
-signal_poll_prop="$(getprop kitsunping.daemon.signal_poll_interval | tr -d '\r\n')"
-net_probe_prop="$(getprop kitsunping.daemon.net_probe_interval | tr -d '\r\n')"
-interval_prop="$(uint_or_default "$interval_prop" "")"
-signal_poll_prop="$(uint_or_default "$signal_poll_prop" "")"
-net_probe_prop="$(uint_or_default "$net_probe_prop" "")"
-CONF_ALPHA=$(getprop kitsunping.sigmoid.alpha)
-CONF_BETA=$(getprop kitsunping.sigmoid.beta)
-CONF_GAMMA=$(getprop kitsunping.sigmoid.gamma)
-ROUTER_DEBUG_RAW=$(getprop kitsunping.router.debug)
-KITSUNROUTER_ENABLE_RAW="$(getprop persist.kitsunrouter.enable)"
-KITSUNROUTER_DEBUG_RAW="$(getprop persist.kitsunrouter.debug)"
-ROUTER_EXPERIMENTAL_RAW=$(getprop persist.kitsunping.router.experimental)
-ROUTER_EXPERIMENTAL_RAW_2=$(getprop kitsunping.router.experimental)
-ROUTER_OPENWRT_RAW=$(getprop persist.kitsunping.router.openwrt_mode)
-ROUTER_OPENWRT_RAW_2=$(getprop kitsunping.router.openwrt_mode)
-ROUTER_CACHE_TTL_RAW=$(getprop persist.kitsunping.router.cache_ttl)
-ROUTER_CACHE_TTL_RAW_2=$(getprop kitsunping.router.cache_ttl)
-ROUTER_INFER_WIDTH_RAW=$(getprop persist.kitsunping.router.infer_width)
-ROUTER_INFER_WIDTH_RAW_2=$(getprop kitsunping.router.infer_width)
-ROUTER_INFER_WIDTH_2G_RAW=$(getprop persist.kitsunping.router.infer_width_2g)
-ROUTER_INFER_WIDTH_2G_RAW_2=$(getprop kitsunping.router.infer_width_2g)
-
-# Wifi serction
-WIFI_SPEED_THRESHOLD="$(getprop kitsunping.wifi.speed_threshold | tr -d '\r\n')" # Mbps, above this is GOOD, below is LIMBO/BAD
-WIFI_SPEED_THRESHOLD="$(uint_or_default "$WIFI_SPEED_THRESHOLD" "75")" # default to 75 Mbps if not set or invalid
-# Event emission controls:
-# - persist.kitsunping.emit_events: boolean (0/1, false/true) to enable/disable emitting events
-# - persist.kitsunping.event_debounce_sec: debounce in seconds (integer > 0)
-# Backward-compat: if emit_events is an integer > 1 and event_debounce_sec is unset, treat it as debounce seconds.
-EMIT_EVENTS_RAW="$(getprop persist.kitsunping.emit_events)"
-EVENT_DEBOUNCE_RAW="$(getprop persist.kitsunping.event_debounce_sec)"
-EVENT_DEBOUNCE_RAW_2="$(getprop kitsunping.event.debounce_sec)"
-
-EMIT_EVENTS_RAW="${EMIT_EVENTS_RAW:-1}" # default to enabled
-EMIT_EVENTS=1
-EVENT_DEBOUNCE_SEC=""
-
-case "${EMIT_EVENTS_RAW:-}" in
-    0|false|FALSE|no|NO|off|OFF) EMIT_EVENTS=0 ;;
-    1|true|TRUE|yes|YES|on|ON|'') EMIT_EVENTS=1 ;;
-    *[!0-9]* ) EMIT_EVENTS=1 ;; # unknown string -> keep enabled, but do not treat as number
-    *)
-        # numeric
-        if [ "$EMIT_EVENTS_RAW" -gt 1 ] && [ -z "$EVENT_DEBOUNCE_RAW" ] && [ -z "$EVENT_DEBOUNCE_RAW_2" ]; then
-            EVENT_DEBOUNCE_SEC="$EMIT_EVENTS_RAW"
-        fi
-        EMIT_EVENTS=1
-        ;;
-esac
-
-if [ -z "$EVENT_DEBOUNCE_SEC" ]; then
-    case "${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}" in
-        ''|*[!0-9]* ) EVENT_DEBOUNCE_SEC=5 ;;
-        *)
-            if [ "${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}" -gt 0 ]; then
-                EVENT_DEBOUNCE_SEC="${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}"
-            else
-                EVENT_DEBOUNCE_SEC=5
-            fi
-            ;;
-    esac
-fi
-
-normalize_weight_value() {
-    local raw="$1" def="$2"
-    awk -v v="$raw" -v d="$def" 'BEGIN { if (v ~ /^-?[0-9]+([.][0-9]+)?$/) printf "%s", v; else printf "%s", d }'
-}
-
-LCL_ALPHA="$(normalize_weight_value "${CONF_ALPHA:-}" "0.4")"
-LCL_BETA="$(normalize_weight_value "${CONF_BETA:-}" "0.3")"
-LCL_GAMMA="$(normalize_weight_value "${CONF_GAMMA:-}" "0.3")"
-LCL_DELTA=0.1
-
-ROUTER_DEBUG="${ROUTER_DEBUG:-$ROUTER_DEBUG_RAW}"
-case "${ROUTER_DEBUG:-}" in
-    1|true|TRUE|yes|YES|on|ON) ROUTER_DEBUG=1 ;;
-    *) ROUTER_DEBUG=0 ;;
-esac
-
-KITSUNROUTER_ENABLE="${KITSUNROUTER_ENABLE:-$KITSUNROUTER_ENABLE_RAW}"
-case "${KITSUNROUTER_ENABLE:-}" in
-    1|true|TRUE|yes|YES|on|ON) KITSUNROUTER_ENABLE=1 ;;
-    *) KITSUNROUTER_ENABLE=0 ;;
-esac
-
-# Prefer persist.kitsunrouter.debug over legacy kitsunping.router.debug when present.
-if [ -n "${KITSUNROUTER_DEBUG_RAW:-}" ]; then
-    case "${KITSUNROUTER_DEBUG_RAW:-}" in
-        1|true|TRUE|yes|YES|on|ON) ROUTER_DEBUG=1 ;;
-        *) ROUTER_DEBUG=0 ;;
-    esac
-fi
-
-ROUTER_EXPERIMENTAL="${ROUTER_EXPERIMENTAL:-${ROUTER_EXPERIMENTAL_RAW:-$ROUTER_EXPERIMENTAL_RAW_2}}"
-case "${ROUTER_EXPERIMENTAL:-}" in
-    1|true|TRUE|yes|YES|on|ON) ROUTER_EXPERIMENTAL=1 ;;
-    *) ROUTER_EXPERIMENTAL=0 ;;
-esac
-
-ROUTER_OPENWRT_MODE="${ROUTER_OPENWRT_MODE:-${ROUTER_OPENWRT_RAW:-$ROUTER_OPENWRT_RAW_2}}"
-case "${ROUTER_OPENWRT_MODE:-}" in
-    1|true|TRUE|yes|YES|on|ON) ROUTER_OPENWRT_MODE=1 ;;
-    *) ROUTER_OPENWRT_MODE=0 ;;
-esac
-
-ROUTER_CACHE_TTL="${ROUTER_CACHE_TTL:-${ROUTER_CACHE_TTL_RAW:-$ROUTER_CACHE_TTL_RAW_2}}"
-case "${ROUTER_CACHE_TTL:-}" in
-    ''|*[!0-9]* ) ROUTER_CACHE_TTL=3600 ;;
-esac
-
-ROUTER_INFER_WIDTH="${ROUTER_INFER_WIDTH:-${ROUTER_INFER_WIDTH_RAW:-$ROUTER_INFER_WIDTH_RAW_2}}"
-case "${ROUTER_INFER_WIDTH:-}" in
-    1|true|TRUE|yes|YES|on|ON) ROUTER_INFER_WIDTH=1 ;;
-    *) ROUTER_INFER_WIDTH=0 ;;
-esac
-
-ROUTER_INFER_WIDTH_2G="${ROUTER_INFER_WIDTH_2G:-${ROUTER_INFER_WIDTH_2G_RAW:-$ROUTER_INFER_WIDTH_2G_RAW_2}}"
-case "${ROUTER_INFER_WIDTH_2G:-}" in
-    1|true|TRUE|yes|YES|on|ON) ROUTER_INFER_WIDTH_2G=1 ;;
-    *) ROUTER_INFER_WIDTH_2G=0 ;;
-esac
+# Configurable runtime parameters are loaded by daemon_config.sh.
 
 # Policy file ownership conventions:
 # - `cache/policy.request`: written by the daemon to indicate the desired/profile chosen
@@ -318,6 +191,31 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 # Source all modular components (dev hot-reload aware)
 _dev_reload_all
 
+if command -v daemon_load_runtime_config >/dev/null 2>&1; then
+    daemon_load_runtime_config
+else
+    DAEMON_INTERVAL="${DAEMON_INTERVAL:-10}"
+    LAST_TS_WIFI_LEFT=0
+    LAST_TS_WIFI_JOINED=0
+    LAST_TS_IFACE_CHANGED=0
+    INTERVAL_DEFAULT=10
+    INTERVAL="$INTERVAL_DEFAULT"
+    SIGNAL_POLL_INTERVAL=5
+    NET_PROBE_INTERVAL=3
+    EVENT_DEBOUNCE_SEC=5
+    ROUTER_DEBUG=0
+    KITSUNROUTER_ENABLE=0
+    ROUTER_EXPERIMENTAL=0
+    ROUTER_OPENWRT_MODE=0
+    ROUTER_CACHE_TTL=3600
+    ROUTER_INFER_WIDTH=0
+    ROUTER_INFER_WIDTH_2G=0
+    WIFI_SPEED_THRESHOLD=75
+    DAEMON_CONFIG_INTERVAL_PROP=""
+    DAEMON_CONFIG_SIGNAL_POLL_PROP=""
+    DAEMON_CONFIG_NET_PROBE_PROP=""
+fi
+
 # Restore persistent link context counters/state before entering runtime loops.
 if command -v daemon_link_context_load >/dev/null 2>&1; then
     daemon_link_context_load
@@ -340,121 +238,17 @@ fi
 trap 'log_info "daemon stopped"; rm -f "$PID_FILE" 2>/dev/null; exit 0' TERM INT
 trap '_dev_reload_all; log_info "hot-reload complete (USR1)"' USR1
 
-# ============== Singleton Enforcement ==============
-## Ensure only one instance of the daemon is running 
-## On TERM or INT, log stop and remove pidfile
-## Usage: ensure_singleton
-## Ensure singleton instance of daemon 
-ensure_singleton() {
-    log_info "ensuring singleton daemon instance"
+# Bootstrap helpers and startup sequence are loaded by daemon_bootstrap.sh.
 
-    ## Create pidfile dir if not exists
-    if [ ! -d "${PID_FILE%/*}" ]; then
-        mkdir -p "${PID_FILE%/*}" 2>/dev/null || log_warning "could not create pidfile dir"
-    fi
+if command -v daemon_run_bootstrap_init >/dev/null 2>&1; then
+    daemon_run_bootstrap_init
+else
+    sleep 5
+fi
 
-    ## Check for existing pidfile
-    if [ -f "$PID_FILE" ]; then
-        ## Check if process is running
-        local old_pid 
-        ## Read old pid
-        old_pid=$(cat "$PID_FILE" 2>/dev/null)
-        # If pidfile already contains our own PID (e.g. pre-created by caller), continue.
-        if [ -n "$old_pid" ] && [ "$old_pid" = "$$" ]; then
-            log_debug "pidfile already set to our PID ($old_pid); continuing"
-            else
-            ## Check if process with old_pid is running
-            if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-                log_warning "daemon already running with PID $old_pid; exiting for no kill/duplicate main process"
-                exit 0
-            fi
-        fi
-        ## If not running, cleanup stale pidfile
-        rm -f "$PID_FILE" 2>/dev/null
-    fi
-    ## Write current pid to pidfile
-    echo "$$" > "$PID_FILE" 2>/dev/null || log_warning "could not write pidfile"
-}
-
-# ============== Command Checks ==============
-## Check for required commands and set global vars
-## Usage: check_and_detect_commands
-## Sets global vars: IP_BIN, PING_BIN, RESET_PROP_BIN
-check_and_detect_commands() {
-    # Only require what is truly mandatory for daemon logic.
-    # Do NOT require 'ip' in PATH because we can use the bundled addon ip.
-    check_core_commands awk || { log_error "Missing core commands"; exit 1; }
-    detect_ip_binary || { log_error "ip binary not found"; exit 1; }
-    detect_ping_binary "$MODDIR/addon/ping" || log_warning "ping binary not found; skipping ping-based checks"
-
-    if command_exists resetprop; then
-        RESET_PROP_BIN=$(command -v resetprop 2>/dev/null)
-        # log_debug "resetprop resolved to: $RESET_PROP_BIN"
-    else
-        log_warning "resetprop not found; executor may not apply props"
-    fi
-
-    detect_jq_binary
-    detect_bc_binary
-}
-
-preflight_check_caps() {
-    # Check once at startup which optional cmd wifi subcommands are available.
-    # Results cached in cache/preflight.state so profile_runner.sh can gate tweaks.
-    local caps_file cmd_wifi_low_latency=0 cmd_wifi_hi_perf=0
-    caps_file="$MODDIR/cache/preflight.state"
-    mkdir -p "$MODDIR/cache" 2>/dev/null || true
-
-    if command -v cmd >/dev/null 2>&1; then
-        _caps_out="$(cmd wifi 2>&1)"
-        printf '%s' "$_caps_out" | grep -q 'force-low-latency-mode' && cmd_wifi_low_latency=1
-        printf '%s' "$_caps_out" | grep -q 'force-hi-perf-mode'      && cmd_wifi_hi_perf=1
-    fi
-
-    printf 'cmd_wifi_low_latency=%s\ncmd_wifi_hi_perf=%s\n' \
-        "$cmd_wifi_low_latency" "$cmd_wifi_hi_perf" > "$caps_file" 2>/dev/null || true
-    log_info "preflight: cmd_wifi_low_latency=$cmd_wifi_low_latency cmd_wifi_hi_perf=$cmd_wifi_hi_perf"
-}
-
-apply_boot_custom_profile_once() {
-    local boot_profile_raw boot_profile policy_request_file policy_request_priority_file
-
-    boot_profile_raw="$(getprop persist.kitsunping.boot_profile | tr -d '\r\n')"
-    boot_profile="$(printf '%s' "$boot_profile_raw" | tr '[:upper:]' '[:lower:]')"
-
-    case "$boot_profile" in
-        stable|speed|gaming|benchmark_gaming|benchmark_speed) ;;
-        benchmark|benchmarks) boot_profile="benchmark_gaming" ;;
-        none|"") return 0 ;;
-        *)
-            log_warning "boot profile inválido: ${boot_profile_raw:-empty}"
-            return 0
-            ;;
-    esac
-
-    policy_request_file="$MODDIR/cache/policy.request"
-    policy_request_priority_file="$MODDIR/cache/policy.request.priority"
-
-    printf '%s' "$boot_profile" > "$policy_request_file" 2>/dev/null || true
-    printf '%s' "high" > "$policy_request_priority_file" 2>/dev/null || true
-
-    # L2.5: record boot profile timestamp so the Wi-Fi transport cycle respects
-    # WIFI_SWITCH_MIN_HOLD_SEC and does not immediately override the boot profile.
-    _boot_ts_file="$MODDIR/cache/policy.boot.ts"
-    printf '%s' "$(date +%s 2>/dev/null || echo 0)" > "$_boot_ts_file" 2>/dev/null || true
-
-    if command -v emit_event >/dev/null 2>&1; then
-        emit_event "$EV_REQUEST_PROFILE" "source=boot_custom_profile to=$boot_profile from=boot"
-    fi
-    log_info "boot custom profile aplicado: $boot_profile"
-}
-
-# Initial delay to allow system to stabilize
-sleep 5
-check_and_detect_commands
-preflight_check_caps
-ensure_singleton
-apply_boot_custom_profile_once
+interval_prop="$DAEMON_CONFIG_INTERVAL_PROP"
+signal_poll_prop="$DAEMON_CONFIG_SIGNAL_POLL_PROP"
+net_probe_prop="$DAEMON_CONFIG_NET_PROBE_PROP"
 
 # Fallback to env var if prop not set
 [ -z "$interval_prop" ] && interval_prop="$DAEMON_INTERVAL"
@@ -499,6 +293,19 @@ if [ "$INTERVAL" -gt "$EVENT_DEBOUNCE_SEC" ]; then
     EVENT_DEBOUNCE_SEC="$INTERVAL"
 fi
 
+if command -v daemon_adaptive_sampling_init >/dev/null 2>&1; then
+    daemon_adaptive_sampling_init
+else
+    ADAPTIVE_SAMPLING_ENABLE=0
+    ADAPTIVE_BASE_SEC=30
+    ADAPTIVE_DEGRADED_SEC=8
+    ADAPTIVE_BAD_STREAK=2
+    ADAPTIVE_GOOD_STREAK=3
+    DAEMON_SAMPLE_MODE="fixed"
+    DAEMON_SAMPLE_REASON="module_missing"
+    DAEMON_SAMPLE_INTERVAL_SEC="$INTERVAL"
+fi
+
 
 # Resolve Wi-Fi iface independently from current default route.
 # Using get_current_iface() here can point to rmnet* when mobile is active,
@@ -525,8 +332,16 @@ last_mobile_ip=0
 last_mobile_egress=0
 last_mobile_score=0
 
+# Preserve wifi transition continuity across daemon restarts.
+case "${link_last_wifi_state:-}" in
+    connected|disconnected|unknown)
+        last_wifi_state="$link_last_wifi_state"
+        ;;
+esac
+
 log_info "daemon start (DAEMON: monitor iface and wifi->mobile transitions)"
 log_info "kitsunrouter.enable=$KITSUNROUTER_ENABLE kitsunrouter.debug=$ROUTER_DEBUG"
+log_info "adaptive_sampling=$ADAPTIVE_SAMPLING_ENABLE base=${ADAPTIVE_BASE_SEC}s degraded=${ADAPTIVE_DEGRADED_SEC}s streak_bad=$ADAPTIVE_BAD_STREAK streak_good=$ADAPTIVE_GOOD_STREAK"
 
 loop_count=0
 signal_loop_count=0
@@ -572,8 +387,19 @@ else
 
         daemon_write_state_file
         
+        if command -v daemon_sampling_pick_interval >/dev/null 2>&1; then
+            interval_candidate="$(daemon_sampling_pick_interval "$INTERVAL")"
+        else
+            interval_candidate="$INTERVAL"
+        fi
+
         # Adjust sleep interval in safe_mode (degrade polling frequency)
-        INTERVAL_ADJUSTED="$(daemon_safe_mode_adjust_sleep "$INTERVAL")"
+        INTERVAL_ADJUSTED="$(daemon_safe_mode_adjust_sleep "$interval_candidate")"
+        if [ "$INTERVAL_ADJUSTED" != "${DAEMON_SAMPLE_LAST_LOGGED_INTERVAL:-}" ] || [ "$DAEMON_SAMPLE_MODE" != "${DAEMON_SAMPLE_LAST_LOGGED_MODE:-}" ]; then
+            log_info "sampling mode=$DAEMON_SAMPLE_MODE interval=${INTERVAL_ADJUSTED}s reason=${DAEMON_SAMPLE_REASON:-na}"
+            DAEMON_SAMPLE_LAST_LOGGED_INTERVAL="$INTERVAL_ADJUSTED"
+            DAEMON_SAMPLE_LAST_LOGGED_MODE="$DAEMON_SAMPLE_MODE"
+        fi
         sleep "$INTERVAL_ADJUSTED"
     done
 fi

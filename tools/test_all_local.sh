@@ -11,6 +11,10 @@ esac
 
 TOOLS_DIR=${SCRIPT_PATH%/*}
 REPO_DIR=${TOOLS_DIR%/*}
+TOOLS_LOG_DIR="$TOOLS_DIR/logs"
+
+mkdir -p "$TOOLS_LOG_DIR" 2>/dev/null || true
+export KITSUNPING_POSIX_REPORT_DIR="$TOOLS_LOG_DIR"
 
 cd "$REPO_DIR" || {
     echo "[FAIL] Cannot enter repo dir: $REPO_DIR" >&2

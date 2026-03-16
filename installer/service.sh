@@ -431,11 +431,16 @@ daemon_pid_is_running() {
 
 supervisor_pid_is_running() {
     local spid
+    local scmd
     spid="$(cat "$DAEMON_SUPERVISOR_PID_FILE" 2>/dev/null)"
     case "$spid" in
         ''|*[!0-9]*) return 1 ;;
     esac
     kill -0 "$spid" 2>/dev/null || return 1
+    [ -r "/proc/$spid/cmdline" ] || return 1
+    scmd="$(tr '\0' ' ' < "/proc/$spid/cmdline" 2>/dev/null)"
+    # Guard against PID reuse: only accept processes clearly related to the module supervisor.
+    printf '%s' "$scmd" | grep -Eq 'Kitsunping|service\.sh|/system/bin/sh|busybox' || return 1
     return 0
 }
 
@@ -472,7 +477,15 @@ start_daemon_supervisor() {
 }
 
 if [ -f "$DAEMON_SUPERVISOR_PID_FILE" ] && supervisor_pid_is_running; then
-    echo "[SYS][SERVICE] Daemon supervisor already running with PID $(cat "$DAEMON_SUPERVISOR_PID_FILE")" >> "$SERVICES_LOGS"
+    if daemon_pid_is_running; then
+        echo "[SYS][SERVICE] Daemon supervisor already running with PID $(cat "$DAEMON_SUPERVISOR_PID_FILE")" >> "$SERVICES_LOGS"
+    else
+        # Self-heal: stale/reused supervisor PID or broken loop with daemon down.
+        echo "[SYS][SERVICE][WARN] Supervisor PID exists but daemon is down; restarting supervisor" >> "$SERVICES_LOGS"
+        rm -f "$DAEMON_SUPERVISOR_PID_FILE" 2>/dev/null
+        rm -f "$DAEMON_PID_FILE" 2>/dev/null
+        start_daemon_supervisor || true
+    fi
 elif [ -f "$DAEMON_PID_FILE" ] && daemon_pid_is_running; then
     echo "[SYS][SERVICE] Daemon is already running with PID $(cat "$DAEMON_PID_FILE"); keeping current process" >> "$SERVICES_LOGS"
 else
@@ -484,5 +497,8 @@ fi
 
 
 set_selinux_enforce 1
+
+# Bootloader spoof is runtime-only (applied via Kitsune-Re app, resetprop -n in memory).
+# No boot-time props are set here to avoid bootloops on sensitive devices.
 
 exit 0

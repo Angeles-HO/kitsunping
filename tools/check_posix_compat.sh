@@ -33,7 +33,9 @@ if [ ! -d "$REPO_DIR" ]; then
     REPO_DIR="."
 fi
 
-REPORT_DIR="$REPO_DIR/logs"
+# Allow callers (e.g., tools/test_all_local.sh) to redirect reports.
+# Default remains repo-level logs/ for backward compatibility.
+REPORT_DIR="${KITSUNPING_POSIX_REPORT_DIR:-$REPO_DIR/logs}"
 mkdir -p "$REPORT_DIR" 2>/dev/null || true
 
 TS=$(date +%Y%m%d_%H%M%S 2>/dev/null || echo "unknown_time")

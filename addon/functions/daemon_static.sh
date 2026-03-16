@@ -15,15 +15,26 @@ command -v atomic_write >/dev/null 2>&1 || atomic_write() {
     [ -n "$target_dir" ] || target_dir="."
     mkdir -p "$target_dir" 2>/dev/null || return 1
 
-    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || \
-        tmp="${target}.$$.$(date +%s).tmp"
+    tmp=$(mktemp "$target_dir/.atomic_write.XXXXXX" 2>/dev/null) || \
+        tmp="$target_dir/.atomic_write.$$.$(date +%s).tmp"
 
-    if cat - > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
-    else
+    if ! cat - > "$tmp" 2>/dev/null; then
         rm -f "$tmp"
         return 1
     fi
+
+    if mv -f "$tmp" "$target" 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback: overwrite in place when rename is blocked by FS constraints.
+    if cat "$tmp" > "$target" 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null || true
+        return 0
+    fi
+
+    rm -f "$tmp" 2>/dev/null || true
+    return 1
 }
 
 command -v now_epoch >/dev/null 2>&1 || now_epoch() {

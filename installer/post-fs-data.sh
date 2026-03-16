@@ -66,8 +66,8 @@ fi
 # Detectar chipset; solo ejecutar ajustes Qualcomm (WCNSS) si es Qualcomm
 CHIPSET=$(getprop ro.board.platform | tr '[:upper:]' '[:lower:]')
 
-# Set permissions
-set_permissions_module "$MODDIR" "" 0
+# Set permissions and capture writability diagnostics in post-fs-data log
+set_permissions_module "$MODDIR" "$SERVICES_LOGS" 0
 
 # SELinux 
 # permissive 0 

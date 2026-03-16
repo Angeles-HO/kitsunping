@@ -15,8 +15,20 @@ LOGDIR="$NVBASE/logs"
 umask "$UMASK"
 
 # --- Small helpers ---
-ui_print() { echo "$@"; }
-log_line() { [ -n "$LOGFILE" ] && echo "$1" | tee -a "$LOGFILE" || echo "$1"; }
+ui_print() {
+  if [ -n "${OUTFD:-}" ] && [ -e "/proc/self/fd/$OUTFD" ]; then
+    echo "ui_print $*" > "/proc/self/fd/$OUTFD"
+    echo "ui_print" > "/proc/self/fd/$OUTFD"
+  else
+    echo "$*"
+  fi
+}
+
+log_line() {
+  msg="$1"
+  ui_print "$msg"
+  [ -n "${LOGFILE:-}" ] && echo "$msg" >> "$LOGFILE"
+}
 
 copy_boot_script() {
   local name="$1"

@@ -321,10 +321,12 @@ network__app__runtime_export() {
     local now_ts interval last_ts elapsed out_file tmp_file
     local paired_flag router_id router_ip
     local profile_current profile_target target_state target_state_reason
+    local profile_selector profile_mismatch
     local tel_changes_hour tel_tweak_restores tel_op_errors
     local kpi_rollbacks_hour kpi_mean_apply_ms _kpi_file
     local wifi_score_v wifi_state_v transport_v profile_v
     local daemon_pid uptime_s boot_id
+    local link_vendor_oui_v link_route_changes_v link_roaming_count_v link_flap_count_v
 
     # ---- rate-limit ----
     interval="${RUNTIME_EXPORT_INTERVAL_SEC:-60}"
@@ -365,7 +367,19 @@ network__app__runtime_export() {
     wifi_state_v="$(cat "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="wifi.state"{print $2}' | tail -n1 || echo "")"
     transport_v="$(cat  "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="transport"{print $2}'  | tail -n1 || echo "")"
     profile_v="$(cat    "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="profile"{print $2}'    | tail -n1 || echo "")"
+    link_vendor_oui_v="$(cat "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="link.vendor_oui"{print $2}' | tail -n1 || echo "")"
+    link_route_changes_v="$(cat "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="link.route_changes"{print $2}' | tail -n1 || echo 0)"
+    link_roaming_count_v="$(cat "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="link.roaming_count"{print $2}' | tail -n1 || echo 0)"
+    link_flap_count_v="$(cat "$MODDIR/cache/daemon.state" 2>/dev/null | awk -F= '$1=="link.flap_count"{print $2}' | tail -n1 || echo 0)"
+    profile_selector="$profile_v"
+    profile_mismatch=0
+    if [ -n "$profile_selector" ] && [ -n "$profile_current" ] && [ "$profile_selector" != "$profile_current" ]; then
+        profile_mismatch=1
+    fi
     case "$wifi_score_v"  in ''|*[!0-9]*) wifi_score_v=0 ;; esac
+    case "$link_route_changes_v" in ''|*[!0-9]*) link_route_changes_v=0 ;; esac
+    case "$link_roaming_count_v" in ''|*[!0-9]*) link_roaming_count_v=0 ;; esac
+    case "$link_flap_count_v" in ''|*[!0-9]*) link_flap_count_v=0 ;; esac
 
     # telemetry counters
     tel_tweak_restores="$(network__app__telemetry_counter_read "tweak_restores")"
@@ -390,7 +404,7 @@ network__app__runtime_export() {
 
     # ---- write ----
     tmp_file="${out_file}.tmp.$$"
-    printf '%s' "{\"ts\":$now_ts,\"uptime_s\":$uptime_s,\"boot_id\":\"${boot_id}\",\"daemon_pid\":$daemon_pid,\"transport\":\"${transport_v:-unknown}\",\"wifi\":{\"state\":\"${wifi_state_v:-unknown}\",\"score\":$wifi_score_v},\"profile\":{\"current\":\"${profile_current:-unknown}\",\"target\":\"${profile_target:-unknown}\",\"daemon\":\"${profile_v:-unknown}\"},\"target_state\":{\"state\":\"${target_state}\",\"reason\":\"${target_state_reason}\"},\"pairing\":{\"paired\":${paired_flag:-0},\"router_id\":\"${router_id:-}\",\"router_ip\":\"${router_ip:-}\"},\"telemetry\":{\"changes_hour\":$tel_changes_hour,\"rollbacks_hour\":$kpi_rollbacks_hour,\"mean_apply_ms\":$kpi_mean_apply_ms,\"tweak_restores\":$tel_tweak_restores,\"op_errors\":$tel_op_errors}}" > "$tmp_file" 2>/dev/null
+    printf '%s' "{\"ts\":$now_ts,\"uptime_s\":$uptime_s,\"boot_id\":\"${boot_id}\",\"daemon_pid\":$daemon_pid,\"transport\":\"${transport_v:-unknown}\",\"wifi\":{\"state\":\"${wifi_state_v:-unknown}\",\"score\":$wifi_score_v},\"profile\":{\"current\":\"${profile_current:-unknown}\",\"target\":\"${profile_target:-unknown}\",\"selector\":\"${profile_selector:-unknown}\",\"daemon\":\"${profile_v:-unknown}\",\"mismatch\":$profile_mismatch},\"target_state\":{\"state\":\"${target_state}\",\"reason\":\"${target_state_reason}\"},\"pairing\":{\"paired\":${paired_flag:-0},\"router_id\":\"${router_id:-}\",\"router_ip\":\"${router_ip:-}\"},\"link\":{\"vendor_oui\":\"${link_vendor_oui_v:-}\",\"route_changes\":$link_route_changes_v,\"roaming_count\":$link_roaming_count_v,\"flap_count\":$link_flap_count_v},\"telemetry\":{\"changes_hour\":$tel_changes_hour,\"rollbacks_hour\":$kpi_rollbacks_hour,\"mean_apply_ms\":$kpi_mean_apply_ms,\"tweak_restores\":$tel_tweak_restores,\"op_errors\":$tel_op_errors}}" > "$tmp_file" 2>/dev/null
     if [ -s "$tmp_file" ]; then
         mv "$tmp_file" "$out_file" 2>/dev/null || { rm -f "$tmp_file" 2>/dev/null; return 1; }
         printf '%s' "$now_ts" > "${out_file}.ts" 2>/dev/null || true

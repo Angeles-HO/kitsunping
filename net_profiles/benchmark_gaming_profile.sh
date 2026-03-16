@@ -34,6 +34,8 @@ apply_param_set <<'EOF'
 131072 262144 524288|/proc/sys/net/ipv4/tcp_mem|tcp_mem ultra latency cap
 cubic|/proc/sys/net/ipv4/tcp_congestion_control|CUBIC for stable minimum RTT
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|no_metrics_save enabled
+3|/proc/sys/net/ipv4/tcp_fastopen|fastopen enabled for minimum handshake latency
+0|/proc/sys/net/ipv4/tcp_slow_start_after_idle|disabled to keep cwnd hot
 2|/proc/sys/net/ipv4/tcp_retries1|retries1 reduced hard
 4|/proc/sys/net/ipv4/tcp_retries2|retries2 reduced aggressively
 65536|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes=64KiB to suppress queueing

@@ -24,40 +24,56 @@ set_log_level() {
   esac
 }
 
+emit_line() {
+  if command -v ui_print >/dev/null 2>&1; then
+    ui_print "$1"
+  else
+    echo "$1"
+  fi
+}
+
 # Funciones de logging
 log_error() {
   if [ $LOG_LEVEL -ge 0 ]; then
-    echo -e "[$ERROR] $1" >&2
+    if command -v ui_print >/dev/null 2>&1; then
+      ui_print "[$ERROR] $1"
+    else
+      echo "[$ERROR] $1" >&2
+    fi
   fi
 }
 
 log_warning() {
   if [ $LOG_LEVEL -ge 1 ]; then
-    echo -e "[$WARNING] $1" >&2
+    if command -v ui_print >/dev/null 2>&1; then
+      ui_print "[$WARNING] $1"
+    else
+      echo "[$WARNING] $1" >&2
+    fi
   fi
 }
 
 log_info() {
   if [ $LOG_LEVEL -ge 2 ]; then
-    echo -e "[$INFO] $1"
+    emit_line "[$INFO] $1"
   fi
 }
 
 log_debug() {
   if [ $LOG_LEVEL -ge 2 ]; then
-    echo -e "[$DEBUG] $1"
+    emit_line "[$DEBUG] $1"
   fi
 }
 
 log_daemon() {
   if [ $LOG_LEVEL -ge 2 ]; then
-    echo -e "[DAEMON][$INFO] $1"
+    emit_line "[DAEMON][$INFO] $1"
   fi
 }
 
 log_policy() {
   if [ $LOG_LEVEL -ge 2 ]; then
-    echo -e "[POLICY][$INFO] $1"
+    emit_line "[POLICY][$INFO] $1"
   fi
 }
 

@@ -152,12 +152,8 @@ log_info "  [Vol+] Fixed mode"
 log_info "  [Vol-] Automatic mode (~4 mins)"
 log_info "  [None] Automatic mode (~4 mins)"
 
-## If no key is pressed, default to automatic mode
-## if Vol + is pressed, fixed mode
-## if Vol - is pressed, automatic mode
-if $VKSEL 60; then
+apply_fixed_mode() {
     echo "=============================="
-    MODE_SELECTION=0
     log_info "Fixed mode selected"
 
     # Fixed values
@@ -169,8 +165,48 @@ if $VKSEL 60; then
     # Apply changes to system.prop
     cat "$NEWMODPATH/configs/kitsuneping_static.conf" >> "$NEWMODPATH/system.prop"
     echo "=============================="
-else
+}
+
+requested_mode_raw="${INSTALL_MODE:-}"
+requested_mode=""
+if [ -n "$requested_mode_raw" ]; then
+    requested_mode_lower=$(echo "$requested_mode_raw" | tr '[:upper:]' '[:lower:]')
+    case "$requested_mode_lower" in
+        fixed|fijo|0)
+            requested_mode="fixed"
+            ;;
+        auto|automatic|automatico|1)
+            requested_mode="auto"
+            ;;
+        *)
+            log_warning "Unknown INSTALL_MODE='$requested_mode_raw'; falling back to VKSEL"
+            ;;
+    esac
+fi
+
+## If no key is pressed, default to automatic mode
+## if Vol + is pressed, fixed mode
+## if Vol - is pressed, automatic mode
+if [ "$requested_mode" = "fixed" ]; then
+    MODE_SELECTION=0
+    log_info "INSTALL_MODE requested fixed mode"
+    apply_fixed_mode
+elif [ "$requested_mode" = "auto" ]; then
     MODE_SELECTION=1
+    log_info "INSTALL_MODE requested automatic mode"
+else
+    vksel_timeout="${INSTALL_VK_TIMEOUT:-$(getprop persist.kitsunping.install_vk_timeout 2>/dev/null | tr -d '\r\n')}"
+    vksel_timeout="$(uint_or_default "$vksel_timeout" "20")"
+    [ "$vksel_timeout" -lt 5 ] && vksel_timeout=5
+    [ "$vksel_timeout" -gt 60 ] && vksel_timeout=60
+    log_info "Waiting ${vksel_timeout}s for key selection (INSTALL_VK_TIMEOUT / persist.kitsunping.install_vk_timeout)"
+
+    if $VKSEL "$vksel_timeout"; then
+        MODE_SELECTION=0
+        apply_fixed_mode
+    else
+        MODE_SELECTION=1
+    fi
 fi
 
 
@@ -194,9 +230,46 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     trace_tmp_err="$NEWMODPATH/logs/calibration.stderr.log"
     : > "$trace_tmp_err"
 
-    calibrate_network_settings 10 2>"$trace_tmp_err" \
-        | grep -E '^BEST_[A-Za-z0-9_]+=' \
-        | tee "$NEWMODPATH/logs/results.env"
+    calibrate_start_ts="$(date +%s 2>/dev/null || echo 0)"
+    log_info "Calibration stage started at ts=$calibrate_start_ts"
+
+    progress_state_file="$NEWMODPATH/cache/calibrate.progress"
+    calibrate_stdout_file="$NEWMODPATH/logs/calibration.stdout.log"
+    : > "$calibrate_stdout_file"
+    rm -f "$progress_state_file" 2>/dev/null || true
+
+    # Run calibration in background and stream coarse stage updates from a separate state file.
+    calibrate_network_settings 10 >"$calibrate_stdout_file" 2>"$trace_tmp_err" &
+    calibrate_pid=$!
+
+    last_progress_signature=""
+    while kill -0 "$calibrate_pid" 2>/dev/null; do
+        if [ -f "$progress_state_file" ]; then
+            progress_pct=$(awk -F= '$1=="pct"{print $2; exit}' "$progress_state_file" 2>/dev/null)
+            progress_stage=$(awk -F= '$1=="stage"{print $2; exit}' "$progress_state_file" 2>/dev/null)
+            progress_msg=$(awk -F= '$1=="msg"{sub(/^[^=]*=/, ""); print; exit}' "$progress_state_file" 2>/dev/null)
+            progress_signature="${progress_pct}|${progress_stage}|${progress_msg}"
+            if [ -n "$progress_signature" ] && [ "$progress_signature" != "$last_progress_signature" ]; then
+                log_info "Calibration progress [${progress_pct:-0}%][${progress_stage:-unknown}] ${progress_msg:-working}"
+                last_progress_signature="$progress_signature"
+            fi
+        fi
+        sleep 2
+    done
+
+    wait "$calibrate_pid"
+    calibrate_rc=$?
+
+    grep -E '^BEST_[A-Za-z0-9_]+=' "$calibrate_stdout_file" | tee "$NEWMODPATH/logs/results.env"
+    if [ "$calibrate_rc" -ne 0 ]; then
+        log_warning "Calibration process exited with code $calibrate_rc"
+    fi
+
+    calibrate_end_ts="$(date +%s 2>/dev/null || echo 0)"
+    if [ "$calibrate_start_ts" -gt 0 ] 2>/dev/null && [ "$calibrate_end_ts" -ge "$calibrate_start_ts" ] 2>/dev/null; then
+        calibrate_elapsed="$((calibrate_end_ts - calibrate_start_ts))"
+        log_info "Calibration stage completed in ${calibrate_elapsed}s"
+    fi
 
     if [ -s "$trace_tmp_err" ]; then
         cat "$trace_tmp_err" >&2
