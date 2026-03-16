@@ -228,6 +228,29 @@ if command -v daemon_init_safe_mode >/dev/null 2>&1; then
     daemon_safe_mode_log_status
 fi
 
+# Run conflict detection at startup (non-blocking).
+_conflict_script="$MODDIR/tools/detect_module_conflicts.sh"
+if [ -f "$_conflict_script" ]; then
+    ( . "$_conflict_script" ) >> "$LOG_FILE" 2>&1 || true
+    _cs_file="$MODDIR/cache/conflicts.state"
+    if [ -f "$_cs_file" ]; then
+        _cs_risk="$(awk -F= '/^highest_risk=/{print $2}' "$_cs_file" 2>/dev/null)"
+        case "$_cs_risk" in
+            high)
+                printf '[DAEMON][WARN] High-risk module conflicts detected; see logs/conflicts_report.log\n' >> "$LOG_FILE" 2>/dev/null || true
+                if command -v daemon_set_module_status >/dev/null 2>&1 && ! daemon_is_safe_mode; then
+                    daemon_set_module_status "conflict_detected"
+                fi
+                ;;
+            medium)
+                printf '[DAEMON][INFO] Medium-risk module overlaps detected; see logs/conflicts_report.log\n' >> "$LOG_FILE" 2>/dev/null || true
+                ;;
+        esac
+    fi
+    unset _cs_file _cs_risk
+fi
+unset _conflict_script
+
 # Prepend bundled binary directories once helpers are loaded.
 if command -v export_kitsunping_bin_path >/dev/null 2>&1; then
     export_kitsunping_bin_path

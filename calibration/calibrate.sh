@@ -684,14 +684,33 @@ calibrate_network_settings() {
         calibrate_progress_update 28 "bootstrap" "connectivity verified"
     fi
 
-    local index=1 total_primary current_pct
+    local index=1 total_calibrate count_primary count_secondary current_pct
+    local run_secondary=0 has_sim=0
     export TEST_IP
 
-    total_primary=$(printf '%s\n' $NET_PROPERTIES_KEYS | wc -l | tr -d ' ')
-    [ -z "$total_primary" ] && total_primary=1
-    [ "$total_primary" -lt 1 ] && total_primary=1
+    # Early SIM + transport detection for progress scaling and secondary decision.
+    sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$sim_iso" ] && sim_iso="$(network_hints_iso_country)"
+    [ -n "$sim_iso" ] && has_sim=1
 
-    log_info "Starting calibration for $TEST_IP" >> "$trace_log"
+    # Decide if secondary (LTE/LTEA/5G) calibration will run.
+    # WiFi+SIM: calibrate via WiFi as baseline; daemon recalibrates on mobile later.
+    # WiFi-only (no SIM): apply safe defaults (no cellular network available).
+    # Mobile: full calibration (optimal accuracy).
+    case "$active_iface" in
+        rmnet*|RMNET*) run_secondary=1 ;;
+        wlan*|WLAN*)   [ "$has_sim" -eq 1 ] && run_secondary=1 ;;
+        *)             [ "$has_sim" -eq 1 ] && run_secondary=1 ;;
+    esac
+
+    count_primary=$(printf '%s' "$NET_PROPERTIES_KEYS" | wc -w | tr -d ' ')
+    [ -z "$count_primary" ] || [ "$count_primary" -lt 1 ] && count_primary=1
+    count_secondary=0
+    [ "$run_secondary" -eq 1 ] && count_secondary=$(printf '%s' "$NET_OTHERS_PROPERTIES_KEYS" | wc -w | tr -d ' ')
+    total_calibrate=$((count_primary + count_secondary))
+    [ "$total_calibrate" -lt 1 ] && total_calibrate=1
+
+    log_info "Starting calibration for $TEST_IP (primary=$count_primary secondary=$count_secondary total=$total_calibrate run_secondary=$run_secondary has_sim=$has_sim)" >> "$trace_log"
     for prop in $NET_PROPERTIES_KEYS; do
         case "$prop" in
             "ro.ril.hsupa.category")
@@ -708,7 +727,7 @@ calibrate_network_settings() {
             log_info "Empty value set for $prop" >> "$trace_log"
             continue
         fi
-        current_pct=$(awk -v idx="$index" -v total="$total_primary" 'BEGIN{v=30 + int((idx-1)*45/total); if(v<30)v=30; if(v>75)v=75; print v}')
+        current_pct=$(awk -v idx="$index" -v total="$total_calibrate" 'BEGIN{v=30 + int((idx-1)*60/total); if(v<30)v=30; if(v>90)v=90; print v}')
         calibrate_progress_update "$current_pct" "primary" "calibrating $prop"
         log_info "====================== calibrate_network_settings =========================" >> "$trace_log"
         log_info "Calibrating properties: prop: [$prop] val: [$vals] delay: [$delay] at [${CACHE_DIR_cln}/$prop.best]" >> "$trace_log"
@@ -725,30 +744,46 @@ calibrate_network_settings() {
         export "BEST_${prop//./_}=$best_val"
     done
 
-    # Use active default-route interface to avoid cross-transport bias.
-    local current_iface
-    current_iface="$active_iface"
-    [ -z "$current_iface" ] && current_iface="unknown"
+    # Secondary calibration decision (pre-computed: run_secondary, has_sim).
+    # Progress for secondary continues where primary ended.
+    local secondary_pct_base secondary_pct_range
+    secondary_pct_base=$(awk -v n="$count_primary" -v total="$total_calibrate" 'BEGIN{v=30 + int(n*60/total); if(v>90)v=90; print v}')
+    secondary_pct_range=$((90 - secondary_pct_base))
 
-    sim_iso=$(getprop gsm.sim.operator.iso-country 2>/dev/null | tr '[:upper:]' '[:lower:]')
-    [ -z "$sim_iso" ] && sim_iso="$(network_hints_iso_country)"
+    if [ "$run_secondary" -eq 1 ]; then
+        local secondary_label="mobile extended"
+        case "$active_iface" in
+            wlan*|WLAN*)
+                secondary_label="wifi+SIM baseline"
+                log_info "WiFi+SIM mode: calibrating LTE/LTEA/5G via WiFi as baseline [detail:${active_iface}]" >> "$trace_log"
+                ;;
+            rmnet*|RMNET*)
+                log_info "Mobile/data mode: extended calibration [detail:${active_iface}]" >> "$trace_log"
+                ;;
+            *)
+                secondary_label="best-effort"
+                log_info "Unknown iface+SIM: calibrating LTE/LTEA/5G best-effort [detail:${active_iface:-unknown}]" >> "$trace_log"
+                ;;
+        esac
+        calibrate_progress_update "$secondary_pct_base" "secondary" "running $secondary_label calibration"
+        calibrate_secondary_network_settings "$delay" "$CACHE_DIR_cln" "$secondary_pct_base" "$secondary_pct_range"
 
-
-    # Decide calibration path based on active transport.
-    # IMPORTANT: avoid calibrating mobile (RIL LTE/LTEA/NR) with Wi-Fi-biased metrics.
-    if echo "$current_iface" | grep -qi '^rmnet'; then
-        calibrate_progress_update 80 "secondary" "running mobile extended calibration"
-        log_info "Mobile/data mode: extended calibration [detail:${current_iface}]" >> "$trace_log"
-        calibrate_secondary_network_settings $delay "$CACHE_DIR_cln"
-    elif echo "$current_iface" | grep -qi '^wlan' && [ -z "$sim_iso" ]; then
-        calibrate_progress_update 86 "secondary" "wifi-only mode: skipping mobile extension"
-        log_info "Wi-Fi mode: calibrating only HSUPA/HSDPA [detail:${current_iface}]" >> "$trace_log"
-    elif echo "$current_iface" | grep -qi '^wlan' && [ -n "$sim_iso" ]; then
-        calibrate_progress_update 86 "secondary" "wifi with SIM: skipping mobile extension"
-        log_info "Wi-Fi mode with SIM detected ($sim_iso): calibrating only HSUPA/HSDPA to avoid mobile mis-tuning [detail:${current_iface}]" >> "$trace_log"
+        # If calibrated via WiFi, mark for daemon recalibration when transport switches to mobile.
+        case "$active_iface" in
+            wlan*|WLAN*)
+                printf '%s\n' "$(date +%s 2>/dev/null || echo 0)" | atomic_write "$CACHE_DIR_cln/calibrate.mobile_pending"
+                log_info "Marked mobile recalibration pending (calibrated LTE/LTEA/5G via WiFi)" >> "$trace_log"
+                ;;
+        esac
     else
-        calibrate_progress_update 86 "secondary" "unknown iface: mobile extension skipped"
-        log_info "Unknown/non-rmnet iface: skipping mobile extended calibration to avoid cross-transport bias [detail:${current_iface}]" >> "$trace_log"
+        calibrate_progress_update 90 "secondary" "wifi-only: applying safe mobile defaults"
+        log_info "WiFi-only (no SIM): applying safe defaults for LTE/LTEA/5G [detail:${active_iface:-unknown}]" >> "$trace_log"
+        BEST_ro_ril_lte_category="${BEST_ro_ril_lte_category:-12}"
+        BEST_ro_ril_ltea_category="${BEST_ro_ril_ltea_category:-15}"
+        BEST_ro_ril_nr5g_category="${BEST_ro_ril_nr5g_category:-2}"
+        printf '%s\n' "$BEST_ro_ril_lte_category" | atomic_write "$CACHE_DIR_cln/ro.ril.lte.category.best"
+        printf '%s\n' "$BEST_ro_ril_ltea_category" | atomic_write "$CACHE_DIR_cln/ro.ril.ltea.category.best"
+        printf '%s\n' "$BEST_ro_ril_nr5g_category" | atomic_write "$CACHE_DIR_cln/ro.ril.nr5g.category.best"
     fi
 
     echo "cooling" | atomic_write "$CALIBRATE_STATE_RUN"
@@ -1198,9 +1233,15 @@ EOF
 calibrate_secondary_network_settings() {
     local delay="$1"
     local cache_dir="$2"
+    local pct_base="${3:-80}"
+    local pct_range="${4:-10}"
     local prop vals best_file best_val exp_name
+    local sec_index=0 sec_total sec_pct
 
     log_info "====================== calibrate_secondary_network_settings =========================" >> "$trace_log"
+
+    sec_total=$(printf '%s' "$NET_OTHERS_PROPERTIES_KEYS" | wc -w | tr -d ' ')
+    [ -z "$sec_total" ] || [ "$sec_total" -lt 1 ] && sec_total=1
 
     for prop in $NET_OTHERS_PROPERTIES_KEYS; do
         case "$prop" in
@@ -1217,8 +1258,12 @@ calibrate_secondary_network_settings() {
                 vals="9" # Default fallback value
                 ;;
         esac
+        sec_pct=$(awk -v base="$pct_base" -v idx="$sec_index" -v total="$sec_total" -v range="$pct_range" \
+            'BEGIN{v=base + int(idx*range/total); if(v<30)v=30; if(v>90)v=90; print v}')
+        calibrate_progress_update "$sec_pct" "secondary" "calibrating $prop"
         log_info "Calibrating $prop with values: $vals" >> "$trace_log"
         calibrate_property "$prop" "$vals" "$delay" "$cache_dir/$prop.best"
+        sec_index=$((sec_index + 1))
     done
 
     # Export results

@@ -129,6 +129,10 @@ daemon_init_safe_mode() {
             printf '[FAILSAFE][WARN] Validation failed (%s/2). Delaying SAFE_MODE to avoid false positives and attempting auto-heal.\n' "$failure_count" >> "$LOG_FILE" 2>/dev/null || true
             daemon_attempt_state_self_heal || true
             rm -f "$MODDIR/cache/daemon.safe_mode" 2>/dev/null || true
+            # Update description even on delayed safe-mode so module.prop is never stale.
+            if command -v daemon_set_module_status >/dev/null 2>&1; then
+                daemon_set_module_status "startup"
+            fi
             return 1
         fi
 
@@ -438,28 +442,28 @@ daemon_get_status_details() {
     
     case "$status_type" in
         ok)
-            printf '%s' "Status: OK - Low latency and improved stability across WiFi 2.4G/5G, TCP, LTE/LTE-A, and PPC"
+            printf '%s' "WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC"
             ;;
         safe_mode)
-            printf '%s' "Status: Safe Mode - State corruption detected, degraded operation enabled"
+            printf '%s' "Safe Mode - State corruption detected, degraded operation"
             ;;
         broken_environment)
-            printf '%s' "Status: Broken Environment - Critical error, module disabled for safety"
+            printf '%s' "Critical error - module disabled for safety"
             ;;
         conflict_detected)
-            printf '%s' "Status: Conflict - Other modules interfering with network paths"
+            printf '%s' "Conflict - Other modules interfering with network paths"
             ;;
         recovering)
-            printf '%s' "Status: Recovering - Rescue in progress, please wait..."
+            printf '%s' "Recovering - Rescue in progress, please wait..."
             ;;
         recovery_complete)
-            printf '%s' "Status: Recovery Complete - State reset, daemon restarting"
+            printf '%s' "Recovery Complete - State reset, daemon restarting"
             ;;
         startup)
-            printf '%s' "Status: Starting - Initializing daemon..."
+            printf '%s' "Starting - Initializing daemon..."
             ;;
         *)
-            printf '%s' "Status: Unknown"
+            printf '%s' "Unknown status"
             return 1
             ;;
     esac
@@ -527,6 +531,11 @@ daemon_module_prop_set_field() {
     }
 
     mv "$tmp_file" "$file_path" 2>/dev/null || {
+        # SELinux may block mv across contexts; fallback to in-place write.
+        if cat "$tmp_file" > "$file_path" 2>/dev/null; then
+            rm -f "$tmp_file" 2>/dev/null || true
+            return 0
+        fi
         rm -f "$tmp_file" 2>/dev/null || true
         return 1
     }
@@ -557,17 +566,23 @@ daemon_update_module_description() {
     fi
     
     # Keep module.prop single-line fields; strip CR/LF from dynamic payloads.
-    local desc_safe details_safe
-    desc_safe="$(printf '%s' "$desc" | tr '\r\n' '  ')"
-    details_safe="$(printf '%s' "$details" | tr '\r\n' '  ')"
+    # Magisk Manager only shows: name, version, author, description.
+    # Merge details into description so everything is visible in one line.
+    local full_desc
+    if [ -n "$details" ] && [ "$status_type" != "ok" ]; then
+        full_desc="$(printf '%s | %s' "$desc" "$details" | tr '\r\n' '  ')"
+    else
+        full_desc="$(printf '%s' "$desc" | tr '\r\n' '  ')"
+    fi
 
-    if ! daemon_module_prop_set_field "$module_prop" "description" "$desc_safe"; then
+    if ! daemon_module_prop_set_field "$module_prop" "description" "$full_desc"; then
         printf '[FAILSAFE][WARN] Could not update description in module.prop (check permissions): %s\n' "$module_prop" >> "$LOG_FILE" 2>/dev/null || true
     fi
-    if [ -n "$details_safe" ]; then
-        if ! daemon_module_prop_set_field "$module_prop" "help" "$details_safe"; then
-            printf '[FAILSAFE][WARN] Could not update help in module.prop (check permissions): %s\n' "$module_prop" >> "$LOG_FILE" 2>/dev/null || true
-        fi
+
+    # Ensure module.prop keeps correct permissions and SELinux context after write.
+    chmod 0644 "$module_prop" 2>/dev/null || true
+    if command -v restorecon >/dev/null 2>&1; then
+        restorecon "$module_prop" 2>/dev/null || true
     fi
     
     printf '[FAILSAFE] Updated module.prop status: %s\n' "$status_type" >> "$LOG_FILE" 2>/dev/null || true
