@@ -215,6 +215,9 @@ CACHE_DIR_cln="$NEWMODPATH/cache"
 data_dir="$NEWMODPATH/calibration/data"
 fallback_json="$data_dir/unknown.json"
 cache_dir="$data_dir/cache"
+ml_cache_dir="$CACHE_DIR_cln/ml"
+ml_features_file="$ml_cache_dir/calibration_features.jsonl"
+ml_last_file="$ml_cache_dir/last_calibration_feature.json"
 
 ## Cache for states
 CALIBRATE_STATE_RUN="$NEWMODPATH/cache/calibrate.state"
@@ -227,7 +230,117 @@ CALIBRATE_CACHE_ENV="$NEWMODPATH/cache/calibrate.best.env"
 CALIBRATE_CACHE_META="$NEWMODPATH/cache/calibrate.best.meta"
 
 # Defensive: installation zips may omit empty directories, so create cache/log paths explicitly.
-mkdir -p "$CACHE_DIR_cln" "${NETMETER_FILE%/*}" "$cache_dir" 2>/dev/null || true
+mkdir -p "$CACHE_DIR_cln" "${NETMETER_FILE%/*}" "$cache_dir" "$ml_cache_dir" 2>/dev/null || true
+
+json_escape() {
+    # Minimal JSON string escaping for shell-generated payloads.
+    printf '%s' "$1" \
+        | sed 's/\\/\\\\/g; s/"/\\"/g; s/'"$'\r'"'/\\r/g; s/'"$'\n'"'/\\n/g; s/'"$'\t'"'/\\t/g'
+}
+
+num_or_null() {
+    case "$1" in
+        ''|*[!0-9.-]*|*.*.*|-|-.*-*) printf 'null' ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+calibrate_get_wifi_rssi_dbm() {
+    local rssi
+    rssi="$(dumpsys wifi 2>/dev/null | awk -F'RSSI: ' '/RSSI:/{split($2,a,",|[ ]"); print a[1]; exit}')"
+    case "$rssi" in
+        ''|*[!0-9-]*) printf '' ;;
+        *) printf '%s' "$rssi" ;;
+    esac
+}
+
+calibrate_get_radio_network_type() {
+    local nt
+    nt="$(getprop gsm.network.type 2>/dev/null | tr -d '\r\n')"
+    [ -z "$nt" ] && nt="$(getprop ril.data.network.type 2>/dev/null | tr -d '\r\n')"
+    [ -z "$nt" ] && nt="unknown"
+    printf '%s' "$nt"
+}
+
+calibrate_apply_best_runtime_values() {
+    local p v
+    for p in $NET_PROPERTIES_KEYS $NET_OTHERS_PROPERTIES_KEYS; do
+        eval "v=\${BEST_${p//./_}:-}"
+        case "$v" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        resetprop "$p" "$v" >/dev/null 2>&1 || true
+    done
+}
+
+calibrate_ml_feature_log_enabled() {
+    # OFF by default to keep release behavior unchanged unless explicitly enabled.
+    # Enable with env KITSUNPING_ML_FEATURE_LOG=1 or property persist.kitsunping.ml_feature_log_enable=1
+    local raw
+    raw="${KITSUNPING_ML_FEATURE_LOG:-$(getprop persist.kitsunping.ml_feature_log_enable 2>/dev/null | tr -d '\r\n')}"
+    [ -z "$raw" ] && raw=0
+    case "$raw" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    esac
+    return 1
+}
+
+calibrate_ml_append_feature() {
+    local provider="$1" transport="$2" iface="$3" target="$4" source="$5"
+    local baseline_metrics="$6" baseline_score="$7"
+    local final_metrics="$8" final_score="$9"
+    local success_flag="${10}" ping_improve_ms="${11}" score_delta="${12}"
+
+    local b_ping b_jitter b_loss b_p90 b_p99
+    local f_ping f_jitter f_loss f_p90 f_p99
+    local ts hour wifi_rssi radio_type
+    local bj bs fj fs
+    local line payload
+
+    b_ping="$(printf '%s' "$baseline_metrics" | awk '{print $1}')"
+    b_jitter="$(printf '%s' "$baseline_metrics" | awk '{print $2}')"
+    b_loss="$(printf '%s' "$baseline_metrics" | awk '{print $3}')"
+    b_p90="$(printf '%s' "$baseline_metrics" | awk '{print $4}')"
+    b_p99="$(printf '%s' "$baseline_metrics" | awk '{print $5}')"
+
+    f_ping="$(printf '%s' "$final_metrics" | awk '{print $1}')"
+    f_jitter="$(printf '%s' "$final_metrics" | awk '{print $2}')"
+    f_loss="$(printf '%s' "$final_metrics" | awk '{print $3}')"
+    f_p90="$(printf '%s' "$final_metrics" | awk '{print $4}')"
+    f_p99="$(printf '%s' "$final_metrics" | awk '{print $5}')"
+
+    ts="$(date +%s 2>/dev/null || echo 0)"
+    hour="$(date +%H 2>/dev/null || echo 0)"
+    wifi_rssi="$(calibrate_get_wifi_rssi_dbm)"
+    radio_type="$(calibrate_get_radio_network_type)"
+
+    [ -z "$b_p90" ] && b_p90="$b_ping"
+    [ -z "$b_p99" ] && b_p99="$b_ping"
+    [ -z "$f_p90" ] && f_p90="$f_ping"
+    [ -z "$f_p99" ] && f_p99="$f_ping"
+
+    bj="$(json_escape "$provider")"
+    bs="$(json_escape "$source")"
+    fj="$(json_escape "$iface")"
+    fs="$(json_escape "$transport")"
+
+    line="$(printf '%s' '{"ts":'"$ts"',"hour":'"$hour"',"provider":"'"$bj"'","source":"'"$bs"'","iface":"'"$fj"'","transport":"'"$fs"'","target":"'"$(json_escape "$target")"'","radio_network":"'"$(json_escape "$radio_type")"'","features":{"wifi_rssi_dbm":'"$(num_or_null "$wifi_rssi")"',"baseline":{"latency_ms":'"$(num_or_null "$b_ping")"',"jitter_ms":'"$(num_or_null "$b_jitter")"',"loss_pct":'"$(num_or_null "$b_loss")"',"p90_ms":'"$(num_or_null "$b_p90")"',"p99_ms":'"$(num_or_null "$b_p99")"',"score_sigmoid":'"$(num_or_null "$baseline_score")"'},"final":{"latency_ms":'"$(num_or_null "$f_ping")"',"jitter_ms":'"$(num_or_null "$f_jitter")"',"loss_pct":'"$(num_or_null "$f_loss")"',"p90_ms":'"$(num_or_null "$f_p90")"',"p99_ms":'"$(num_or_null "$f_p99")"',"score_sigmoid":'"$(num_or_null "$final_score")"'}},"result":{"success":'"$success_flag"',"ping_improvement_ms":'"$(num_or_null "$ping_improve_ms")"',"score_delta":'"$(num_or_null "$score_delta")"'},"best":{"hsupa":'"$(num_or_null "${BEST_ro_ril_hsupa_category:-}")"',"hsdpa":'"$(num_or_null "${BEST_ro_ril_hsdpa_category:-}")"',"lte":'"$(num_or_null "${BEST_ro_ril_lte_category:-}")"',"ltea":'"$(num_or_null "${BEST_ro_ril_ltea_category:-}")"',"nr5g":'"$(num_or_null "${BEST_ro_ril_nr5g_category:-}")"'}}')"
+
+    payload="$(printf '%s\n' "$line")"
+    if command -v atomic_write >/dev/null 2>&1; then
+        if [ -f "$ml_features_file" ]; then
+            { cat "$ml_features_file" 2>/dev/null; printf '%s\n' "$line"; } | atomic_write "$ml_features_file"
+        else
+            printf '%s\n' "$line" | atomic_write "$ml_features_file"
+        fi
+        printf '%s\n' "$line" | atomic_write "$ml_last_file"
+    else
+        printf '%s\n' "$line" >> "$ml_features_file" 2>/dev/null
+        printf '%s\n' "$line" > "$ml_last_file" 2>/dev/null
+    fi
+
+    log_info "ML feature vector stored: $ml_last_file" >> "$trace_log"
+}
 
 # Persist coarse calibration progress to a separate file consumed by setup.sh.
 # This keeps stdout clean so ONLY BEST_* lines are parsed for system.prop injection.
@@ -561,6 +674,10 @@ calibrate_network_settings() {
 
   
     local delay=$1 # seconds
+    local baseline_metrics="" baseline_score=""
+    local final_metrics="" final_score=""
+    local success_flag="0" ping_improvement_ms="0" score_delta="0"
+    local ml_source="full"
     local config_json dns1 dns2 TEST_IP # unassigned local variables
 
     log_info "====================== calibrate_property =========================" >> "$trace_log"
@@ -593,6 +710,13 @@ calibrate_network_settings() {
     # Fast path: if we have a valid cache for this provider/transport and ping is still good, reuse it.
     # This avoids re-calibrating from scratch on every reboot when the operator remains the same.
     if calibrate_cache_try_use "$provider_name" "$PING_VAL" "$transport_key"; then
+        ml_source="cache"
+        if calibrate_ml_feature_log_enabled; then
+            baseline_metrics="$(test_configuration "$delay")"
+            baseline_score="$(extract_scores "$baseline_metrics")"
+            calibrate_ml_append_feature "$provider_name" "$transport_key" "$active_iface" "$PING_VAL" "$ml_source" \
+                "$baseline_metrics" "$baseline_score" "$baseline_metrics" "$baseline_score" "1" "0" "0"
+        fi
         return 0
     fi
     calibrate_progress_update 20 "bootstrap" "cache miss: running full calibration"
@@ -682,6 +806,12 @@ calibrate_network_settings() {
     else
         log_info "Connectivity test passed" >> "$trace_log"
         calibrate_progress_update 28 "bootstrap" "connectivity verified"
+    fi
+
+    # Baseline sample only when ML feature logging is enabled.
+    if calibrate_ml_feature_log_enabled; then
+        baseline_metrics="$(test_configuration "$delay")"
+        baseline_score="$(extract_scores "$baseline_metrics")"
     fi
 
     local index=1 total_calibrate count_primary count_secondary current_pct
@@ -792,6 +922,20 @@ calibrate_network_settings() {
     # Persist cache for future runs (provider + transport keyed).
     calibrate_progress_update 94 "finalize" "persisting best values"
     calibrate_cache_save "$provider_name" "$transport_key"
+
+    if calibrate_ml_feature_log_enabled; then
+        # Apply chosen best values then measure post-calibration quality for ML label.
+        calibrate_apply_best_runtime_values
+        final_metrics="$(test_configuration "$delay")"
+        final_score="$(extract_scores "$final_metrics")"
+
+        ping_improvement_ms="$(awk -v b="$(printf '%s' "$baseline_metrics" | awk '{print $1}')" -v f="$(printf '%s' "$final_metrics" | awk '{print $1}')" 'BEGIN{if(b==""||f==""||b!~/^[0-9.]+$/||f!~/^[0-9.]+$/){print 0; exit} printf "%.2f", (b-f)}')"
+        score_delta="$(awk -v b="$baseline_score" -v f="$final_score" 'BEGIN{if(b==""||f==""||b!~/^[0-9.]+$/||f!~/^[0-9.]+$/){print 0; exit} printf "%.2f", (f-b)}')"
+        success_flag="$(awk -v p="$ping_improvement_ms" -v s="$score_delta" 'BEGIN{if((p+0)>0 || (s+0)>=0.5) print 1; else print 0}')"
+
+        calibrate_ml_append_feature "$provider_name" "$transport_key" "$active_iface" "$TEST_IP" "$ml_source" \
+            "$baseline_metrics" "$baseline_score" "$final_metrics" "$final_score" "$success_flag" "$ping_improvement_ms" "$score_delta"
+    fi
 
     calibrate_progress_update 100 "done" "calibration finished"
 

@@ -103,7 +103,8 @@ backup_base_preexisting=0
 if create_backup; then
     backup_created_path="${BACKUP_FILE:-$backup_base_file}"
     if [ "$backup_base_preexisting" -eq 1 ]; then
-        log_info "Backup base already existed; new snapshot saved at $backup_created_path"
+        log_info "Backup base already existed"
+        log_info "  new snapshot saved at $backup_created_path"
     else
         log_info "Backup created at $backup_created_path"
     fi
@@ -146,7 +147,8 @@ echo "❖ Installation in progress..."
 echo "${divider}"
 
 # --- Mode selection ---
-log_info "Tip: you can apply static fix first, reboot, then run manual calibration later"
+log_info "Tip: you can apply static fix first"
+log_info "  reboot, then run manual calibration later"
 log_info "Select operation mode:"
 log_info "  [Vol+] Fixed mode"
 log_info "  [Vol-] Automatic mode (~4 mins)"
@@ -199,7 +201,8 @@ else
     vksel_timeout="$(uint_or_default "$vksel_timeout" "20")"
     [ "$vksel_timeout" -lt 5 ] && vksel_timeout=5
     [ "$vksel_timeout" -gt 60 ] && vksel_timeout=60
-    log_info "Waiting ${vksel_timeout}s for key selection (INSTALL_VK_TIMEOUT / persist.kitsunping.install_vk_timeout)"
+    log_info "Waiting ${vksel_timeout}s for key selection"
+    log_info "  source: INSTALL_VK_TIMEOUT / persist.kitsunping.install_vk_timeout"
 
     if $VKSEL "$vksel_timeout"; then
         MODE_SELECTION=0
@@ -222,8 +225,11 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     fi
 
     log_info "Starting calibration process..."
-    log_info "This process will run multiple tests to determine the optimal network settings for your device."
-    log_info "Please wait and do not interrupt the process/move the device. It may take several minutes to complete."
+    log_info "This process will run multiple tests"
+    log_info "  to determine optimal network settings"
+    log_info "Please wait and do not interrupt"
+    log_info "  the process or move the device"
+    log_info "It may take several minutes to complete"
     
     # POSIX-safe stderr handling: capture once, then mirror to installer stderr and persistent trace log.
     trace_log_file="/sdcard/trace_log2.log"
@@ -250,7 +256,8 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
             progress_msg=$(awk -F= '$1=="msg"{sub(/^[^=]*=/, ""); print; exit}' "$progress_state_file" 2>/dev/null)
             progress_signature="${progress_pct}|${progress_stage}|${progress_msg}"
             if [ -n "$progress_signature" ] && [ "$progress_signature" != "$last_progress_signature" ]; then
-                log_info "Calibration progress [${progress_pct:-0}%][${progress_stage:-unknown}] ${progress_msg:-working}"
+                log_info "Calibration progress [${progress_pct:-0}%][${progress_stage:-unknown}]"
+                log_info "  ${progress_msg:-working}"
                 last_progress_signature="$progress_signature"
             fi
         fi
