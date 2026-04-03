@@ -306,6 +306,7 @@ network__router__channel_recommend_request() {
         band="${WIFI_BAND:-2g}"
         case "$band" in
             2.4*|2g*) band="2g" ;;
+            6*|6g*|6ghz*) band="5g" ;;
             5*|5g*)   band="5g" ;;
             *)        band="2g" ;;
         esac
@@ -573,6 +574,7 @@ network__router__channel_apply_request() {
     # Validate band
     case "$band" in
         2g|2.4g|2.4ghz) band="2g" ;;
+        6g|6ghz) band="5g" ;;
         5g|5ghz) band="5g" ;;
         *)
             kitsunping_log "error" "channel_apply: invalid band '$band'"
