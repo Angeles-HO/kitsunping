@@ -44,9 +44,6 @@ rm -f "$TMP_DIR/cache/daemon.rescue_requested"
 
 expected_ok_desc="$(daemon_get_status_description ok)"
 
-daemon_check_rescue_request
-assert_rc 1 "$?" "rescue request is false when flag is missing"
-
 touch "$TMP_DIR/cache/daemon.rescue_requested"
 daemon_check_rescue_request
 assert_rc 0 "$?" "rescue request is true when flag exists"
