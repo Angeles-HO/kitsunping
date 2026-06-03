@@ -39,6 +39,11 @@ LAST_EVENT_FILE="$TMP_DIR/cache/daemon.last"
 # shellcheck disable=SC1090
 . "$REPO_DIR/addon/functions/daemon_failsafe.sh"
 
+# Ensure a clean starting point even if a previous run left the rescue flag.
+rm -f "$TMP_DIR/cache/daemon.rescue_requested"
+
+expected_ok_desc="$(daemon_get_status_description ok)"
+
 daemon_check_rescue_request
 assert_rc 1 "$?" "rescue request is false when flag is missing"
 
@@ -66,7 +71,7 @@ daemon_set_module_status broken_environment
 assert_file_exists "$TMP_DIR/disable" "broken_environment creates disable flag"
 daemon_set_module_status ok
 assert_file_not_exists "$TMP_DIR/disable" "ok status removes disable flag"
-assert_file_contains "$TMP_DIR/module.prop" "Kitsunping v6.30 - WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC" "ok status restores stable description"
+assert_file_contains "$TMP_DIR/module.prop" "$expected_ok_desc" "ok status restores stable description"
 
 touch "$TMP_DIR/cache/daemon.rescue_requested"
 touch "$TMP_DIR/cache/daemon.safe_mode"
