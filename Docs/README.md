@@ -6,7 +6,6 @@ This index is the canonical entry point for project documentation. Files are gro
 
 ## 00-overview
 
-- `00-overview/current-module-status-summary.md`: current repository status snapshot and release readiness notes.
 - `00-overview/privacy-and-telemetry.md`: privacy boundaries and local-data behavior.
 - `00-overview/runtime-locks-and-heavy-tasks.md`: lock model and heavy-task coordination.
 
@@ -26,12 +25,6 @@ This index is the canonical entry point for project documentation. Files are gro
 - `20-router/m4-passive-notifications.md`: passive channel recommendation notifications.
 - `20-router/qos-flow-mvp.md`: router QoS MVP plan (design reference, not release validation).
 
-## 30-release
-
-- `30-release/7.0-beta-scope-opening.md`: official scope and gate criteria for 7.0-beta opening.
-- `30-release/architecture-migration-phase1.md`: migration summary for phase 1/2.
-- `30-release/compatibility-cleanup-major-plan.md`: compatibility-wrapper retirement strategy.
-
 ## 90-archive
 
 - `90-archive/testing-results-history.md`: historical benchmark log for older versions.
@@ -45,6 +38,6 @@ This index is the canonical entry point for project documentation. Files are gro
    - `module.prop`
    - `update.json`
    - `CHANGELOG.md`
-   - `00-overview/current-module-status-summary.md`
+   - local release notes under `Docs/gui-reference-local/`
 4. Avoid adding new docs at `Docs/` root; place them in the correct section.
 5. Keep private or in-progress guides under `Docs/gui-reference-local/` (gitignored; not published).
