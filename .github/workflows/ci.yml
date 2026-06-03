@@ -19,6 +19,18 @@ jobs:
           python-version: '3.x'
 
       - name: Run local verification suite
+        shell: bash
         run: |
-          set -eu
-          sh ./tools/test_all_local.sh
+          set -euo pipefail
+          mkdir -p ./tools/logs
+          sh ./tools/test_all_local.sh 2>&1 | tee ./tools/logs/ci_local_suite.log
+
+      - name: Upload local logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-suite-logs
+          path: |
+            tools/logs/*.txt
+            tools/logs/ci_local_suite.log
+          if-no-files-found: warn
