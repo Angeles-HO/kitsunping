@@ -1,6 +1,7 @@
 # Kitsunping - Android Network Optimizer, Ping Fix & Gaming Latency Reducer (Magisk Module)
 
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![Kitsunping CI](https://github.com/Angeles-HO/kitsunping/actions/workflows/ci.yml/badge.svg)](https://github.com/Angeles-HO/kitsunping/actions/workflows/ci.yml)
 
 ## Introduction
 
