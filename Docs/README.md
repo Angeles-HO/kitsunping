@@ -47,3 +47,4 @@ This index is the canonical entry point for project documentation. Files are gro
    - `CHANGELOG.md`
    - `00-overview/current-module-status-summary.md`
 4. Avoid adding new docs at `Docs/` root; place them in the correct section.
+5. Keep private or in-progress guides under `Docs/gui-reference-local/` (gitignored; not published).
