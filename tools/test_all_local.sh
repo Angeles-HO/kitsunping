@@ -36,9 +36,10 @@ run_step() {
     echo ""
 }
 
-run_step "POSIX compat (compat mode)" ./tools/check_posix_compat.sh compat
-run_step "POSIX compat (strict mode)" ./tools/check_posix_compat.sh strict
+run_step "POSIX compat (compat mode)" sh ./tools/check_posix_compat.sh compat
+run_step "POSIX compat (strict mode)" sh ./tools/check_posix_compat.sh strict
 run_step "Wi-Fi parsing samples" sh ./tools/test_wifi_parsing.sh
+run_step "Runtime fixture tests" sh ./testing/run.sh
 
 if [ "$fail" -ne 0 ]; then
     echo "Local checks completed with failures." >&2

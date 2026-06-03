@@ -5,8 +5,8 @@
 set -u
 
 MODDIR="${MODDIR:-/data/adb/modules/Kitsunping}"
-MODULES_DIR="/data/adb/modules"
-EXCLUDE_MODULES="Kitsunping busybox-ndk iw iw2"
+MODULES_DIR="${KITSUNPING_MODULES_DIR:-/data/adb/modules}"
+EXCLUDE_MODULES="${KITSUNPING_CONFLICT_EXCLUDE_MODULES:-Kitsunping busybox-ndk iw iw2}"
 
 LOG_DIR="$MODDIR/logs"
 CACHE_DIR="$MODDIR/cache"

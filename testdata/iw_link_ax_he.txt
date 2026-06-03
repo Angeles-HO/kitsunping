@@ -1,0 +1,8 @@
+Connected to 84:2a:fd:11:22:33 (on wlan0)
+	SSID: WiFi6
+	freq: 5975
+	channel 5 (5975 MHz), width: 80 MHz, center1: 5995 MHz
+	signal: -39 dBm
+	rx bitrate: 1201.0 MBit/s HE-MCS 11 2SS 80MHz
+	tx bitrate: 1020.0 MBit/s HE-MCS 10 2SS 80MHz
+	bss flags: short-slot-time

@@ -37,7 +37,7 @@ CHANNEL_HTTP_RETRY="${KITSUNPING_CHANNEL_HTTP_RETRY:-1}"
 
 # Telemetry file (M2)
 # Note: Use /sdcard which is always writable
-CHANNEL_CACHE_DIR="/sdcard/kitsunping_cache"
+CHANNEL_CACHE_DIR="${KITSUNPING_CHANNEL_CACHE_DIR:-/sdcard/kitsunping_cache}"
 mkdir -p "$CHANNEL_CACHE_DIR" 2>/dev/null || true
 CHANNEL_TELEMETRY_FILE="$CHANNEL_CACHE_DIR/telemetry.channel_requests"
 

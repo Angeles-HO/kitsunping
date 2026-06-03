@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 6.30 - Release
+
+- [new] Added a local release gate script (`tools/release_gate_local.sh`) to validate version metadata consistency before publishing.
+- [new] Added baseline GitHub Actions CI workflow to run local verification checks on push and pull requests.
+- [new] Added deterministic fixture suites for router channel/push HTTP error paths.
+- [new] Expanded function I/O contract tests for parsing, normalization, and width/band inference.
+- [updated] Local test runner now includes runtime fixture suites so regressions are caught earlier.
+- [updated] Compatibility and conflict-detection helpers support local fixture execution through environment overrides.
+
 ## 6.01 - Release
 
 - [new] Finalized the 6.01 stable line for the Kitsunping module.

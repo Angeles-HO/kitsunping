@@ -1,0 +1,8 @@
+Connected to 7c:10:c9:aa:bb:cc (on wlan0)
+	SSID: Home5G
+	freq: 5180
+	channel 36 (5180 MHz), width: 80 MHz, center1: 5210 MHz
+	signal: -43 dBm
+	rx bitrate: 866.7 MBit/s VHT-MCS 9 80MHz short GI
+	tx bitrate: 780.0 MBit/s VHT-MCS 8 80MHz short GI
+	bss flags: short-slot-time

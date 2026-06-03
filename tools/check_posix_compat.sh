@@ -119,6 +119,7 @@ count_fail=0
 find "$REPO_DIR" -type f -name '*.sh' ! -path '*/.git/*' | sort | while IFS= read -r file; do
     case "$file" in
         "$REPO_DIR"/tools/check_posix_compat.sh|./tools/check_posix_compat.sh) continue ;;
+        "$REPO_DIR"/references/*|./references/*) continue ;;
     esac
 
     count_total=$((count_total + 1))

@@ -20,14 +20,14 @@ kUtils.txt
 # IDE files
 .vscode/
 .idea/
+__pycache__/
+*.pyc
 
 # Generated or local-only artifacts
 results/
-testdata/
 bug_report.md
 custom.md
 folder-structure.md
 references/
 
-testing/
 Docs/gui-reference-local/

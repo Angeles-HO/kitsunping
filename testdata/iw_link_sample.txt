@@ -1,0 +1,11 @@
+Connected to 00:13:10:85:fe:01 (on wlan0)
+	SSID: AndroidWifi
+	freq: 2447.0
+	RX: 153034976 bytes (210087 packets)
+	TX: 107961888 bytes (124859 packets)
+	signal: -50 dBm
+	rx bitrate: 866.7 MBit/s VHT-MCS 9 80MHz short GI
+	tx bitrate: 780.0 MBit/s VHT-MCS 8 80MHz short GI
+	bss flags: CTS-protection short-slot-time
+	dtim period: 1
+	beacon int: 1000

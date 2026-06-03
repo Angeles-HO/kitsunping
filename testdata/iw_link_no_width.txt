@@ -1,0 +1,7 @@
+Connected to 18:6b:fc:aa:bb:cc (on wlan0)
+	SSID: Legacy
+	freq: 2462
+	signal: -63 dBm
+	rx bitrate: 72.2 MBit/s MCS 7 short GI
+	tx bitrate: 65.0 MBit/s MCS 6 short GI
+	bss flags: CTS-protection
