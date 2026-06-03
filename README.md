@@ -68,6 +68,14 @@ Android lag fix, Android ping reducer, Magisk network module, rooted Android net
 
 > Tip: You can start with a static fix for a fast first boot, then reboot and run manual calibration later when you have stable signal/time available.
 
+### CI and release validation
+
+- Run local verification: `sh tools/test_all_local.sh`
+- Run release metadata gate only: `sh tools/release_gate_local.sh --skip-tests`
+- Run full release gate: `sh tools/release_gate_local.sh`
+
+Reference guide: [Docs/00-overview/local-ci-and-release-gate.md](Docs/00-overview/local-ci-and-release-gate.md)
+
 ### Documentation by topic
 
 - Docs hub (ordered index): [Docs/README.md](Docs/README.md)
