@@ -39,9 +39,9 @@ start_mock() {
     mkdir -p "$REQ_DIR"
 
     if [ -n "$env_cmd" ]; then
-        sh -c "$env_cmd python3 \"$REPO_DIR/testing/fixtures/http/router_mock.py\" --output-dir \"$REQ_DIR\" --port-file \"$PORT_FILE\"" &
+        sh -c "$env_cmd python3 \"$REPO_DIR/testing/fixtures/http/router_mock.py\" --output-dir \"$REQ_DIR\" --port-file \"$PORT_FILE\"" >/dev/null 2>&1 &
     else
-        python3 "$REPO_DIR/testing/fixtures/http/router_mock.py" --output-dir "$REQ_DIR" --port-file "$PORT_FILE" &
+        python3 "$REPO_DIR/testing/fixtures/http/router_mock.py" --output-dir "$REQ_DIR" --port-file "$PORT_FILE" >/dev/null 2>&1 &
     fi
     SERVER_PID=$!
 

@@ -22,7 +22,7 @@ REQ_DIR="$TMP_DIR/requests"
 PORT_FILE="$TMP_DIR/port.txt"
 mkdir -p "$REQ_DIR"
 
-python3 "$REPO_DIR/testing/fixtures/http/router_mock.py" --output-dir "$REQ_DIR" --port-file "$PORT_FILE" &
+python3 "$REPO_DIR/testing/fixtures/http/router_mock.py" --output-dir "$REQ_DIR" --port-file "$PORT_FILE" >/dev/null 2>&1 &
 SERVER_PID=$!
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
