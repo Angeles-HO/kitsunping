@@ -1,6 +1,8 @@
 
 # Testing Results
 
+Historical benchmark archive (legacy versions). Keep this file for trend/context only, not as current release validation.
+
 This page keeps benchmark runs out of the main README.
 
 Notes:

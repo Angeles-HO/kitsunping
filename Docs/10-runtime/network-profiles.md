@@ -23,7 +23,7 @@ High-level flow:
 3) If a profile decision is made (built-in or via `policy/rules/decide_profile.sh`), a `PROFILE_CHANGED` event is emitted.
 4) The executor writes/reads `cache/policy.target`, compares it vs `cache/policy.current`, and applies changes when needed.
 
-See the full flow diagram in Docs/Daemon.md.
+See the full flow diagram in `Docs/10-runtime/daemon.md`.
 
 ## Trade-offs / notes
 

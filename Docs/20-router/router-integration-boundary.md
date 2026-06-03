@@ -43,7 +43,7 @@ Typical exchanged data includes:
 
 ## Packaging Note for Current Stable Line
 
-The public stable line (currently v6.01) can ship the main Kitsunping module and the improved application while keeping router-side implementations separate.
+The public stable line (currently v6.30) can ship the main Kitsunping module and the improved application while keeping router-side implementations separate.
 That means router integration can be presented as a supported feature without bundling private router code into this repository.
 
 ## Practical Rule

@@ -1,6 +1,3 @@
-# Profiles
-
-
 # Cache
 cache/
 
@@ -10,34 +7,26 @@ configs/kitsuneping_optimal.conf
 configs/kitsuneping_static.conf
 !configs/.gitkeep
 
-
-
 # Logs
 logs/
+tools/logs/*.txt
 
 # Temporary files
 kUtils.txt
 
-# git
+# Git internals
 .git/
 
 # IDE files
 .vscode/
 .idea/
 
+# Generated or local-only artifacts
 results/
 testdata/
-# daemon process proposal
-folder-structure.md
-Docs/resumen_estado_modulo_actual.md
-Docs/qosFlowMVP.md
-Docs/architecture_migration_phase1.md
-Docs/compat_cleanup_major_plan.md
-Docs/features.md
-Docs/features.md
-Docs/implementation.md
-Docs/speedProfiles.md
-
 bug_report.md
 custom.md
-custom.md
+folder-structure.md
+references/
+
+testing/

@@ -1,3 +1,7 @@
+# Scoring Snippets (Legacy)
+
+Historical scratch notes kept for reference only. These snippets are not a canonical runtime spec.
+
 ## Composite Score
 
 SCORE = α·(RSRP_score) + β·(SINR_score) + γ·(Performance_score) − δ·(Jitter_penalty)

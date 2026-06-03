@@ -51,7 +51,7 @@ Android lag fix, Android ping reducer, Magisk network module, rooted Android net
 
 ### Technical highlights (from Docs)
 
-- Profile system with `speed`, `stable`, and `gaming` modes (see `Docs/speedProfiles.md`).
+- Profile system with `speed`, `stable`, and `gaming` modes (see `Docs/10-runtime/network-profiles.md`).
 - Event-driven daemon flow for profile changes (`PROFILE_CHANGED`) with cache state tracking.
 - TCP/IP optimization references including congestion control (`bbr`), TCP window scaling, and SACK.
 - MTU optimization references (`ro.ril.set.mtusize`) for mobile data alignment.
@@ -70,12 +70,13 @@ Android lag fix, Android ping reducer, Magisk network module, rooted Android net
 
 ### Documentation by topic
 
-- Daemon flow and events: [Docs/daemon.md](Docs/daemon.md)
-- Internal implementation: [Docs/implementation.md](Docs/implementation.md)
-- Wi‑Fi properties: [Docs/wifiProps.md](Docs/wifiProps.md)
-- Speed/stability profile notes: [Docs/speedProfiles.md](Docs/speedProfiles.md)
-- Test results: [Docs/testingResults.md](Docs/testingResults.md)
-- Router/App integration: [Docs/routerIntegration.md](Docs/routerIntegration.md)
+- Docs hub (ordered index): [Docs/README.md](Docs/README.md)
+- Daemon flow and events: [Docs/10-runtime/daemon.md](Docs/10-runtime/daemon.md)
+- Internal implementation: [Docs/10-runtime/implementation.md](Docs/10-runtime/implementation.md)
+- Wi-Fi properties: [Docs/10-runtime/wifi-properties-reference.md](Docs/10-runtime/wifi-properties-reference.md)
+- Speed/stability profile notes: [Docs/10-runtime/network-profiles.md](Docs/10-runtime/network-profiles.md)
+- Router/App integration boundary: [Docs/20-router/router-integration-boundary.md](Docs/20-router/router-integration-boundary.md)
+- Historical benchmark archive: [Docs/90-archive/testing-results-history.md](Docs/90-archive/testing-results-history.md)
 
 > Note: Advanced parameters (technical props/tunables) are documented in the files above to keep this main page simple.
 
@@ -124,7 +125,7 @@ Kitsunping does **not** send data to remote servers and does **not** use telemet
 - No remote logging.
 - Operational data stays local on the device.
 
-Detailed reference: [Docs/privacy.md](Docs/privacy.md)
+Detailed reference: [Docs/00-overview/privacy-and-telemetry.md](Docs/00-overview/privacy-and-telemetry.md)
 
 ## Security
 
