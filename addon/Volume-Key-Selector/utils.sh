@@ -44,7 +44,8 @@ chooseport_legacy() {
             return 1
         else
             if $error; then
-                abort "Error crítico en keycheck legacy!"
+                echo "[WARN] keycheck legacy failed repeatedly; fallback to default selection" >&2
+                return 1
             else
                 error=true
                 echo "Try again!" >&2

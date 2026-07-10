@@ -1,6 +1,6 @@
 # Kitsunping Documentation Hub
 
-Last update: 2026-06-03
+Last update: 2026-07-10
 
 This index is the canonical entry point for project documentation. Files are grouped by lifecycle stage to reduce noise and make release work easier.
 
@@ -9,6 +9,11 @@ This index is the canonical entry point for project documentation. Files are gro
 - `00-overview/privacy-and-telemetry.md`: privacy boundaries and local-data behavior.
 - `00-overview/runtime-locks-and-heavy-tasks.md`: lock model and heavy-task coordination.
 - `00-overview/local-ci-and-release-gate.md`: CI path, failure triage, and pre-release validation commands.
+- `00-overview/v7-beta-kickoff-checklist.md`: first execution steps for v7.0-beta stabilization.
+- `00-overview/v7-beta-baseline-report-2026-06-29.md`: kickoff validation evidence before hardening changes.
+- `00-overview/v7-beta-scope-freeze-2026-06-30.md`: finalized v7.0-beta scope boundary, branch convention, and acceptance criteria.
+- `00-overview/v7-beta-device-validation-2026-07-10.md`: device-side install and calibration validation after JSON output hardening.
+- `plan.md`: roadmap and release scope split for v7.0-beta and v7.0 release.
 
 ## 10-runtime
 
@@ -18,6 +23,8 @@ This index is the canonical entry point for project documentation. Files are gro
 - `10-runtime/wifi-properties-reference.md`: Wi-Fi property reference.
 - `10-runtime/binary-paths.md`: bundled/system binary resolution.
 - `10-runtime/failsafe-module-status-reference.md`: failsafe and module-status lifecycle.
+- `10-runtime/runtime-cadence-baseline-v7-beta.md`: baseline cadence and debounce tuning plan for v7.0-beta.
+- `10-runtime/runtime-debounce-experiment-matrix-v7-beta.md`: candidate comparison matrix for debounce 60s/90s.
 
 ## 20-router
 
@@ -40,5 +47,5 @@ This index is the canonical entry point for project documentation. Files are gro
    - `update.json`
    - `CHANGELOG.md`
    - local release notes under `Docs/gui-reference-local/`
-4. Avoid adding new docs at `Docs/` root; place them in the correct section.
+4. Avoid adding new docs at `Docs/` root (exception: `plan.md` as release roadmap).
 5. Keep private or in-progress guides under `Docs/gui-reference-local/` (gitignored; not published).

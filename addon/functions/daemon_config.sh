@@ -2,7 +2,28 @@
 
 daemon_normalize_weight_value() {
     local raw="$1" def="$2"
-    awk -v v="$raw" -v d="$def" 'BEGIN { if (v ~ /^-?[0-9]+([.][0-9]+)?$/) printf "%s", v; else printf "%s", d }'
+    awk -v v="$raw" -v d="$def" 'BEGIN {
+        if (v ~ /^-?[0-9]+([.][0-9]+)?$/) {
+            n = v + 0
+            if (n < 0) n = 0
+            if (n > 1) n = 1
+            printf "%.4f", n
+        } else {
+            printf "%.4f", d + 0
+        }
+    }'
+}
+
+daemon_normalize_sigmoid_weights() {
+    local a="$1" b="$2" g="$3" d="$4"
+    awk -v a="$a" -v b="$b" -v g="$g" -v d="$d" 'BEGIN {
+        sum = a + b + g
+        if (sum <= 0) { a = 0.4; b = 0.3; g = 0.3; sum = 1.0 }
+        if (sum != 1.0) { a = a/sum; b = b/sum; g = g/sum }
+        if (d < 0) d = 0
+        if (d > 0.5) d = 0.5
+        printf "%.4f %.4f %.4f %.4f", a, b, g, d
+    }'
 }
 
 daemon_load_runtime_config() {
@@ -38,10 +59,14 @@ daemon_load_runtime_config() {
     conf_alpha="$(daemon_normalize_weight_value "${CONF_ALPHA:-}" "0.4")"
     conf_beta="$(daemon_normalize_weight_value "${CONF_BETA:-}" "0.3")"
     conf_gamma="$(daemon_normalize_weight_value "${CONF_GAMMA:-}" "0.3")"
-    LCL_ALPHA="$conf_alpha"
-    LCL_BETA="$conf_beta"
-    LCL_GAMMA="$conf_gamma"
-    LCL_DELTA=0.1
+    local conf_delta
+    conf_delta="$(daemon_normalize_weight_value "$(getprop kitsunping.sigmoid.delta)" "0.1")"
+
+    local _norm
+    _norm="$(daemon_normalize_sigmoid_weights "$conf_alpha" "$conf_beta" "$conf_gamma" "$conf_delta")"
+    LCL_ALPHA="${_norm%% *}"; _norm="${_norm#* }"
+    LCL_BETA="${_norm%% *}";  _norm="${_norm#* }"
+    LCL_GAMMA="${_norm%% *}"; LCL_DELTA="${_norm#* }"
 
     router_debug_raw="$(getprop kitsunping.router.debug)"
     kitsunrouter_enable_raw="$(getprop persist.kitsunrouter.enable)"
@@ -96,12 +121,12 @@ daemon_load_runtime_config() {
 
     if [ -z "$EVENT_DEBOUNCE_SEC" ]; then
         case "${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}" in
-            ''|*[!0-9]* ) EVENT_DEBOUNCE_SEC=5 ;;
+            ''|*[!0-9]* ) EVENT_DEBOUNCE_SEC=60 ;;
             *)
                 if [ "${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}" -gt 0 ]; then
                     EVENT_DEBOUNCE_SEC="${EVENT_DEBOUNCE_RAW:-$EVENT_DEBOUNCE_RAW_2}"
                 else
-                    EVENT_DEBOUNCE_SEC=5
+                    EVENT_DEBOUNCE_SEC=60
                 fi
                 ;;
         esac

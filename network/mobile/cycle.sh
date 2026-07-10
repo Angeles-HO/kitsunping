@@ -68,10 +68,8 @@ network__mobile__transport_cycle() {
                 sinr_score=$(score_sinr_cached "$sinr")
             fi
 
-            if printf '%s' "$sinr" | grep -Eq '^-?[0-9]+$' && [ "$sinr" -lt 0 ]; then
-                log_debug "SINR negative (${sinr} dB), applying penalty to sinr_score=${sinr_score}"
-                sinr_score=$(awk -v s="$sinr_score" 'BEGIN{p=s-10; if(p<0)p=0; printf "%.2f", p}')
-            fi
+            # SINR scoring already reflects poor/negative values via score_sinr_cached.
+            # Do not apply an additional fixed penalty here to avoid double punishment.
 
             performance_score="$mobile_score"
             jitter_penalty=0

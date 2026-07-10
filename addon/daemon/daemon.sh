@@ -191,6 +191,10 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 # Source all modular components (dev hot-reload aware)
 _dev_reload_all
 
+if command -v secure_router_pairing_cache_permissions >/dev/null 2>&1; then
+    secure_router_pairing_cache_permissions
+fi
+
 if command -v daemon_load_runtime_config >/dev/null 2>&1; then
     daemon_load_runtime_config
 else
@@ -202,7 +206,7 @@ else
     INTERVAL="$INTERVAL_DEFAULT"
     SIGNAL_POLL_INTERVAL=5
     NET_PROBE_INTERVAL=3
-    EVENT_DEBOUNCE_SEC=5
+    EVENT_DEBOUNCE_SEC=60
     ROUTER_DEBUG=0
     KITSUNROUTER_ENABLE=0
     ROUTER_EXPERIMENTAL=0
@@ -224,6 +228,9 @@ fi
 # Initialize failsafe: detect state corruption and enable safe_mode if needed
 if command -v daemon_init_safe_mode >/dev/null 2>&1; then
     daemon_init_safe_mode
+    if command -v daemon_consume_safe_mode_recovery_flag >/dev/null 2>&1; then
+        daemon_consume_safe_mode_recovery_flag || true
+    fi
     daemon_write_rescue_instructions
     daemon_safe_mode_log_status
 fi
@@ -238,8 +245,8 @@ if [ -f "$_conflict_script" ]; then
         case "$_cs_risk" in
             high)
                 printf '[DAEMON][WARN] High-risk module conflicts detected; see logs/conflicts_report.log\n' >> "$LOG_FILE" 2>/dev/null || true
-                if command -v daemon_set_module_status >/dev/null 2>&1 && ! daemon_is_safe_mode; then
-                    daemon_set_module_status "conflict_detected"
+                if command -v daemon_apply_conflict_risk_status >/dev/null 2>&1; then
+                    daemon_apply_conflict_risk_status "high" || true
                 fi
                 ;;
             medium)
@@ -310,7 +317,7 @@ esac
 ## Ensure debounce >= polling interval (at most one event per loop)
 ## if interval > EVENT_DEBOUNCE_SEC then EVENT_DEBOUNCE_SEC = interval
 case "$EVENT_DEBOUNCE_SEC" in
-    ''|*[!0-9]* ) EVENT_DEBOUNCE_SEC=5 ;; 
+    ''|*[!0-9]* ) EVENT_DEBOUNCE_SEC=60 ;;
 esac
 if [ "$INTERVAL" -gt "$EVENT_DEBOUNCE_SEC" ]; then
     EVENT_DEBOUNCE_SEC="$INTERVAL"
@@ -372,6 +379,10 @@ wifi_probe_loop_count=0
 wifi_probe_fail_streak=0
 wifi_probe_ok=1
 last_router_paired="$(get_router_paired_flag)"
+log_rotate_counter=0
+DAEMON_LOG_ROTATE_CHECK_EVERY="${DAEMON_LOG_ROTATE_CHECK_EVERY:-30}"
+case "$DAEMON_LOG_ROTATE_CHECK_EVERY" in ''|*[!0-9]*) DAEMON_LOG_ROTATE_CHECK_EVERY=30 ;; esac
+[ "$DAEMON_LOG_ROTATE_CHECK_EVERY" -le 0 ] && DAEMON_LOG_ROTATE_CHECK_EVERY=30
 
 if command -v core_daemon_main_loop >/dev/null 2>&1; then
     core_daemon_main_loop
@@ -423,6 +434,15 @@ else
             DAEMON_SAMPLE_LAST_LOGGED_INTERVAL="$INTERVAL_ADJUSTED"
             DAEMON_SAMPLE_LAST_LOGGED_MODE="$DAEMON_SAMPLE_MODE"
         fi
+
+        log_rotate_counter=$((log_rotate_counter + 1))
+        if [ "$log_rotate_counter" -ge "$DAEMON_LOG_ROTATE_CHECK_EVERY" ]; then
+            if command -v daemon_rotate_runtime_logs >/dev/null 2>&1; then
+                daemon_rotate_runtime_logs
+            fi
+            log_rotate_counter=0
+        fi
+
         sleep "$INTERVAL_ADJUSTED"
     done
 fi

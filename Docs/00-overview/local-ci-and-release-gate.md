@@ -60,6 +60,23 @@ When CI fails, logs are uploaded as artifact local-suite-logs.
 4. Run sh tools/release_gate_local.sh.
 5. Push and confirm GitHub workflow success.
 
+## v7.0-beta stabilization gate
+
+Before tagging v7.0-beta, complete all checks below.
+
+1. Execute kickoff baseline from `Docs/00-overview/v7-beta-kickoff-checklist.md`.
+2. Confirm scope freeze alignment from `Docs/00-overview/v7-beta-scope-freeze-2026-06-30.md`.
+3. Run `sh tools/test_all_local.sh` and `sh testing/run.sh` with no unresolved failures.
+4. Run `sh tools/release_gate_local.sh` successfully.
+5. Confirm docs coherence:
+   - index updated in `Docs/README.md`,
+   - active runtime docs are in `Docs/00-overview`, `Docs/10-runtime`, `Docs/20-router`,
+   - old references moved to `Docs/90-archive`.
+6. Validate upgrade path on lab device:
+   - install from current stable baseline,
+   - reboot,
+   - verify daemon healthy startup and no false disable state.
+
 ## Notes
 
 - Runtime fixture tests are host-based and intentionally independent from Android services.

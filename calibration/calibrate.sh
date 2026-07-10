@@ -1257,7 +1257,8 @@ configure_network() {
     json_file="$data_dir/countries/${country_code}.json"
 
     if [ "$mcc" = "000" ] && [ "$mnc" = "000" ]; then
-        log_warning "MCC/MNC not detected, using default configuration" | tee -a /sdcard/errors.log
+        log_warning "MCC/MNC not detected, using default configuration" >> "$trace_log"
+        echo "[WARNING] MCC/MNC not detected, using default configuration" >> /sdcard/errors.log
         json_file="$fallback_json"
     fi
 
@@ -1266,7 +1267,8 @@ configure_network() {
     log_info "country_code: $country_code | mcc: $mcc | mnc: $mnc | json_file: $json_file | cache_file: $cache_file" >> "$trace_log"
     
     if [ -z "$mcc" ] || [ -z "$mnc" ]; then
-        log_warning "MCC/MNC not detected, using default configuration" | tee -a /sdcard/errors.log
+        log_warning "MCC/MNC not detected, using default configuration" >> "$trace_log"
+        echo "[WARNING] MCC/MNC not detected, using default configuration" >> /sdcard/errors.log
         mcc="000"
         mnc="000"
         json_file="$fallback_json"

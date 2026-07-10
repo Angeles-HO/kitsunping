@@ -222,8 +222,13 @@ set_runtime_writable_permissions() {
             }
         fi
 
-        chmod 0644 "$runtime_file" 2>/dev/null || {
-            [ -n "$log_file" ] && echo "[WARN] chmod 0644 failed on $runtime_file" >> "$log_file"
+        runtime_mode="0644"
+        case "$runtime_file" in
+            *"/cache/router.pairing.json") runtime_mode="0600" ;;
+        esac
+
+        chmod "$runtime_mode" "$runtime_file" 2>/dev/null || {
+            [ -n "$log_file" ] && echo "[WARN] chmod $runtime_mode failed on $runtime_file" >> "$log_file"
         }
         chown 0:0 "$runtime_file" 2>/dev/null || {
             [ -n "$log_file" ] && echo "[WARN] chown failed on $runtime_file" >> "$log_file"

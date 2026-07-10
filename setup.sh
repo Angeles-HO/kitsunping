@@ -112,14 +112,23 @@ else
     log_warning "Backup could not be created"
 fi
 
+module_prop_file="$NEWMODPATH/module.prop"
+MODULE_ID_SHOW="${MODID:-}"
+[ -z "$MODULE_ID_SHOW" ] && MODULE_ID_SHOW="$(grep -m1 '^id=' "$module_prop_file" 2>/dev/null | cut -d= -f2-)"
+[ -z "$MODULE_ID_SHOW" ] && MODULE_ID_SHOW="Kitsunping"
+
+MODULE_VERSION_SHOW="${MODVERS:-${MODVER:-}}"
+[ -z "$MODULE_VERSION_SHOW" ] && MODULE_VERSION_SHOW="$(grep -m1 '^version=' "$module_prop_file" 2>/dev/null | cut -d= -f2-)"
+[ -z "$MODULE_VERSION_SHOW" ] && MODULE_VERSION_SHOW="unknown"
+
 # --- Installation info ---
 echo "${divider}"
 echo "❖ Information"
 echo "${divider}"
 echo "Date      : ${dte}"
 echo "Improviser: ${improviserr}"
-echo "Module    : ${MODID}"
-echo "Version   : ${MODVERS}"
+echo "Module    : ${MODULE_ID_SHOW}"
+echo "Version   : ${MODULE_VERSION_SHOW}"
 echo "${divider}"
 echo "❖ Device Info"
 echo "${divider}"
@@ -134,7 +143,10 @@ echo "CPU ARCH        = $(prop_or_default ro.product.cpu.abi "N/A")"
 # Detect RAM and delegate to Kitsutils.sh (function persisted there)
 detect_and_write_ram_props "$NEWMODPATH" >/dev/null 2>&1 || true
 # Report RAM info from the written system.prop (fallback to free output)
-RAM_INFO=$(grep -m1 '^persist.kitsunping.ram.size=' "$NEWMODPATH/system.prop" 2>/dev/null | cut -d= -f2 || echo "$(free -m | awk '/^Mem:/{print $2}')MB")
+RAM_INFO=$(grep -m1 '^persist.kitsunping.ram.size=' "$NEWMODPATH/system.prop" 2>/dev/null | cut -d= -f2)
+[ -z "$RAM_INFO" ] && RAM_INFO="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')MB"
+[ -z "$RAM_INFO" ] && RAM_INFO="$(awk '/MemTotal:/{print int($2/1024)"MB"; exit}' /proc/meminfo 2>/dev/null)"
+[ -z "$RAM_INFO" ] && RAM_INFO="unknown"
 RAM_CLASS=$(grep -m1 '^persist.kitsunping.ram.class=' "$NEWMODPATH/system.prop" 2>/dev/null | cut -d= -f2 || echo "unknown")
 echo "RAM INFO        = ${RAM_INFO} (class: ${RAM_CLASS})"
 echo "ANDROID VERSION = $(prop_or_default ro.build.version.release "N/A")"

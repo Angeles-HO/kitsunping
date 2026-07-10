@@ -31,3 +31,12 @@ folder-structure.md
 references/
 
 Docs/gui-reference-local/
+Docs/plan.md
+Docs/00-overview/v7-beta-baseline-report-2026-06-29.md
+Docs/00-overview/v7-beta-device-validation-2026-07-10.md
+Docs/00-overview/v7-beta-kickoff-checklist.md
+Docs/00-overview/v7-beta-scope-freeze-2026-06-30.md
+Docs/10-runtime/runtime-cadence-baseline-v7-beta.md
+Docs/10-runtime/runtime-debounce-experiment-matrix-v7-beta.md
+tools/device_data_dump.sh
+REPORTE_ANALISIS.md

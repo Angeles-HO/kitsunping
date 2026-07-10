@@ -28,7 +28,9 @@ daemon_run_transition_cycle() {
         fi
         log_info "wifi_state_changed: $last_wifi_state -> $wifi_state ($wifi_details)"
         if [ "$wifi_state" = "connected" ] && [ "$last_wifi_state" != "connected" ]; then
-            verify_router_identity_on_wifi_join "$wifi_bssid" "$wifi_band" "$wifi_chan" "$wifi_freq" "$wifi_width" "$wifi_width_source" "$wifi_width_confidence" "$wifi_caps"
+            if command -v verify_router_identity_on_wifi_join >/dev/null 2>&1; then
+                verify_router_identity_on_wifi_join "$wifi_bssid" "$wifi_band" "$wifi_chan" "$wifi_freq" "$wifi_width" "$wifi_width_source" "$wifi_width_confidence" "$wifi_caps"
+            fi
         fi
         if [ "$last_wifi_state" = "connected" ] && [ "$wifi_state" = "disconnected" ]; then
             log_info "event: wifi_left -> assume mobile priority"

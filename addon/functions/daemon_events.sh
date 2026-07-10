@@ -116,6 +116,46 @@ broadcast_event_to_apk() {
         >/dev/null 2>&1
 }
 
+secure_router_pairing_cache_permissions() {
+    local cache_file
+    cache_file="${ROUTER_PAIRING_CACHE_FILE:-${MODDIR}/cache/router.pairing.json}"
+    [ -e "$cache_file" ] || return 0
+    chmod 0600 "$cache_file" 2>/dev/null || true
+    chown 0:0 "$cache_file" 2>/dev/null || true
+}
+
+daemon_dispatch_executor_event() {
+    local name="$1" ts="$2" details="$3" timeout_sec
+
+    if [ ! -x "$EXECUTOR_SH" ]; then
+        log_error "EXECUTOR not executable: $EXECUTOR_SH"
+        return 1
+    fi
+
+    timeout_sec="${EXECUTOR_TIMEOUT_SEC:-30}"
+    case "$timeout_sec" in ''|*[!0-9]*) timeout_sec=30 ;; esac
+    [ "$timeout_sec" -lt 5 ] && timeout_sec=5
+    [ "$timeout_sec" -gt 300 ] && timeout_sec=300
+
+    if command -v timeout >/dev/null 2>&1; then
+        EVENT_NAME="$name" \
+        EVENT_TS="$ts" \
+        EVENT_DETAILS="$details" \
+        LOG_DIR="$LOG_DIR" \
+        POLICY_LOG="$POLICY_LOG" \
+        timeout "$timeout_sec" "$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
+    else
+        EVENT_NAME="$name" \
+        EVENT_TS="$ts" \
+        EVENT_DETAILS="$details" \
+        LOG_DIR="$LOG_DIR" \
+        POLICY_LOG="$POLICY_LOG" \
+        "$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
+    fi
+
+    return 0
+}
+
 ## Emit an event (debounced) and notify executor
 ## Usage: emit_event "EVENT_NAME" "details"
 emit_event() {
@@ -131,16 +171,7 @@ emit_event() {
             log_error "Failed to write LAST_EVENT_FILE"
         fi
 
-        if [ -x "$EXECUTOR_SH" ]; then
-            EVENT_NAME="$name" \
-            EVENT_TS="$now" \
-            EVENT_DETAILS="$details" \
-            LOG_DIR="$LOG_DIR" \
-            POLICY_LOG="$POLICY_LOG" \
-            "$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
-        else
-            log_error "EXECUTOR not executable: $EXECUTOR_SH"
-        fi
+        daemon_dispatch_executor_event "$name" "$now" "$details"
         # DONE: Optional direct broadcast to APK (action com.kitsunping.ACTION_UPDATE with event/ts)
         broadcast_event_to_apk "$name" "$now" "$details"
     else
@@ -180,6 +211,7 @@ handle_router_identity_change_unpair() {
 
     printf '%s\n' "{\"router_ip\":\"\",\"token\":\"\",\"router_id\":\"\",\"paired\":false,\"updated_ts\":${ts:-0},\"reason\":\"router_identity_changed\"}" \
         | atomic_write "$ROUTER_PAIRING_CACHE_FILE"
+    secure_router_pairing_cache_permissions
 
     emit_event "$EV_ROUTER_UNPAIRED" "reason=router_changed bssid=$bssid from=${old_sig:-none} to=${new_sig:-none}"
     log_info "router pairing reset due identity change: from=${old_sig:-none} to=${new_sig:-none}"

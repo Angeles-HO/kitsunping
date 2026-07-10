@@ -57,6 +57,16 @@ network__app__router_send_module_status() {
     sig=""
     if command -v kitsunping_hmac_sha256_hex >/dev/null 2>&1; then
         sig=$(kitsunping_hmac_sha256_hex "$token" "$canonical" 2>/dev/null || echo "")
+    elif command -v openssl >/dev/null 2>&1; then
+        sig=$(printf '%s' "$canonical" | openssl dgst -sha256 -hmac "$token" 2>/dev/null | awk '{print $NF}' || echo "")
+    fi
+
+    if ! printf '%s' "$sig" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+        log_warning "router_push: invalid HMAC signature length; aborting request"
+        ROUTER_PUSH_LAST_TOOL="sig-invalid"
+        ROUTER_PUSH_LAST_URL=""
+        ROUTER_PUSH_LAST_RC=66
+        return 66
     fi
 
     if command -v curl >/dev/null 2>&1; then

@@ -1,26 +1,26 @@
 {
   "module_id": "Kitsunping",
-  "version": "7.0-beta",
+  "version": "6.30",
   "statuses": {
     "ok": {
-      "description": "KNetwork improvements and stability enhancements TCP, PPC, wifi/Mobile",
+      "description": "Kitsunping v6.30 - WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC",
       "description_suffix": "WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC",
-      "details": "Status: OK - Stable network and lower latency",
+      "details": "Status: OK - Stable maintenance line ready for 7.0-beta preparation",
       "disable": false,
       "safe_mode": false,
       "color": "success"
     },
     "safe_mode": {
-      "description": "Kitsunping v7.0-beta [SAFE MODE]",
+      "description": "Kitsunping v6.30 [SAFE MODE]",
       "description_suffix": "[SAFE MODE]",
       "details": "Status: Safe Mode - State corruption detected, degraded operation enabled",
-      "disable": "INVALID_BOOL_TEST",
+      "disable": false,
       "safe_mode": true,
       "color": "warning",
       "instructions": "See /data/adb/modules/Kitsunping/cache/.rescue_instructions.txt"
     },
     "broken_environment": {
-      "description": "Kitsunping v7.0-beta [BROKEN ENV]",
+      "description": "Kitsunping v6.30 [BROKEN ENV]",
       "description_suffix": "[BROKEN ENV]",
       "details": "Status: Broken Environment - Critical error, module disabled for safety",
       "disable": true,
@@ -29,7 +29,7 @@
       "recovery": "Manual recovery required - check logs"
     },
     "conflict_detected": {
-      "description": "Kitsunping v7.0-beta [CONFLICT]",
+      "description": "Kitsunping v6.30 [CONFLICT]",
       "description_suffix": "[CONFLICT]",
       "details": "Status: Conflict - Other modules interfering with network paths",
       "disable": false,
@@ -37,7 +37,7 @@
       "color": "warning"
     },
     "recovering": {
-      "description": "Kitsunping v7.0-beta [RECOVERING]",
+      "description": "Kitsunping v6.30 [RECOVERING]",
       "description_suffix": "[RECOVERING]",
       "details": "Status: Recovering - Rescue in progress, please wait...",
       "disable": false,
@@ -45,7 +45,7 @@
       "color": "info"
     },
     "recovery_complete": {
-      "description": "Kitsunping v7.0-beta [RECOVERED]",
+      "description": "Kitsunping v6.30 [RECOVERED]",
       "description_suffix": "[RECOVERED]",
       "details": "Status: Recovery Complete - State reset, daemon restarting",
       "disable": false,
@@ -53,7 +53,7 @@
       "color": "success"
     },
     "startup": {
-      "description": "Kitsunping v7.0-beta [STARTING]",
+      "description": "Kitsunping v6.30 [STARTING]",
       "description_suffix": "[STARTING]",
       "details": "Status: Starting - Initializing daemon...",
       "disable": false,
@@ -61,5 +61,5 @@
       "color": "info"
     }
   },
-  "module_prop_template": "id=Kitsunping\nname=Kitsunping\nversion=7.0-beta\nversionCode=700\nauthor=Kitsuneping Dev\ndescription={{description}}\nhelp={{details}}\nchangelog=See GitHub releases"
+  "module_prop_template": "id=Kitsunping\nname=Kitsunping\nversion=6.30\nversionCode=630\nauthor=@Angeles_ho\ndescription={{description}}\nhelp={{details}}\nchangelog=See GitHub releases"
 }

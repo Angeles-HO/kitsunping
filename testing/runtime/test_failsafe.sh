@@ -70,6 +70,50 @@ daemon_set_module_status ok
 assert_file_not_exists "$TMP_DIR/disable" "ok status removes disable flag"
 assert_file_contains "$TMP_DIR/module.prop" "$expected_ok_desc" "ok status restores stable description"
 
+# Hardening: invalid JSON disable values must not break deterministic fallback.
+cp "$TMP_DIR/cache/module_status.json" "$TMP_DIR/cache/module_status.json.bak"
+awk '
+    /"broken_environment"[[:space:]]*:[[:space:]]*\{/ { in_broken=1 }
+    in_broken && /"disable"[[:space:]]*:[[:space:]]*true/ {
+        sub(/true/, "\"maybe\"")
+        in_broken=0
+    }
+    { print }
+' "$TMP_DIR/cache/module_status.json.bak" > "$TMP_DIR/cache/module_status.json"
+
+daemon_set_module_status broken_environment
+assert_file_exists "$TMP_DIR/disable" "broken_environment fallback keeps disable flag when JSON disable is invalid"
+assert_file_contains "$LOG_FILE" "Invalid disable value in module_status.json: status=broken_environment disable=maybe" "invalid disable value is logged for broken_environment"
+
+awk '
+    /"ok"[[:space:]]*:[[:space:]]*\{/ { in_ok=1 }
+    in_ok && /"disable"[[:space:]]*:[[:space:]]*false/ {
+        sub(/false/, "\"invalid\"")
+        in_ok=0
+    }
+    { print }
+' "$TMP_DIR/cache/module_status.json.bak" > "$TMP_DIR/cache/module_status.json"
+
+daemon_set_module_status ok
+assert_file_not_exists "$TMP_DIR/disable" "ok fallback keeps module enabled when JSON disable is invalid"
+assert_file_contains "$LOG_FILE" "Invalid disable value in module_status.json: status=ok disable=invalid" "invalid disable value is logged for ok"
+
+# Transition hardening: conflict status applies only when safe_mode is not active.
+rm -f "$TMP_DIR/cache/daemon.safe_mode"
+daemon_set_module_status ok
+daemon_apply_conflict_risk_status high
+assert_rc 0 "$?" "high conflict risk transitions to conflict_detected outside safe_mode"
+assert_file_contains "$TMP_DIR/module.prop" "[CONFLICT]" "module.prop exposes conflict_detected status"
+assert_file_not_exists "$TMP_DIR/disable" "conflict_detected does not disable module"
+
+touch "$TMP_DIR/cache/daemon.safe_mode"
+daemon_set_module_status safe_mode
+daemon_apply_conflict_risk_status high
+assert_rc 1 "$?" "high conflict risk is suppressed while safe_mode is active"
+assert_file_contains "$TMP_DIR/module.prop" "[SAFE MODE]" "safe_mode status remains after conflict suppression"
+assert_file_not_exists "$TMP_DIR/disable" "safe_mode remains enabled during conflict suppression"
+assert_file_contains "$LOG_FILE" "conflict_detected suppressed because safe_mode is active" "suppressed transition is logged"
+
 touch "$TMP_DIR/cache/daemon.rescue_requested"
 touch "$TMP_DIR/cache/daemon.safe_mode"
 printf 'old-event\n' > "$LAST_EVENT_FILE"
@@ -79,5 +123,12 @@ assert_file_not_exists "$TMP_DIR/cache/daemon.rescue_requested" "rescue clears r
 assert_file_not_exists "$TMP_DIR/cache/daemon.safe_mode" "rescue clears safe mode flag"
 assert_file_contains "$STATE_FILE" "daemon.safe_mode_recovery=1" "rescue writes recovery state template"
 assert_file_contains "$TMP_DIR/module.prop" "[RECOVERED]" "module.prop exposes recovery_complete state"
+
+daemon_consume_safe_mode_recovery_flag
+assert_rc 0 "$?" "recovery marker is consumed after rescue"
+assert_file_contains "$STATE_FILE" "daemon.safe_mode_recovery=0" "recovery marker resets to 0 after consume"
+
+daemon_consume_safe_mode_recovery_flag
+assert_rc 1 "$?" "second recovery-marker consume is a no-op"
 
 finish

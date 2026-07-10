@@ -205,3 +205,37 @@ get_reason_from_score() {
         echo "bad"
     fi
 }
+
+# Rotate a log file in-place when it exceeds a size threshold.
+# Uses copy+truncate so active file descriptors keep writing safely.
+daemon_rotate_log_file_if_needed() {
+    local log_file="$1" max_bytes="$2" size=0
+
+    [ -n "$log_file" ] || return 0
+    [ -f "$log_file" ] || return 0
+
+    case "$max_bytes" in ''|*[!0-9]*) return 0 ;; esac
+    [ "$max_bytes" -gt 0 ] || return 0
+
+    size=$(wc -c < "$log_file" 2>/dev/null | tr -d '[:space:]')
+    case "$size" in ''|*[!0-9]*) size=0 ;; esac
+
+    [ "$size" -gt "$max_bytes" ] || return 0
+
+    cp "$log_file" "${log_file}.1" 2>/dev/null || cat "$log_file" > "${log_file}.1" 2>/dev/null || true
+    : > "$log_file"
+    return 0
+}
+
+# Rotate daemon runtime logs with configurable max size.
+daemon_rotate_runtime_logs() {
+    local max_bytes
+
+    max_bytes="${DAEMON_LOG_ROTATE_MAX_BYTES:-10485760}"
+    case "$max_bytes" in ''|*[!0-9]*) max_bytes=10485760 ;; esac
+    [ "$max_bytes" -gt 0 ] || max_bytes=10485760
+
+    daemon_rotate_log_file_if_needed "${LOG_FILE:-$MODDIR/logs/daemon.log}" "$max_bytes"
+    daemon_rotate_log_file_if_needed "${POLICY_LOG:-$MODDIR/logs/policy.log}" "$max_bytes"
+    daemon_rotate_log_file_if_needed "$MODDIR/logs/services_daemon.log" "$max_bytes"
+}

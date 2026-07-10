@@ -53,8 +53,8 @@ persist.kitsunping.direct_broadcast=1
 
 # Debounce window for events in seconds (integer > 0). Lower values react faster but can increase battery/logs.
 # Note: the daemon will auto-raise this to at least `kitsunping.daemon.interval` to avoid event spam.
-persist.kitsunping.event_debounce_sec=10
-kitsunping.event.debounce_sec=10
+persist.kitsunping.event_debounce_sec=60
+kitsunping.event.debounce_sec=60
 
 # ====== Kitsunping / Router ======
 # Enable Kitsunrouter (0: disable | 1: enable), a component that can adjust network parameters based on ping results to optimize performance.

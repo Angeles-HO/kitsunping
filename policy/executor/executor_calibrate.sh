@@ -199,8 +199,38 @@ run_calibration_phase() {
     log_policy "Calibrate gate context: profile=$target_profile transport=$transport_context cooldown=${active_cooldown}s low_score=$active_low_score streak_needed=$active_low_streak_needed"
 
     # --- gating decision ---
-    if [ "$force_calibrate" -eq 1 ]; then
-        log_policy "Calibration forced by env FORCE_CALIBRATE=1"
+    CALIBRATE_BOOT_GUARD_SEC="${CALIBRATE_BOOT_GUARD_SEC:-1800}"
+    CALIBRATE_BOOT_GUARD_SEC="$(uint_or_default "$CALIBRATE_BOOT_GUARD_SEC" "1800")"
+    CALIBRATE_BOOT_TS_FILE="${CALIBRATE_BOOT_TS_FILE:-$MODDIR/cache/policy.boot.ts}"
+    manual_calibration_request=0
+    if [ "${EVENT_NAME:-}" = "user_requested_calibrate" ]; then
+        manual_calibration_request=1
+    fi
+
+    boot_guard_active=0
+    if [ "$manual_calibration_request" -ne 1 ] && [ "$CALIBRATE_BOOT_GUARD_SEC" -gt 0 ] && [ "$now_ts" -gt 0 ]; then
+        boot_ts_raw="$(cat "$CALIBRATE_BOOT_TS_FILE" 2>/dev/null || echo 0)"
+        boot_ts="$(uint_or_default "$boot_ts_raw" "0")"
+        if [ "$boot_ts" -gt 0 ] && is_epoch_like "$boot_ts"; then
+            boot_elapsed=$((now_ts - boot_ts))
+            [ "$boot_elapsed" -lt 0 ] && boot_elapsed=0
+            if [ "$boot_elapsed" -lt "$CALIBRATE_BOOT_GUARD_SEC" ]; then
+                boot_guard_active=1
+                printf '%s' "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
+                echo "postponed" | atomic_write "$CALIBRATE_STATE_FILE"
+                log_policy "Boot calibration guard active (${boot_elapsed}/${CALIBRATE_BOOT_GUARD_SEC}s); postponing automatic calibration"
+            fi
+        fi
+    fi
+
+    if [ "$boot_guard_active" -eq 1 ]; then
+        run_calibrate=0
+    elif [ "$force_calibrate" -eq 1 ]; then
+        if [ "$manual_calibration_request" -eq 1 ]; then
+            log_policy "Calibration forced by user request"
+        else
+            log_policy "Calibration forced by env FORCE_CALIBRATE=1"
+        fi
         run_calibrate=1
     elif [ "$now_ts" -eq 0 ]; then
         log_policy "Invalid time source; skipping calibrate gating"

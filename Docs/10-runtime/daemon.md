@@ -54,7 +54,7 @@ This section documents the time-related behavior of the daemon/executor and how 
 ### Daemon loop
 
 - **Main loop interval**: `kitsunping.daemon.interval` (seconds, default: 10). The daemon polls interfaces and updates `cache/daemon.state` every loop.
-- **Event debounce**: `persist.kitsunping.event_debounce_sec` (seconds, default: 5). This suppresses repeated events within the window. The daemon auto-raises debounce to at least the polling interval.
+- **Event debounce**: `persist.kitsunping.event_debounce_sec` (seconds, default: 60 in current beta track). This suppresses repeated events within the window. The daemon auto-raises debounce to at least the polling interval.
 - **Emit events toggle**: `persist.kitsunping.emit_events` (0/1 or true/false). When disabled, no events are emitted and the executor is not spawned.
 - **Mobile signal sampling**: `SIGNAL_POLL_INTERVAL` (loops, default: 5). Signal quality is sampled every N loops when mobile is the egress path.
 - **Wi-Fi probe interval**: `NET_PROBE_INTERVAL` (loops, default: 3). Optional probe runs every N loops when Wi-Fi is the default route.
@@ -283,7 +283,7 @@ flowchart TD
 - **persist.kitsunping.debug**: Toggles debug mode for detailed logging (0: disable | 1: enable).
 - **persist.kitsunping.ping_timeout**: Tuning value used by calibration/probing (currently used as a ping count in `Net_Calibrate/calibrate.sh`; default: 7).
 - **persist.kitsunping.emit_events**: Enables/disables emitting events and spawning the executor (0/1 or false/true; default: true).
-- **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 5; auto-raised to at least `kitsunping.daemon.interval`).
+- **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 60 in current beta track; auto-raised to at least `kitsunping.daemon.interval`).
 - **persist.kitsunping.direct_broadcast**: Optional direct daemon->APK broadcast (`com.kitsunping.ACTION_UPDATE`) for immediate UI refresh without waiting for file polling (default: enabled).
 
 ### Router / OpenWrt

@@ -98,10 +98,16 @@ daemon_run_channel_smart_trigger() {
         if [ "$_CHANNEL_LOW_SCORE_ITERATIONS" -ge "$CHANNEL_TRIGGER_MIN_ITERATIONS" ]; then
             log_info "[channel_trigger] WiFi score $wifi_score sustained for ${_CHANNEL_LOW_SCORE_ITERATIONS} iterations (threshold=$CHANNEL_TRIGGER_MIN_ITERATIONS), requesting scan"
             
-            # Detect band from interface properties (2.4GHz vs 5GHz)
-            # For now, default to 2.4GHz as it's most common problem band
-            # TODO: read actual band from daemon.state or link_context
-            local band="2.4GHz"
+            # Use current runtime state to choose router band request.
+            # Fallback to auto if state is unavailable.
+            local band="auto" state_band=""
+            state_band="$(network__app__read_state_field "wifi.band" 2>/dev/null || echo "")"
+            [ -z "$state_band" ] && state_band="${wifi_band:-}"
+            case "$state_band" in
+                2.4*|2g*|2*) band="2g" ;;
+                5*|5g*|6*|6g*|6ghz*) band="5g" ;;
+                *) band="auto" ;;
+            esac
             
             # Request with force=0 (respects internal rate-limit and guards)
             network__router__channel_recommend_request "$band" "0"

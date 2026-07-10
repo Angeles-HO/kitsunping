@@ -195,10 +195,6 @@ _channel__http_get() {
     # Note: router-channel-recommend CGI doesn't require authentication headers
     # It's a read-only endpoint, so we skip HMAC signatures
     
-    # Temporarily disable SELinux to allow file writes from daemon context
-    local selinux_original=$(getenforce 2>/dev/null)
-    [ "$selinux_original" = "Enforcing" ] && setenforce 0 2>/dev/null
-    
     if command -v curl >/dev/null 2>&1; then
         curl -fsS --connect-timeout 3 --max-time "$timeout" \
             -o "$output_file" \
@@ -217,9 +213,6 @@ _channel__http_get() {
     else
         rc=127
     fi
-    
-    # Restore SELinux mode (optional - Permissive is usually safe on rooted devices)
-    # [ "$selinux_original" = "Enforcing" ] && setenforce 1 2>/dev/null
     
     return "$rc"
 }
@@ -655,10 +648,6 @@ network__router__channel_apply_request() {
     kitsunping_log "info" "channel_apply: requesting channel change (band=$band, channel=$channel, router=$router_ip)"
     
     # ---- Execute POST request ----
-    # Note: SELinux workaround
-    selinux_original=$(getenforce 2>/dev/null)
-    [ "$selinux_original" = "Enforcing" ] && setenforce 0 2>/dev/null
-    
     if command -v curl >/dev/null 2>&1; then
         curl -fsS --connect-timeout 3 --max-time "$timeout" \
             -X POST \
@@ -694,9 +683,6 @@ network__router__channel_apply_request() {
         _channel__telemetry_inc "apply_errors"
         return 1
     fi
-    
-    # Restore SELinux (optional)
-    # [ "$selinux_original" = "Enforcing" ] && setenforce 1 2>/dev/null
     
     # ---- Check response ----
     if [ $rc -ne 0 ]; then

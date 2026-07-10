@@ -76,7 +76,7 @@ daemon_attempt_state_self_heal() {
     if [ -f "$STATE_FILE" ] && ! grep -q '^[a-z_]*\.[a-z_]*=' "$STATE_FILE" 2>/dev/null; then
         cp "$STATE_FILE" "$MODDIR/cache/daemon.state.corrupt.$ts" 2>/dev/null || true
         cat > "$STATE_FILE" << 'EOF'
-daemon.version=7.0-beta
+    daemon.version=6.30
 daemon.cycle_count=0
 daemon.uptime_sec=0
 daemon.self_healed=1
@@ -169,7 +169,7 @@ daemon_is_safe_mode() {
 # ============== Rescue Trigger ==============
 # Check if user requested manual rescue (user can create this file to trigger recovery)
 daemon_check_rescue_request() {
-    return $([ -f "$MODDIR/cache/daemon.rescue_requested" ])
+    [ -f "$MODDIR/cache/daemon.rescue_requested" ]
 }
 
 # ============== State Reset & Recovery ==============
@@ -203,7 +203,7 @@ EOF
     
     # Reset daemon.state to minimal state (preserve only essential connectivity info)
     cat > "$STATE_FILE" << 'EOF'
-daemon.version=7.0-beta
+daemon.version=6.30
 daemon.cycle_count=0
 daemon.uptime_sec=0
 daemon.safe_mode_recovery=1
@@ -290,6 +290,44 @@ daemon_safe_mode_log_status() {
     return 1
 }
 
+# Consume one-time recovery marker written after manual rescue.
+daemon_consume_safe_mode_recovery_flag() {
+    local current_flag tmp_file
+
+    [ -f "$STATE_FILE" ] || return 1
+    current_flag="$(awk -F= '$1=="daemon.safe_mode_recovery" {print $2; exit}' "$STATE_FILE" 2>/dev/null)"
+    case "$current_flag" in
+        1|true|TRUE|yes|YES|on|ON) ;;
+        *) return 1 ;;
+    esac
+
+    tmp_file="$STATE_FILE.tmp.$$"
+    awk 'BEGIN {updated=0}
+        /^daemon\.safe_mode_recovery=/ {
+            print "daemon.safe_mode_recovery=0"
+            updated=1
+            next
+        }
+        { print }
+        END {
+            if (updated==0) {
+                print "daemon.safe_mode_recovery=0"
+            }
+        }
+    ' "$STATE_FILE" > "$tmp_file" 2>/dev/null || {
+        rm -f "$tmp_file" 2>/dev/null || true
+        return 1
+    }
+
+    mv "$tmp_file" "$STATE_FILE" 2>/dev/null || {
+        rm -f "$tmp_file" 2>/dev/null || true
+        return 1
+    }
+
+    printf '[DAEMON][INFO] recovery marker consumed from previous safe mode rescue\n' >> "$LOG_FILE" 2>/dev/null || true
+    return 0
+}
+
 # ============== Module Status Management ==============
 # HYBRID Status Definitions:
 # 1) Try cache/module_status.json (if present)
@@ -368,7 +406,7 @@ daemon_get_status_base() {
     fi
 
     # Embedded fallback
-    printf '%s' "Kitsunping v7.0-beta"
+    printf '%s' "Kitsunping v6.30"
     return 0
 }
 
@@ -419,7 +457,7 @@ daemon_get_status_description() {
     base="$(daemon_get_status_base)"
     suffix="$(daemon_get_status_suffix "$status_type")"
 
-    [ -n "$base" ] || base="Kitsunping v7.0-beta"
+    [ -n "$base" ] || base="Kitsunping v6.30"
     [ -n "$suffix" ] || suffix="[UNKNOWN]"
 
     case "$suffix" in
@@ -617,6 +655,30 @@ daemon_set_module_status() {
     else
         daemon_remove_disable_file
     fi
+}
+
+# Apply module status from conflict risk while preserving safe_mode precedence.
+# Returns 0 when a status transition is applied, 1 otherwise.
+daemon_apply_conflict_risk_status() {
+    local risk="$1"
+
+    case "$risk" in
+        high)
+            if daemon_is_safe_mode; then
+                printf '[FAILSAFE] conflict_detected suppressed because safe_mode is active\n' >> "$LOG_FILE" 2>/dev/null || true
+                return 1
+            fi
+            daemon_set_module_status "conflict_detected"
+            return 0
+            ;;
+        medium|low|none|'')
+            return 1
+            ;;
+        *)
+            printf '[FAILSAFE][WARN] Unknown conflict risk value: %s\n' "$risk" >> "$LOG_FILE" 2>/dev/null || true
+            return 1
+            ;;
+    esac
 }
 
 # ============== Rescue Documentation ==============
