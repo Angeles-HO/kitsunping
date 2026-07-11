@@ -90,6 +90,7 @@ _dev_reload_all() {
     _source_or_dev "$MODDIR/addon/functions/daemon_app_cycle.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_bootstrap.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_config.sh"
+    _source_or_dev "$MODDIR/addon/functions/daemon_onnx.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_state_writer.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_adaptive_sampling.sh"
     _source_or_dev "$MODDIR/addon/functions/daemon_transitions.sh"
@@ -336,6 +337,11 @@ else
     DAEMON_SAMPLE_INTERVAL_SEC="$INTERVAL"
 fi
 
+if command -v daemon_onnx_init >/dev/null 2>&1; then
+    daemon_onnx_init
+    ONNX_INITIALIZED=1
+fi
+
 
 # Resolve Wi-Fi iface independently from current default route.
 # Using get_current_iface() here can point to rmnet* when mobile is active,
@@ -409,6 +415,10 @@ else
         daemon_run_mobile_cycle
         daemon_run_wifi_transport_cycle
         daemon_run_mobile_transport_cycle
+
+        if command -v daemon_run_onnx_cycle >/dev/null 2>&1; then
+            daemon_run_onnx_cycle
+        fi
         
         if ! daemon_safe_mode_skip_cycle policy_check; then
             daemon_run_target_profile_cycle

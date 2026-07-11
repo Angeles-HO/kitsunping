@@ -1,0 +1,117 @@
+#!/usr/bin/env sh
+# Kitsunping ONNX inference wrapper (Phase 2 scaffold)
+# Produces safe bounded deltas for daemon_onnx.sh.
+
+set -u
+
+MODEL_PATH=""
+INPUT_FILE=""
+READ_STDIN=1
+
+usage() {
+    cat <<'EOF'
+Usage: infer [--model <path>] [--input <features.json>] [--stdin]
+
+Input JSON fields (best-effort):
+  wifi_score, mobile_score, latency_ms, jitter_ms, loss_pct, battery_pct, is_charging
+
+Output JSON:
+  {"delta_alpha":<num>,"delta_beta":<num>,"delta_gamma":<num>,"delta_delta":<num>}
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --model)
+            MODEL_PATH="${2:-}"
+            shift 2
+            ;;
+        --input)
+            INPUT_FILE="${2:-}"
+            READ_STDIN=0
+            shift 2
+            ;;
+        --stdin)
+            READ_STDIN=1
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# MODEL_PATH is optional for scaffold mode. Kept for forward compatibility.
+if [ -n "$MODEL_PATH" ] && [ ! -f "$MODEL_PATH" ]; then
+    # Fail-open with neutral deltas when model path is invalid in scaffold mode.
+    printf '%s\n' '{"delta_alpha":0.0000,"delta_beta":0.0000,"delta_gamma":0.0000,"delta_delta":0.0000}'
+    exit 0
+fi
+
+payload="{}"
+if [ "$READ_STDIN" -eq 1 ]; then
+    payload="$(cat 2>/dev/null || echo '{}')"
+elif [ -n "$INPUT_FILE" ] && [ -f "$INPUT_FILE" ]; then
+    payload="$(cat "$INPUT_FILE" 2>/dev/null || echo '{}')"
+fi
+
+json_number() {
+    key="$1"
+    def="$2"
+
+    if command -v jq >/dev/null 2>&1; then
+        v="$(printf '%s' "$payload" | jq -r "try .${key} // empty" 2>/dev/null || true)"
+    else
+        v="$(printf '%s' "$payload" | sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\([-0-9.][0-9.]*\).*/\1/p" | head -n1)"
+    fi
+
+    case "$v" in
+        ''|*[!0-9.-]*) printf '%s' "$def" ;;
+        *) printf '%s' "$v" ;;
+    esac
+}
+
+wifi_score="$(json_number wifi_score 0)"
+mobile_score="$(json_number mobile_score 0)"
+latency_ms="$(json_number latency_ms 0)"
+loss_pct="$(json_number loss_pct 0)"
+battery_pct="$(json_number battery_pct 100)"
+is_charging="$(json_number is_charging 0)"
+
+out="$(LC_ALL=C awk \
+    -v w="$wifi_score" \
+    -v m="$mobile_score" \
+    -v l="$latency_ms" \
+    -v loss="$loss_pct" \
+    -v b="$battery_pct" \
+    -v c="$is_charging" 'BEGIN {
+        da=0; db=0; dg=0; dd=0;
+
+        if ((w + 5) < m) {
+            da=-0.02; db=0.02;
+        } else if ((m + 5) < w) {
+            da=0.02; db=-0.02;
+        }
+
+        if (l > 120 || loss > 5) {
+            dg=-0.01; dd=0.02;
+        }
+
+        if (c < 1 && b < 15) {
+            da=0; db=0; dg=0; dd=0;
+        }
+
+        if (da > 0.10) da=0.10; if (da < -0.10) da=-0.10;
+        if (db > 0.10) db=0.10; if (db < -0.10) db=-0.10;
+        if (dg > 0.10) dg=0.10; if (dg < -0.10) dg=-0.10;
+        if (dd > 0.10) dd=0.10; if (dd < -0.10) dd=-0.10;
+
+        printf "{\"delta_alpha\":%.4f,\"delta_beta\":%.4f,\"delta_gamma\":%.4f,\"delta_delta\":%.4f}", da, db, dg, dd;
+    }')"
+
+printf '%s\n' "$out"
+exit 0

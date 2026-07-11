@@ -2,21 +2,26 @@
 
 daemon_normalize_weight_value() {
     local raw="$1" def="$2"
-    awk -v v="$raw" -v d="$def" 'BEGIN {
+    LC_ALL=C awk -v v="$raw" -v d="$def" 'BEGIN {
+        out = ""
         if (v ~ /^-?[0-9]+([.][0-9]+)?$/) {
             n = v + 0
             if (n < 0) n = 0
             if (n > 1) n = 1
-            printf "%.4f", n
+            out = sprintf("%.4f", n)
         } else {
-            printf "%.4f", d + 0
+            out = sprintf("%.4f", d + 0)
         }
+        sub(/0+$/, "", out)
+        sub(/[.]$/, "", out)
+        if (out == "") out = "0"
+        printf "%s", out
     }'
 }
 
 daemon_normalize_sigmoid_weights() {
     local a="$1" b="$2" g="$3" d="$4"
-    awk -v a="$a" -v b="$b" -v g="$g" -v d="$d" 'BEGIN {
+    LC_ALL=C awk -v a="$a" -v b="$b" -v g="$g" -v d="$d" 'BEGIN {
         sum = a + b + g
         if (sum <= 0) { a = 0.4; b = 0.3; g = 0.3; sum = 1.0 }
         if (sum != 1.0) { a = a/sum; b = b/sum; g = g/sum }
@@ -35,6 +40,13 @@ daemon_load_runtime_config() {
     local router_cache_ttl_raw router_cache_ttl_raw_2
     local router_infer_width_raw router_infer_width_raw_2
     local router_infer_width_2g_raw router_infer_width_2g_raw_2
+    local onnx_enable_raw onnx_enable_raw_2
+    local onnx_infer_interval_raw onnx_infer_interval_raw_2
+    local onnx_infer_timeout_raw onnx_infer_timeout_raw_2
+    local onnx_circuit_cooldown_raw onnx_circuit_cooldown_raw_2
+    local onnx_learning_enable_raw onnx_learning_enable_raw_2
+    local onnx_use_default_model_raw onnx_use_default_model_raw_2
+    local onnx_model_path_raw onnx_model_path_raw_2
 
     DAEMON_INTERVAL="${DAEMON_INTERVAL:-10}"
     LAST_TS_WIFI_LEFT=0
@@ -67,6 +79,58 @@ daemon_load_runtime_config() {
     LCL_ALPHA="${_norm%% *}"; _norm="${_norm#* }"
     LCL_BETA="${_norm%% *}";  _norm="${_norm#* }"
     LCL_GAMMA="${_norm%% *}"; LCL_DELTA="${_norm#* }"
+
+    onnx_enable_raw="$(getprop persist.kitsunping.onnx.enable)"
+    onnx_enable_raw_2="$(getprop kitsunping.onnx.enable)"
+    onnx_infer_interval_raw="$(getprop persist.kitsunping.onnx.infer_interval)"
+    onnx_infer_interval_raw_2="$(getprop kitsunping.onnx.infer_interval)"
+    onnx_infer_timeout_raw="$(getprop persist.kitsunping.onnx.infer_timeout_sec)"
+    onnx_infer_timeout_raw_2="$(getprop kitsunping.onnx.infer_timeout_sec)"
+    onnx_circuit_cooldown_raw="$(getprop persist.kitsunping.onnx.circuit_cooldown_sec)"
+    onnx_circuit_cooldown_raw_2="$(getprop kitsunping.onnx.circuit_cooldown_sec)"
+    onnx_learning_enable_raw="$(getprop persist.kitsunping.onnx.learning_enable)"
+    onnx_learning_enable_raw_2="$(getprop kitsunping.onnx.learning_enable)"
+    onnx_use_default_model_raw="$(getprop persist.kitsunping.onnx.use_default_model)"
+    onnx_use_default_model_raw_2="$(getprop kitsunping.onnx.use_default_model)"
+    onnx_model_path_raw="$(getprop persist.kitsunping.onnx.model_path | tr -d '\r\n')"
+    onnx_model_path_raw_2="$(getprop kitsunping.onnx.model_path | tr -d '\r\n')"
+
+    ONNX_ENABLE="${ONNX_ENABLE:-${onnx_enable_raw:-$onnx_enable_raw_2}}"
+    case "${ONNX_ENABLE:-}" in
+        1|true|TRUE|yes|YES|on|ON|'') ONNX_ENABLE=1 ;;
+        *) ONNX_ENABLE=0 ;;
+    esac
+
+    ONNX_INFER_INTERVAL="${ONNX_INFER_INTERVAL:-${onnx_infer_interval_raw:-$onnx_infer_interval_raw_2}}"
+    ONNX_INFER_INTERVAL="$(uint_or_default "$ONNX_INFER_INTERVAL" "5")"
+    [ "$ONNX_INFER_INTERVAL" -lt 1 ] && ONNX_INFER_INTERVAL=1
+    [ "$ONNX_INFER_INTERVAL" -gt 120 ] && ONNX_INFER_INTERVAL=120
+
+    ONNX_INFER_TIMEOUT_SEC="${ONNX_INFER_TIMEOUT_SEC:-${onnx_infer_timeout_raw:-$onnx_infer_timeout_raw_2}}"
+    ONNX_INFER_TIMEOUT_SEC="$(uint_or_default "$ONNX_INFER_TIMEOUT_SEC" "2")"
+    [ "$ONNX_INFER_TIMEOUT_SEC" -lt 1 ] && ONNX_INFER_TIMEOUT_SEC=1
+    [ "$ONNX_INFER_TIMEOUT_SEC" -gt 15 ] && ONNX_INFER_TIMEOUT_SEC=15
+
+    ONNX_CIRCUIT_COOLDOWN_SEC="${ONNX_CIRCUIT_COOLDOWN_SEC:-${onnx_circuit_cooldown_raw:-$onnx_circuit_cooldown_raw_2}}"
+    ONNX_CIRCUIT_COOLDOWN_SEC="$(uint_or_default "$ONNX_CIRCUIT_COOLDOWN_SEC" "600")"
+    [ "$ONNX_CIRCUIT_COOLDOWN_SEC" -lt 30 ] && ONNX_CIRCUIT_COOLDOWN_SEC=30
+
+    ONNX_LEARNING_ENABLE="${ONNX_LEARNING_ENABLE:-${onnx_learning_enable_raw:-$onnx_learning_enable_raw_2}}"
+    case "${ONNX_LEARNING_ENABLE:-}" in
+        1|true|TRUE|yes|YES|on|ON|'') ONNX_LEARNING_ENABLE=1 ;;
+        *) ONNX_LEARNING_ENABLE=0 ;;
+    esac
+
+    ONNX_USE_DEFAULT_MODEL="${ONNX_USE_DEFAULT_MODEL:-${onnx_use_default_model_raw:-$onnx_use_default_model_raw_2}}"
+    case "${ONNX_USE_DEFAULT_MODEL:-}" in
+        1|true|TRUE|yes|YES|on|ON|'') ONNX_USE_DEFAULT_MODEL=1 ;;
+        *) ONNX_USE_DEFAULT_MODEL=0 ;;
+    esac
+
+    ONNX_MODEL_PATH="${ONNX_MODEL_PATH:-${onnx_model_path_raw:-$onnx_model_path_raw_2}}"
+    if [ "${ONNX_USE_DEFAULT_MODEL:-1}" -eq 1 ] || [ -z "$ONNX_MODEL_PATH" ]; then
+        ONNX_MODEL_PATH="$MODDIR/models/base.onnx"
+    fi
 
     router_debug_raw="$(getprop kitsunping.router.debug)"
     kitsunrouter_enable_raw="$(getprop persist.kitsunrouter.enable)"

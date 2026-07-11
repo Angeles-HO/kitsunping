@@ -33,6 +33,29 @@ kitsunping.sigmoid.alpha=0.4
 kitsunping.sigmoid.beta=0.3
 kitsunping.sigmoid.gamma=0.3
 
+# Optional ONNX adaptive inference controls (Phase 2 scaffold)
+# 1: enable adaptive inference layer | 0: disable
+persist.kitsunping.onnx.enable=1
+kitsunping.onnx.enable=1
+# 1: enable online adaptive learning (weight updates) | 0: keep static weights
+persist.kitsunping.onnx.learning_enable=1
+kitsunping.onnx.learning_enable=1
+# 1: force bundled base model path | 0: allow custom model_path override
+persist.kitsunping.onnx.use_default_model=1
+kitsunping.onnx.use_default_model=1
+# Run ONNX inference every N daemon loops (default: 5 loops)
+persist.kitsunping.onnx.infer_interval=5
+kitsunping.onnx.infer_interval=5
+# Timeout for infer binary invocation (seconds)
+persist.kitsunping.onnx.infer_timeout_sec=2
+kitsunping.onnx.infer_timeout_sec=2
+# Optional model path override (if unset, runtime defaults to $MODDIR/models/base.onnx)
+persist.kitsunping.onnx.model_path=
+kitsunping.onnx.model_path=
+# Circuit-breaker cooldown window after repeated degradations (seconds)
+persist.kitsunping.onnx.circuit_cooldown_sec=600
+kitsunping.onnx.circuit_cooldown_sec=600
+
 # Wi-Fi quality threshold used by daemon profile selection (0-100)
 # If wifi.score >= threshold => tends to request `speed`, else `stable` (default: 75)
 kitsunping.wifi.speed_threshold=75

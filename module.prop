@@ -1,7 +1,7 @@
 id=Kitsunping
 name=Kitsunping
-version=6.30
-versionCode=630
+version=7.0-beta
+versionCode=700
 author=@Angeles_ho
-description=Kitsunping v6.30 - WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC
+description=Kitsunping v7.0-beta - WiFi 2.4G/5G + TCP + LTE/LTE-A + PPC
 updateJson=https://raw.githubusercontent.com/Angeles-HO/kitsunping/refs/heads/main/update.json

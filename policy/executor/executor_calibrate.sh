@@ -82,6 +82,34 @@ clear_calibration_postpone_tracker() {
     echo 0 | atomic_write "$CALIBRATE_POSTPONE_TS_FILE"
 }
 
+read_module_version_code() {
+    local module_prop="${MODDIR}/module.prop" value
+    [ -f "$module_prop" ] || { printf '%s' ""; return 0; }
+    value="$(awk -F= '$1=="versionCode" {print $2; exit}' "$module_prop" 2>/dev/null)"
+    case "$value" in
+        ''|*[!0-9]*) printf '%s' "" ;;
+        *) printf '%s' "$value" ;;
+    esac
+}
+
+read_calibration_install_marker_version() {
+    local marker_file="$1" value
+    [ -f "$marker_file" ] || { printf '%s' ""; return 0; }
+    value="$(cat "$marker_file" 2>/dev/null)"
+    case "$value" in
+        ''|*[!0-9]*) printf '%s' "" ;;
+        *) printf '%s' "$value" ;;
+    esac
+}
+
+write_calibration_install_marker_version() {
+    local marker_file="$1" version_code="$2"
+    case "$version_code" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s' "$version_code" | atomic_write "$marker_file"
+}
+
 # ---------------------------------------------------------------------------
 # State / score helpers
 # ---------------------------------------------------------------------------
@@ -202,13 +230,27 @@ run_calibration_phase() {
     CALIBRATE_BOOT_GUARD_SEC="${CALIBRATE_BOOT_GUARD_SEC:-1800}"
     CALIBRATE_BOOT_GUARD_SEC="$(uint_or_default "$CALIBRATE_BOOT_GUARD_SEC" "1800")"
     CALIBRATE_BOOT_TS_FILE="${CALIBRATE_BOOT_TS_FILE:-$MODDIR/cache/policy.boot.ts}"
+    CALIBRATE_INSTALL_MARKER_FILE="${CALIBRATE_INSTALL_MARKER_FILE:-$MODDIR/cache/calibrate.install.version}"
     manual_calibration_request=0
+    install_bootstrap_calibration=0
+    install_marker_version=""
+    module_version_code=""
     if [ "${EVENT_NAME:-}" = "user_requested_calibrate" ]; then
         manual_calibration_request=1
     fi
 
+    if [ "$manual_calibration_request" -ne 1 ]; then
+        module_version_code="$(read_module_version_code)"
+        install_marker_version="$(read_calibration_install_marker_version "$CALIBRATE_INSTALL_MARKER_FILE")"
+        if [ -n "$module_version_code" ] && [ "$install_marker_version" != "$module_version_code" ]; then
+            install_bootstrap_calibration=1
+            force_calibrate=1
+            log_policy "Install/update calibration bootstrap pending (marker=${install_marker_version:-none} current=$module_version_code); bypassing boot guard once"
+        fi
+    fi
+
     boot_guard_active=0
-    if [ "$manual_calibration_request" -ne 1 ] && [ "$CALIBRATE_BOOT_GUARD_SEC" -gt 0 ] && [ "$now_ts" -gt 0 ]; then
+    if [ "$manual_calibration_request" -ne 1 ] && [ "$install_bootstrap_calibration" -ne 1 ] && [ "$CALIBRATE_BOOT_GUARD_SEC" -gt 0 ] && [ "$now_ts" -gt 0 ]; then
         boot_ts_raw="$(cat "$CALIBRATE_BOOT_TS_FILE" 2>/dev/null || echo 0)"
         boot_ts="$(uint_or_default "$boot_ts_raw" "0")"
         if [ "$boot_ts" -gt 0 ] && is_epoch_like "$boot_ts"; then
@@ -228,6 +270,8 @@ run_calibration_phase() {
     elif [ "$force_calibrate" -eq 1 ]; then
         if [ "$manual_calibration_request" -eq 1 ]; then
             log_policy "Calibration forced by user request"
+        elif [ "$install_bootstrap_calibration" -eq 1 ]; then
+            log_policy "Calibration forced for first boot after install/update"
         else
             log_policy "Calibration forced by env FORCE_CALIBRATE=1"
         fi
@@ -403,6 +447,13 @@ run_calibration_phase() {
         echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
         echo "running" | atomic_write "$CALIBRATE_STATE_FILE"
         calibration_started=1
+        if [ "$install_bootstrap_calibration" -eq 1 ]; then
+            if write_calibration_install_marker_version "$CALIBRATE_INSTALL_MARKER_FILE" "$module_version_code"; then
+                log_policy "Calibration install marker consumed for versionCode=$module_version_code"
+            else
+                log_policy "Calibration install marker consume failed"
+            fi
+        fi
         emit_policy_update_event "CALIBRATION_STARTED"
         rm -f "$CALIBRATE_OUT" 2>/dev/null
 
