@@ -20,6 +20,7 @@ This index is the canonical entry point for project documentation. Files are gro
 
 - `10-runtime/daemon.md`: daemon behavior and runtime flow.
 - `10-runtime/implementation.md`: boot stages, runtime components, and state files.
+- `10-runtime/property-discovery-methods.md`: methods to discover properties not exposed by plain getprop/build.prop.
 - `10-runtime/network-profiles.md`: profile model and selection flow.
 - `10-runtime/wifi-properties-reference.md`: Wi-Fi property reference.
 - `10-runtime/binary-paths.md`: bundled/system binary resolution.
