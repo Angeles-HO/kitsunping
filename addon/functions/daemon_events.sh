@@ -132,10 +132,12 @@ daemon_dispatch_executor_event() {
         return 1
     fi
 
-    timeout_sec="${EXECUTOR_TIMEOUT_SEC:-30}"
-    case "$timeout_sec" in ''|*[!0-9]*) timeout_sec=30 ;; esac
+    # Executor runs may include a bounded calibration phase. Its default limit
+    # is 600s, so the outer event timeout must not terminate it at 30s.
+    timeout_sec="${EXECUTOR_TIMEOUT_SEC:-600}"
+    case "$timeout_sec" in ''|*[!0-9]*) timeout_sec=600 ;; esac
     [ "$timeout_sec" -lt 5 ] && timeout_sec=5
-    [ "$timeout_sec" -gt 300 ] && timeout_sec=300
+    [ "$timeout_sec" -gt 600 ] && timeout_sec=600
 
     if command -v timeout >/dev/null 2>&1; then
         EVENT_NAME="$name" \

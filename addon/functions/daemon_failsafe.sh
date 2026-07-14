@@ -395,7 +395,18 @@ daemon_status_json_top_get() {
 }
 
 daemon_get_status_base() {
-    local mid ver
+    local mid ver module_prop
+
+    module_prop="$MODDIR/module.prop"
+    if [ -f "$module_prop" ]; then
+        mid="$(awk -F= '$1=="name" {print substr($0, index($0, "=")+1); exit}' "$module_prop" 2>/dev/null)"
+        [ -n "$mid" ] || mid="$(awk -F= '$1=="id" {print substr($0, index($0, "=")+1); exit}' "$module_prop" 2>/dev/null)"
+        ver="$(awk -F= '$1=="version" {print substr($0, index($0, "=")+1); exit}' "$module_prop" 2>/dev/null)"
+        if [ -n "$mid" ] && [ -n "$ver" ]; then
+            printf '%s v%s' "$mid" "$ver"
+            return 0
+        fi
+    fi
 
     mid="$(daemon_status_json_top_get "module_id" 2>/dev/null || true)"
     ver="$(daemon_status_json_top_get "version" 2>/dev/null || true)"
@@ -655,6 +666,29 @@ daemon_set_module_status() {
     else
         daemon_remove_disable_file
     fi
+}
+
+# A first validation pass may defer safe mode while rebuilding corrupt cache
+# files, leaving the visible module state at startup. Once the daemon has
+# written a valid state file, promote only that startup state to ok. Other
+# explicit statuses retain their safety precedence.
+daemon_promote_startup_status_if_healthy() {
+    local module_prop description
+
+    module_prop="$MODDIR/module.prop"
+    [ -f "$module_prop" ] || return 1
+    daemon_is_safe_mode && return 1
+    daemon_validate_state_files || return 1
+
+    description="$(awk -F= '$1=="description" {print substr($0, index($0, "=")+1); exit}' "$module_prop" 2>/dev/null)"
+    case "$description" in
+        *"[STARTING]"*)
+            daemon_set_module_status "ok"
+            printf '[FAILSAFE] Promoted healthy startup status to ok\n' >> "$LOG_FILE" 2>/dev/null || true
+            return 0
+            ;;
+    esac
+    return 1
 }
 
 # Apply module status from conflict risk while preserving safe_mode precedence.
