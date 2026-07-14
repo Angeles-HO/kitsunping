@@ -103,6 +103,9 @@ core_daemon_iteration() {
     core_daemon_trace "before write_state_file"
     daemon_write_state_file
     core_daemon_trace "after write_state_file"
+    if command -v daemon_promote_startup_status_if_healthy >/dev/null 2>&1; then
+        daemon_promote_startup_status_if_healthy || true
+    fi
     # Diagnostic JSON export (rate-limited, max once per RUNTIME_EXPORT_INTERVAL_SEC)
     if command -v network__app__runtime_export >/dev/null 2>&1; then
         core_daemon_trace "before runtime_export"

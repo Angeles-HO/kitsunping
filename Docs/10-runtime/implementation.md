@@ -9,6 +9,7 @@ This page keeps deeper implementation details out of the main README, while docu
   - Does early boot prep only; does not start runtime services.
 - `installer/service.sh`: late boot stage
   - Waits for `sys.boot_completed=1`.
+  - Records the universal post-boot timestamp used by the automatic-calibration guard.
   - Applies baseline network tuning.
   - Starts the daemon.
 - `installer/uninstall.sh`: uninstall stage
@@ -53,7 +54,7 @@ Key time-based controls used by the daemon and executor:
 - Script: `policy/engine/network_policy.sh`
 - Purpose:
   - Reads `cache/daemon.state` + `cache/daemon.last` and chooses a profile via `policy/rules/decide_profile.sh`.
-  - Writes the chosen profile to `cache/policy.request` (informational) and triggers the executor via a `PROFILE_CHANGED` context.
+  - Publishes its chosen automatic candidate to `cache/policy.auto_request`. The target engine composes it with boot, manual, and foreground sources before writing `policy.request`.
 
 ## Provider mapping / calibration data
 
@@ -70,11 +71,13 @@ Stored under `cache/`:
 - `daemon.last`: last emitted event (text)
 - `event.last.json`: last event (JSON)
 - `signal_quality.json`: radio sampling output (JSON)
-- `policy.request`: informational “desired profile” written by the daemon
+- `policy.auto_request`: latest automatic candidate from Wi-Fi, mobile, or the optional policy engine
+- `policy.request`: current desired profile written only by the target engine
 - `policy.target`: target profile written by the executor before applying
 - `policy.current`: last applied profile written by the executor
+- `target.state`: target-engine phase; `REQUEST_WRITTEN` means a request was persisted, not that the executor applied it
 - `policy.event.json`: executor summary (for APK polling)
-- `calibrate.state`, `calibrate.ts`, `calibrate.streak`: calibration lifecycle
+- `calibrate.state`, `calibrate.ts`, `calibrate.streak`: calibration lifecycle; terminal outcomes are `completed`, `aborted`, `failed`, and `timed_out`, while postponement has a separate tracker
 - `calibrate.best.env`, `calibrate.best.meta`: calibration cache (provider-keyed BEST_* values)
 
 ## Tools and fallbacks

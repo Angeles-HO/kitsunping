@@ -84,11 +84,9 @@ EV_SIGNAL_DEGRADED="SIGNAL_DEGRADED"
 
 network__mobile__transport_cycle
 
-assert_file_exists "$EVENT_CAPTURE" "mobile transport cycle emits profile change event"
-
-captured=$(cat "$EVENT_CAPTURE" 2>/dev/null || echo "")
-assert_contains "PROFILE_CHANGED|" "$captured" "profile change event is emitted"
-assert_contains "sinr=-5" "$captured" "event includes negative SINR sample"
-assert_contains "sinr_score=30.00" "$captured" "negative SINR does not receive extra penalty"
+auto_profile=$(cat "$MODDIR/cache/policy.auto_request" 2>/dev/null || echo "")
+assert_eq "speed" "$auto_profile" "mobile selector publishes automatic profile candidate"
+assert_file_not_exists "$MODDIR/cache/policy.request" "mobile selector does not write shared profile intent"
+assert_file_not_exists "$EVENT_CAPTURE" "mobile selector does not emit profile command directly"
 
 finish

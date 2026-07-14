@@ -304,7 +304,9 @@ network__app__event_cycle() {
                     [ -f "$MODDIR/cache/policy.request" ] && \
                         prev_profile=$(cat "$MODDIR/cache/policy.request" 2>/dev/null || echo "")
                     printf '%s' "$profile_target" > "$MODDIR/cache/policy.request" 2>/dev/null || true
-                    network__app__policy_version_touch "$profile_target" "medium"
+                    printf '%s' "manual" > "$MODDIR/cache/policy.request.priority" 2>/dev/null || true
+                    network__app__priority_apply_context "$profile_target" "high"
+                    network__app__policy_version_touch "$profile_target" "high"
                     log_info "app_event=$app_event target=$profile_target"
                     emit_event "$EV_REQUEST_PROFILE" "source=app_intermediary to=$profile_target from=${prev_profile:-unknown}"
                     ;;
@@ -391,7 +393,7 @@ network__app__event_cycle() {
 _target_engine__release_override() {
     local pkg="$1" reason_tag="$2"
     local auto_profile_file override_file last_app_file last_profile_file
-    local auto_profile prev_profile pkg_key now_ts stable_sec cooldown_sec
+    local auto_profile prev_profile request_priority pkg_key now_ts stable_sec cooldown_sec
     local stable_raw cooldown_raw policy_request_file policy_request_priority_file
 
     auto_profile_file="$MODDIR/cache/policy.auto_request"
@@ -422,6 +424,16 @@ _target_engine__release_override() {
             network__app__target_state_transition "NETWORK_DECISION" "${reason_tag}:auto=$auto_profile"
             prev_profile=""
             [ -f "$policy_request_file" ] && prev_profile="$(cat "$policy_request_file" 2>/dev/null || echo "")"
+            request_priority=""
+            [ -f "$policy_request_priority_file" ] && request_priority="$(cat "$policy_request_priority_file" 2>/dev/null || echo "")"
+            case "$request_priority" in
+                manual|boot)
+                    if [ ! -f "$override_file" ]; then
+                        log_debug "target.prop auto request preserved: priority=$request_priority profile=${prev_profile:-unknown}"
+                        return 0
+                    fi
+                    ;;
+            esac
             if [ "$auto_profile" != "$prev_profile" ]; then
                 pkg_key="${pkg:-none}"
                 if ! network__app__target_app_is_stable "$pkg_key" "$now_ts" "$stable_sec"; then
@@ -437,7 +449,7 @@ _target_engine__release_override() {
                 printf '%s' "medium"        > "$policy_request_priority_file" 2>/dev/null || true
                 network__app__policy_version_touch "$auto_profile" "medium"
                 network__app__target_mark_profile_change "$now_ts"
-                network__app__target_state_transition "POLICY_APPLIED" "${reason_tag}:profile=$auto_profile"
+                network__app__target_state_transition "REQUEST_WRITTEN" "${reason_tag}:profile=$auto_profile"
                 emit_event "$EV_REQUEST_PROFILE" "source=target.prop_release package=${pkg:-none} to=$auto_profile from=${prev_profile:-unknown}"
             fi
             ;;
@@ -458,7 +470,40 @@ network__app__target_profile_cycle() {
     local last_app_file last_profile_file
     local request_profile current_profile prev_profile
     local now_ts stable_raw stable_sec cooldown_raw cooldown_sec pkg_key
-    local override_state
+    local override_state boot_profile_raw boot_profile request_priority
+
+    policy_request_file="$MODDIR/cache/policy.request"
+    policy_request_priority_file="$MODDIR/cache/policy.request.priority"
+    auto_profile_file="$MODDIR/cache/policy.auto_request"
+    override_file="$MODDIR/cache/target.override.active"
+    last_app_file="$MODDIR/cache/target.last_app"
+    last_profile_file="$MODDIR/cache/target.last_profile"
+
+    # Boot is a profile source, not a second writer. It remains active until a
+    # manual request or active foreground override has produced a higher-priority
+    # decision. Subsequent auto observations cannot replace it by themselves.
+    boot_profile_raw="$(getprop persist.kitsunping.boot_profile 2>/dev/null | tr -d '\r\n')"
+    boot_profile="$(printf '%s' "$boot_profile_raw" | tr '[:upper:]' '[:lower:]')"
+    case "$boot_profile" in
+        benchmark|benchmarks) boot_profile="benchmark_gaming" ;;
+        stable|speed|gaming|benchmark_gaming|benchmark_speed) ;;
+        *) boot_profile="" ;;
+    esac
+
+    if [ -n "$boot_profile" ]; then
+        request_profile=""
+        request_priority=""
+        [ -f "$policy_request_file" ] && request_profile="$(cat "$policy_request_file" 2>/dev/null || echo "")"
+        [ -f "$policy_request_priority_file" ] && request_priority="$(cat "$policy_request_priority_file" 2>/dev/null || echo "")"
+        if [ "$request_priority" != "manual" ] && [ "$request_priority" != "boot" ] && [ ! -f "$override_file" ]; then
+            printf '%s' "$boot_profile" > "$policy_request_file" 2>/dev/null || true
+            printf '%s' "boot" > "$policy_request_priority_file" 2>/dev/null || true
+            network__app__priority_apply_context "$boot_profile" "high"
+            network__app__policy_version_touch "$boot_profile" "high"
+            network__app__target_state_transition "REQUEST_WRITTEN" "boot_profile:$boot_profile"
+            emit_event "$EV_REQUEST_PROFILE" "source=target.prop_boot to=$boot_profile from=${request_profile:-unknown}"
+        fi
+    fi
 
     # ---- feature gate ----
     enabled_raw="$(getprop persist.kitsunping.target_prop_enable 2>/dev/null | tr -d '\r\n')"
@@ -467,6 +512,7 @@ network__app__target_profile_cycle() {
         *) enabled=1 ;;
     esac
     if [ "$enabled" -ne 1 ]; then
+        _target_engine__release_override "" "target_prop_disabled"
         network__app__target_state_transition "IDLE" "target_prop_disabled"
         return 0
     fi
@@ -483,13 +529,6 @@ network__app__target_profile_cycle() {
 
     cooldown_raw="$(getprop persist.kitsunping.target_profile_change_cooldown_sec 2>/dev/null | tr -d '\r\n')"
     case "$cooldown_raw" in ''|*[!0-9]*) cooldown_sec=5 ;; *) cooldown_sec="$cooldown_raw" ;; esac
-
-    policy_request_file="$MODDIR/cache/policy.request"
-    policy_request_priority_file="$MODDIR/cache/policy.request.priority"
-    auto_profile_file="$MODDIR/cache/policy.auto_request"
-    override_file="$MODDIR/cache/target.override.active"
-    last_app_file="$MODDIR/cache/target.last_app"
-    last_profile_file="$MODDIR/cache/target.last_profile"
 
     # ---- reconcile: ensure policy.request matches policy.current ----
     request_profile=""
@@ -514,8 +553,7 @@ network__app__target_profile_cycle() {
 
     if [ -z "$pkg" ]; then
         network__app__kpi_session_marker_clear
-        [ -f "$override_file" ] && \
-            _target_engine__release_override "" "release_no_foreground"
+        _target_engine__release_override "" "release_no_foreground"
         network__app__target_state_transition "IDLE" "no_foreground"
         return 0
     fi
@@ -524,8 +562,7 @@ network__app__target_profile_cycle() {
     mapping="$(network__app__target_prop_lookup_profile "$pkg")"
     if [ -z "$mapping" ]; then
         network__app__kpi_session_marker_clear
-        [ -f "$override_file" ] && \
-            _target_engine__release_override "$pkg" "release_unmapped:pkg=$pkg"
+        _target_engine__release_override "$pkg" "release_unmapped:pkg=$pkg"
         network__app__target_state_transition "IDLE" "unmapped_package:$pkg"
         return 0
     fi
@@ -548,6 +585,9 @@ network__app__target_profile_cycle() {
     prev_profile=""
     [ -f "$policy_request_file" ] && \
         prev_profile="$(cat "$policy_request_file" 2>/dev/null || echo "")"
+    request_priority=""
+    [ -f "$policy_request_priority_file" ] && \
+        request_priority="$(cat "$policy_request_priority_file" 2>/dev/null || echo "")"
     current_profile=""
     [ -f "$MODDIR/cache/policy.current" ] && \
         current_profile="$(cat "$MODDIR/cache/policy.current" 2>/dev/null || echo "")"
@@ -556,6 +596,13 @@ network__app__target_profile_cycle() {
     if [ ! -f "$last_app_file" ] || [ "$(cat "$last_app_file" 2>/dev/null)" != "$pkg" ]; then
         printf '%s' "$pkg" > "$last_app_file" 2>/dev/null || true
         log_info "target.prop app=$pkg profile=$profile priority=$priority"
+    fi
+
+    if [ "$request_priority" = "manual" ]; then
+        rm -f "$override_file" 2>/dev/null || true
+        network__app__target_state_transition "APP_OVERRIDE" "manual_request:profile=${prev_profile:-unknown}"
+        log_debug "target.prop mapping deferred while manual profile request is active"
+        return 0
     fi
 
     # ---- apply if needed ----
@@ -579,10 +626,8 @@ network__app__target_profile_cycle() {
         network__app__policy_version_touch "$profile" "$priority"
         printf '%s' "$profile"   > "$last_profile_file"            2>/dev/null || true
         network__app__target_mark_profile_change "$now_ts"
-        network__app__target_state_transition "POLICY_APPLIED" "request_written:$pkg profile=$profile priority=$priority"
+        network__app__target_state_transition "REQUEST_WRITTEN" "request_written:$pkg profile=$profile priority=$priority"
         emit_event "$EV_REQUEST_PROFILE" "source=target.prop package=$pkg priority=$priority to=$profile from=${prev_profile:-unknown} current=${current_profile:-unknown}"
-    else
-        network__app__target_state_transition "POLICY_APPLIED" "already_applied:$pkg profile=$profile priority=$priority"
     fi
 
     # ---- maintain override tracking file ----

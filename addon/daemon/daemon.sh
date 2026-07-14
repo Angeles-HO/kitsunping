@@ -161,7 +161,7 @@ EV_ROUTER_CAPS_DETECTED="ROUTER_CAPS_DETECTED"
 # Configurable runtime parameters are loaded by daemon_config.sh.
 
 # Policy file ownership conventions:
-# - `cache/policy.request`: written by the daemon to indicate the desired/profile chosen
+# - `cache/policy.request`: written by target_engine as the current desired profile
 # - `cache/policy.target`: written atomically by the executor when it accepts an event (target to apply)
 # - `cache/policy.current`: written by the executor when a profile has been successfully applied
 # This separation keeps the daemon as a decision/originator and the executor as the single-writer
@@ -430,6 +430,9 @@ else
         daemon_run_tick_cycle
 
         daemon_write_state_file
+        if command -v daemon_promote_startup_status_if_healthy >/dev/null 2>&1; then
+            daemon_promote_startup_status_if_healthy || true
+        fi
         
         if command -v daemon_sampling_pick_interval >/dev/null 2>&1; then
             interval_candidate="$(daemon_sampling_pick_interval "$INTERVAL")"

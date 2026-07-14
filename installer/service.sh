@@ -410,6 +410,23 @@ done
 
 echo "[SYS][SERVICE] Boot completed, applying configurations..." >> "$SERVICES_LOGS"
 
+BOOT_TS_FILE="$SCRIPT_DIR/cache/policy.boot.ts"
+boot_ts="$(date +%s 2>/dev/null || echo 0)"
+case "$boot_ts" in
+    ''|*[!0-9]*|0)
+        echo "[SYS][SERVICE][WARN] Could not record boot timestamp for calibration guard" >> "$SERVICES_LOGS"
+        ;;
+    *)
+        boot_ts_tmp="${BOOT_TS_FILE}.tmp.$$"
+        if printf '%s' "$boot_ts" > "$boot_ts_tmp" 2>/dev/null && mv "$boot_ts_tmp" "$BOOT_TS_FILE" 2>/dev/null; then
+            echo "[SYS][SERVICE] Calibration boot guard timestamp recorded: $boot_ts" >> "$SERVICES_LOGS"
+        else
+            rm -f "$boot_ts_tmp" 2>/dev/null || true
+            echo "[SYS][SERVICE][WARN] Could not persist calibration boot timestamp" >> "$SERVICES_LOGS"
+        fi
+        ;;
+esac
+
 
 apply_network_optimizations  || echo "[SYS][SERVICE] Error applying base optimizations" >> "$SERVICES_LOGS"
 

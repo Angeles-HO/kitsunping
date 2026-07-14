@@ -43,6 +43,13 @@ LAST_EVENT_FILE="$TMP_DIR/cache/daemon.last"
 rm -f "$TMP_DIR/cache/daemon.rescue_requested"
 
 expected_ok_desc="$(daemon_get_status_description ok)"
+assert_contains "Kitsunping v6.30" "$expected_ok_desc" "module status base uses installed module.prop version"
+
+sed 's/^version=6\.30$/version=7.0-beta/' "$TMP_DIR/module.prop" > "$TMP_DIR/module.prop.next"
+mv "$TMP_DIR/module.prop.next" "$TMP_DIR/module.prop"
+assert_contains "Kitsunping v7.0-beta" "$(daemon_get_status_description startup)" "module status ignores stale JSON version"
+sed 's/^version=7\.0-beta$/version=6.30/' "$TMP_DIR/module.prop" > "$TMP_DIR/module.prop.next"
+mv "$TMP_DIR/module.prop.next" "$TMP_DIR/module.prop"
 
 touch "$TMP_DIR/cache/daemon.rescue_requested"
 daemon_check_rescue_request
@@ -56,6 +63,9 @@ assert_rc 1 "$?" "first corruption hit delays safe mode to allow self-heal"
 assert_file_not_exists "$TMP_DIR/cache/daemon.safe_mode" "safe mode flag stays absent after first recoverable hit"
 assert_file_contains "$TMP_DIR/module.prop" "[STARTING]" "startup status is written during delayed safe-mode path"
 assert_file_contains "$STATE_FILE" "daemon.self_healed=1" "self-heal rewrites daemon.state template"
+daemon_promote_startup_status_if_healthy
+assert_rc 0 "$?" "healthy rebuilt state promotes startup module status"
+assert_file_contains "$TMP_DIR/module.prop" "$expected_ok_desc" "healthy rebuilt state exposes stable module description"
 
 printf 'bad state again\n' > "$STATE_FILE"
 printf 'bad link again\n' > "$LINK_CONTEXT_FILE"

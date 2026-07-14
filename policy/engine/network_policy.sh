@@ -8,7 +8,7 @@ LOG_DIR="$MODDIR/logs"
 POLICY_LOG="$LOG_DIR/policy.log"
 STATE_FILE="$MODDIR/cache/daemon.state"
 LAST_EVENT_FILE="$MODDIR/cache/daemon.last"
-REQUEST_FILE="$MODDIR/cache/policy.request"
+AUTO_REQUEST_FILE="$MODDIR/cache/policy.auto_request"
 CURRENT_FILE="$MODDIR/cache/policy.current"
 EXECUTOR_SH="$MODDIR/policy/executor/executor.sh"
 KITSUTILS_SH="$MODDIR/addon/functions/debug/shared_errors.sh"
@@ -100,21 +100,7 @@ else
 	profile="stable"
 fi
 
-log_info "[POLICY] decided profile=$profile wifi=$wifi_state iface=$iface event=$last_event"
-printf '%s' "$profile" | atomic_write "$REQUEST_FILE" || true
-
-current_profile=""
-[ -f "$CURRENT_FILE" ] && current_profile="$(cat "$CURRENT_FILE" 2>/dev/null)"
-
-if [ -f "$EXECUTOR_SH" ]; then
-	EVENT_NAME="PROFILE_CHANGED" \
-	EVENT_TS="${now:-0}" \
-	EVENT_DETAILS="from=${current_profile:-} to=$profile policy=network_policy" \
-	LOG_DIR="$LOG_DIR" \
-	POLICY_LOG="$POLICY_LOG" \
-	/system/bin/sh "$EXECUTOR_SH" >> "$POLICY_LOG" 2>&1 &
-else
-	log_error "[POLICY] executor missing: $EXECUTOR_SH"
-fi
+log_info "[POLICY] automatic candidate=$profile wifi=$wifi_state iface=$iface event=$last_event"
+printf '%s' "$profile" | atomic_write "$AUTO_REQUEST_FILE" || true
 
 exit 0

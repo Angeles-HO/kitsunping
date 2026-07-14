@@ -166,7 +166,7 @@ network__app__module_boot_id_get() {
 }
 
 # -----------------------------------------------------------------------
-# Target state machine (IDLE / APP_OVERRIDE / NETWORK_DECISION / POLICY_APPLIED)
+# Target state machine (IDLE / APP_OVERRIDE / NETWORK_DECISION / REQUEST_WRITTEN)
 # -----------------------------------------------------------------------
 
 network__app__target_state_get() {
@@ -177,8 +177,13 @@ network__app__target_state_get() {
     [ -f "$state_file" ] && state="$(cat "$state_file" 2>/dev/null || echo '')"
 
     case "$state" in
-        IDLE|APP_OVERRIDE|NETWORK_DECISION|POLICY_APPLIED)
+        IDLE|APP_OVERRIDE|NETWORK_DECISION|REQUEST_WRITTEN)
             printf '%s' "$state"
+            ;;
+        POLICY_APPLIED)
+            # Compatibility with state files written before the phase was
+            # renamed to describe the request rather than executor success.
+            printf 'REQUEST_WRITTEN'
             ;;
         *)
             printf 'IDLE'
@@ -191,7 +196,7 @@ network__app__target_state_transition() {
     local state_file reason_file ts_file history_file current_state current_reason now_ts transition_line
 
     case "$next_state" in
-        IDLE|APP_OVERRIDE|NETWORK_DECISION|POLICY_APPLIED) ;;
+        IDLE|APP_OVERRIDE|NETWORK_DECISION|REQUEST_WRITTEN) ;;
         *) return 1 ;;
     esac
 

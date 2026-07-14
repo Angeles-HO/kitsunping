@@ -39,7 +39,7 @@ When calibration is ongoing, the **executor/calibration pipeline** writes `cache
 
 To avoid interference between daemon probing and calibration pings, the daemon skips Wi‑Fi probes/penalties while `cache/calibrate.state=running`.
 
-Before applying BEST values from calibration via `resetprop` (without requiring reboot), the executor writes the currently applied profile to `policy.current`. The daemon (or an external policy selector) may write the desired profile to `policy.request` (informational) and trigger the executor.
+Before applying BEST values from calibration via `resetprop` (without requiring reboot), the executor writes the currently applied profile to `policy.current`. The target engine is the sole writer of the desired profile in `policy.request`; Wi-Fi, mobile, and the alternative policy engine publish only `policy.auto_request` candidates. The executor treats a valid current request as authoritative over details from the event that woke it.
 
 Executor reads policy.target (target profile) and compares it to policy.current (last applied). If they differ, the executor applies the profile and updates policy.current, plus calibrate.* state to avoid repeated runs.
 
@@ -77,10 +77,12 @@ Calibration is not a periodic timer. It only runs when the executor is triggered
 - **Delay before calibration**: `CALIBRATE_DELAY` (seconds, default: 10). Passed to `calibrate_network_settings`.
 - **Timeout**: `CALIBRATE_TIMEOUT` (seconds, default: 600). Hard limit for calibration runtime.
 - **Settle margin**: `CALIBRATE_SETTLE_MARGIN` (seconds, default: 60). Reserved for post-run settling logic.
+- **Post-boot guard**: `CALIBRATE_BOOT_GUARD_SEC` (seconds, default: 1800). Automatic calibration is postponed during this window after every completed boot; an explicit manual request bypasses it. A successful automatic calibration during installation records its module version, so it is not repeated on the first reboot.
 
 ### State flow and lock
 
-- `cache/calibrate.state` transitions: `idle` -> `running` -> `cooling` (or `postponed` / `idle` on abort).
+- `cache/calibrate.state` transitions: `idle` -> `running` -> one of `completed`, `aborted`, `failed`, or `timed_out`. A gate that does not start a child records `postponed`; stale `running` is recovered to `idle`. `cooling` remains accepted only as a compatibility value for existing state files.
+- `cache/calibrate.ts` records the last calibration run that actually started; boot and heavy-activity postponements use `calibrate.postpone.ts` and do not reset this timestamp.
 - The executor uses a lock directory (`cache/calibrate.lock`) to prevent overlapping calibrations across concurrent runs.
 - The lock is released once the run finishes, and the state persists in `calibrate.state` for cooldown gating.
 
@@ -119,7 +121,7 @@ Example: daemon starts heavy router sync at the same moment executor wants to ca
 2. Executor reaches calibrate gate:
     - sees `heavy_load=1` and marks calibration as `postponed`, **or**
     - if counter is stale but lock is busy, lock-acquire fails and calibration is still `postponed`.
-3. Executor does not run `calibrate.sh`; it updates `calibrate.state=postponed` and `calibrate.ts`.
+3. Executor does not run `calibrate.sh`; it updates `calibrate.state=postponed` and the starvation tracker (`calibrate.postpone.ts`).
 4. Daemon finishes heavy window, decrements counter to 0, releases lock.
 5. On next eligible executor trigger, calibration can run.
 
