@@ -39,7 +39,7 @@ If postpone count or age exceed configured thresholds (`CALIBRATE_FORCE_AFTER_PO
 
 ## Relevant state and output files
 
-- `calibrate.state`, `calibrate.ts`, `calibrate.streak`: calibration state (idle/running/cooling/postponed), last calibration epoch, and consecutive low-score streak
+- `calibrate.state`, `calibrate.ts`, `calibrate.streak`: calibration state (`idle`, `running`, `postponed`, or terminal `completed`/`aborted`/`failed`/`timed_out`), last started calibration epoch, and consecutive low-score streak. Postponement timing is stored separately in `calibrate.postpone.ts`.
 - `calibrate.postpone.count`, `calibrate.postpone.ts`: postpone counters & first-ts used by the starvation guard
 - `logs/results.env` (`CALIBRATE_OUT`): calibration output file containing `BEST_*` values; the executor maps those to props and applies them (via `resetprop` when available)
 
