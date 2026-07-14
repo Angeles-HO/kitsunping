@@ -1,5 +1,6 @@
 # Cache
 cache/
+_workspace/
 
 # Generated configs/backups (created at install/runtime)
 configs/kitsuneping_original_backup*.conf
