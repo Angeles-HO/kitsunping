@@ -9,6 +9,7 @@ This index is the canonical entry point for project documentation. Files are gro
 - `00-overview/privacy-and-telemetry.md`: privacy boundaries and local-data behavior.
 - `00-overview/runtime-locks-and-heavy-tasks.md`: lock model and heavy-task coordination.
 - `00-overview/local-ci-and-release-gate.md`: CI path, failure triage, and pre-release validation commands.
+- `00-overview/references-applicability-matrix-v7-beta.md`: mapping from `lib/references` topics to current executable Kitsunping scope.
 - `00-overview/v7-beta-kickoff-checklist.md`: first execution steps for v7.0-beta stabilization.
 - `00-overview/v7-beta-baseline-report-2026-06-29.md`: kickoff validation evidence before hardening changes.
 - `00-overview/v7-beta-scope-freeze-2026-06-30.md`: finalized v7.0-beta scope boundary, branch convention, and acceptance criteria.
