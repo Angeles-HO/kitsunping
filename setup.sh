@@ -309,6 +309,36 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
             [ -n "$BEST_ro_ril_nr5g_category" ] && echo "ro.ril.nr5g.category=$BEST_ro_ril_nr5g_category"
         } >> "$SYSTEM_PROP"
         log_info "Configuration applied successfully to system.prop"
+
+        # A successful automatic installation calibration is authoritative for
+        # this module version. Persist its completion so the first boot obeys
+        # the automatic-calibration guard instead of running it again.
+        if [ "$calibrate_rc" -eq 0 ]; then
+            module_version_code="$(awk -F= '$1 == "versionCode" { print $2; exit }' "$NEWMODPATH/module.prop" 2>/dev/null | tr -d '\r\n')"
+            case "$module_version_code" in
+                ''|*[!0-9]*)
+                    log_warning "Could not record automatic calibration version marker"
+                    ;;
+                *)
+                    cache_dir="$NEWMODPATH/cache"
+                    marker_file="$cache_dir/calibrate.install.version"
+                    state_file="$cache_dir/calibrate.state"
+                    timestamp_file="$cache_dir/calibrate.ts"
+                    mkdir -p "$cache_dir" 2>/dev/null || true
+
+                    if printf '%s' "$module_version_code" > "${marker_file}.tmp.$$" 2>/dev/null && mv "${marker_file}.tmp.$$" "$marker_file" 2>/dev/null; then
+                        printf '%s' "completed" > "${state_file}.tmp.$$" 2>/dev/null && mv "${state_file}.tmp.$$" "$state_file" 2>/dev/null || true
+                        if [ "$calibrate_end_ts" -gt 0 ] 2>/dev/null; then
+                            printf '%s' "$calibrate_end_ts" > "${timestamp_file}.tmp.$$" 2>/dev/null && mv "${timestamp_file}.tmp.$$" "$timestamp_file" 2>/dev/null || true
+                        fi
+                        log_info "Automatic calibration recorded for versionCode=$module_version_code"
+                    else
+                        rm -f "${marker_file}.tmp.$$" 2>/dev/null || true
+                        log_warning "Could not persist automatic calibration version marker"
+                    fi
+                    ;;
+            esac
+        fi
     else
         log_error "No optimal values found in the log."
         exit 1

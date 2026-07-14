@@ -62,7 +62,7 @@ daemon_preflight_check_caps() {
 }
 
 daemon_apply_boot_custom_profile_once() {
-    local boot_profile_raw boot_profile policy_request_file policy_request_priority_file
+    local boot_profile_raw boot_profile
 
     boot_profile_raw="$(getprop persist.kitsunping.boot_profile | tr -d '\r\n')"
     boot_profile="$(printf '%s' "$boot_profile_raw" | tr '[:upper:]' '[:lower:]')"
@@ -77,19 +77,7 @@ daemon_apply_boot_custom_profile_once() {
             ;;
     esac
 
-    policy_request_file="$MODDIR/cache/policy.request"
-    policy_request_priority_file="$MODDIR/cache/policy.request.priority"
-
-    printf '%s' "$boot_profile" > "$policy_request_file" 2>/dev/null || true
-    printf '%s' "high" > "$policy_request_priority_file" 2>/dev/null || true
-
-    _boot_ts_file="$MODDIR/cache/policy.boot.ts"
-    printf '%s' "$(date +%s 2>/dev/null || echo 0)" > "$_boot_ts_file" 2>/dev/null || true
-
-    if command -v emit_event >/dev/null 2>&1; then
-        emit_event "$EV_REQUEST_PROFILE" "source=boot_custom_profile to=$boot_profile from=boot"
-    fi
-    log_info "boot custom profile aplicado: $boot_profile"
+    log_info "boot custom profile queued for target engine: $boot_profile"
 }
 
 daemon_run_bootstrap_init() {

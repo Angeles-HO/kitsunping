@@ -43,8 +43,39 @@ release_calibrate_lock() {
     rm -rf "$CALIBRATE_LOCK_DIR" 2>/dev/null
 }
 
+recover_stale_calibration_running() {
+    local current_state pidfile owner_pid
+
+    current_state="$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")"
+    [ "$current_state" = "running" ] || return 0
+
+    pidfile="$CALIBRATE_LOCK_DIR/pid"
+    owner_pid=""
+    [ -f "$pidfile" ] && owner_pid="$(cat "$pidfile" 2>/dev/null)"
+    if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
+        return 1
+    fi
+
+    rm -rf "$CALIBRATE_LOCK_DIR" 2>/dev/null || true
+    echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
+    log_policy "Calibration interrupted: recovered stale running state (owner_pid=${owner_pid:-none})"
+    return 0
+}
+
+mark_calibration_interrupted() {
+    local current_state
+
+    current_state="$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")"
+    [ "$current_state" = "running" ] || return 0
+
+    echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
+    log_policy "Calibration interrupted by executor signal"
+}
+
 set_lock_trap() {
-    trap 'release_calibrate_lock; release_executor_lock' EXIT INT TERM
+    trap 'release_calibrate_lock; release_executor_lock' EXIT
+    trap 'mark_calibration_interrupted; release_calibrate_lock; release_executor_lock; exit 130' INT
+    trap 'mark_calibration_interrupted; release_calibrate_lock; release_executor_lock; exit 143' TERM
 }
 
 # ---------------------------------------------------------------------------
@@ -71,7 +102,6 @@ record_calibration_postpone() {
 
     printf '%s' "$count" | atomic_write "$CALIBRATE_POSTPONE_COUNT_FILE"
     printf '%s' "$first_ts" | atomic_write "$CALIBRATE_POSTPONE_TS_FILE"
-    printf '%s' "$now" | atomic_write "$CALIBRATE_TS_FILE"
     echo "postponed" | atomic_write "$CALIBRATE_STATE_FILE"
 
     log_policy "Calibration postponed: $reason (count=$count age=${age}s)"
@@ -152,18 +182,32 @@ run_calibration_phase() {
     run_calibrate=0
     now_ts=$(epoch_now)
     now_ts="$(uint_or_default "$now_ts" "0")"
-    if [ "${NOW_EPOCH_SOURCE:-unknown}" != "epoch" ]; then
-        log_policy "Time source ${NOW_EPOCH_SOURCE:-unknown}; epoch unavailable"
+    now_epoch_source="${NOW_EPOCH_SOURCE:-unknown}"
+    # Command substitutions run in a subshell on POSIX shells, so the source
+    # marker set by epoch_now() may not propagate. A valid epoch is authoritative.
+    if is_epoch_like "$now_ts"; then
+        now_epoch_source="epoch"
+    fi
+    if [ "$now_epoch_source" != "epoch" ]; then
+        log_policy "Time source $now_epoch_source; epoch unavailable"
     fi
 
     last_calib=$(cat "$CALIBRATE_TS_FILE" 2>/dev/null || echo 0)
     last_calib="$(uint_or_default "$last_calib" "0")"
-    if [ "${NOW_EPOCH_SOURCE:-unknown}" != "epoch" ] && is_epoch_like "$last_calib"; then
-        log_policy "Time source mismatch (epoch vs ${NOW_EPOCH_SOURCE:-unknown}); resetting last_calib"
+    if [ "$now_epoch_source" != "epoch" ] && is_epoch_like "$last_calib"; then
+        log_policy "Time source mismatch (epoch vs $now_epoch_source); resetting last_calib"
         last_calib=0
     fi
 
     calib_state=$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")
+    calibration_active=0
+    if [ "$calib_state" = "running" ]; then
+        if recover_stale_calibration_running; then
+            calib_state="idle"
+        else
+            calibration_active=1
+        fi
+    fi
     elapsed=$((now_ts - last_calib))
 
     # --- transport context detection ---
@@ -258,14 +302,16 @@ run_calibration_phase() {
             [ "$boot_elapsed" -lt 0 ] && boot_elapsed=0
             if [ "$boot_elapsed" -lt "$CALIBRATE_BOOT_GUARD_SEC" ]; then
                 boot_guard_active=1
-                printf '%s' "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
                 echo "postponed" | atomic_write "$CALIBRATE_STATE_FILE"
                 log_policy "Boot calibration guard active (${boot_elapsed}/${CALIBRATE_BOOT_GUARD_SEC}s); postponing automatic calibration"
             fi
         fi
     fi
 
-    if [ "$boot_guard_active" -eq 1 ]; then
+    if [ "$calibration_active" -eq 1 ]; then
+        log_policy "Calibration already running; skipping new run"
+        run_calibrate=0
+    elif [ "$boot_guard_active" -eq 1 ]; then
         run_calibrate=0
     elif [ "$force_calibrate" -eq 1 ]; then
         if [ "$manual_calibration_request" -eq 1 ]; then
@@ -279,7 +325,11 @@ run_calibration_phase() {
     elif [ "$now_ts" -eq 0 ]; then
         log_policy "Invalid time source; skipping calibrate gating"
     else
-        if [ "$calib_state" != "idle" ] && [ "$elapsed" -lt "$settle_window" ]; then
+        case "$calib_state" in
+            completed|failed|timed_out|cooling) calibration_settling=1 ;;
+            *) calibration_settling=0 ;;
+        esac
+        if [ "$calibration_settling" -eq 1 ] && [ "$elapsed" -lt "$settle_window" ]; then
             log_policy "Calibration settling ($elapsed/${settle_window}s); skip calibrate"
             run_calibrate=0
         else
@@ -324,9 +374,16 @@ run_calibration_phase() {
 
     # DONE: Prevent multiple concurrent calibrates
     current_state="$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "idle")"
-    if [ "$current_state" = "running" ]; then
+    if [ "$current_state" = "running" ] && [ "$calibration_active" -eq 1 ]; then
         log_policy "Calibration already running; skipping new run"
         run_calibrate=0
+    elif [ "$current_state" = "running" ]; then
+        if recover_stale_calibration_running; then
+            current_state="idle"
+        else
+            log_policy "Calibration already running; skipping new run"
+            run_calibrate=0
+        fi
     fi
 
     # Ensure only one calibration at a time across concurrent executor runs.
@@ -447,19 +504,12 @@ run_calibration_phase() {
         echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
         echo "running" | atomic_write "$CALIBRATE_STATE_FILE"
         calibration_started=1
-        if [ "$install_bootstrap_calibration" -eq 1 ]; then
-            if write_calibration_install_marker_version "$CALIBRATE_INSTALL_MARKER_FILE" "$module_version_code"; then
-                log_policy "Calibration install marker consumed for versionCode=$module_version_code"
-            else
-                log_policy "Calibration install marker consume failed"
-            fi
-        fi
         emit_policy_update_event "CALIBRATION_STARTED"
         rm -f "$CALIBRATE_OUT" 2>/dev/null
 
         if ! . "$CALIBRATE_SH" >> "$POLICY_LOG" 2>&1; then
             log_policy "Failed to source $CALIBRATE_SH; aborting calibrate"
-            echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
+            echo "failed" | atomic_write "$CALIBRATE_STATE_FILE"
         else
             ( calibrate_network_settings "$calibrate_delay" > "$CALIBRATE_OUT" 2>>"$POLICY_LOG" ) &
             calib_pid=$!
@@ -495,7 +545,7 @@ run_calibration_phase() {
                     case "$key" in BEST_*) ;; *) continue ;; esac
                     [ -z "$val" ] && continue
                     prop="${key#BEST_}"
-                    prop="${prop//_/.}"
+                    prop="$(printf '%s' "$prop" | tr '_' '.')"
                     if [ -n "$RESETPROP_BIN" ]; then
                         log_policy "resetprop $prop=$val"
                         if "$RESETPROP_BIN" "$prop" "$val" >>"$POLICY_LOG" 2>&1; then
@@ -513,8 +563,16 @@ run_calibration_phase() {
                 printf '%s' "$target_profile" | atomic_write "$CURRENT_FILE" || true
                 now_ts=$(epoch_now)
                 echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
-                echo "cooling" | atomic_write "$CALIBRATE_STATE_FILE"
+                echo "completed" | atomic_write "$CALIBRATE_STATE_FILE"
                 echo 0 | atomic_write "$CALIBRATE_STREAK_FILE"
+
+                if [ "$install_bootstrap_calibration" -eq 1 ]; then
+                    if write_calibration_install_marker_version "$CALIBRATE_INSTALL_MARKER_FILE" "$module_version_code"; then
+                        log_policy "Calibration install marker consumed for versionCode=$module_version_code"
+                    else
+                        log_policy "Calibration install marker consume failed"
+                    fi
+                fi
 
                 # Clear the mobile_pending marker after successful calibration on mobile transport
                 if [ -f "${MOBILE_PENDING_FILE:-}" ] && [ "$transport_context" = "mobile" ]; then
@@ -522,20 +580,19 @@ run_calibration_phase() {
                     log_policy "Cleared mobile_pending marker (recalibrated on mobile transport)"
                 fi
 
-                log_policy "Calibration applied: props_applied=$props_applied; entering cooling state"
+                log_policy "Calibration completed: props_applied=$props_applied"
             elif [ "$calib_rc" -eq 3 ]; then
                 log_policy "Calibrate postponed by child (rc=3); deferring next run"
-                now_ts=$(epoch_now)
-                echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
                 echo "postponed" | atomic_write "$CALIBRATE_STATE_FILE"
             elif [ "$calib_rc" -eq 1 ] || [ "$calib_rc" -eq 2 ] || [ "$calib_rc" -eq 4 ]; then
                 log_policy "Calibrate aborted (rc=$calib_rc); leaving profile unchanged"
-                echo "idle" | atomic_write "$CALIBRATE_STATE_FILE"
+                echo "aborted" | atomic_write "$CALIBRATE_STATE_FILE"
+            elif [ "$calib_rc" -eq 124 ]; then
+                log_policy "Calibrate timed out"
+                echo "timed_out" | atomic_write "$CALIBRATE_STATE_FILE"
             else
                 log_policy "Calibrate failed or empty output (rc=$calib_rc)"
-                now_ts=$(epoch_now)
-                echo "$now_ts" | atomic_write "$CALIBRATE_TS_FILE"
-                echo "cooling" | atomic_write "$CALIBRATE_STATE_FILE"
+                echo "failed" | atomic_write "$CALIBRATE_STATE_FILE"
                 echo 0 | atomic_write "$CALIBRATE_STREAK_FILE"
             fi
 
