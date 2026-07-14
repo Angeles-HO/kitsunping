@@ -23,6 +23,9 @@ PATTERN_HIGH='(/proc/sys/net|sysctl[[:space:]]+-w|sysctl[[:space:]]+-p|ip[[:spac
 # Medium-risk: network-oriented runtime/property surfaces (avoid generic setprop noise).
 PATTERN_MEDIUM='(cmd[[:space:]]+wifi|wpa_cli|iw[[:space:]]+|ifconfig|ip[[:space:]]+link|svc[[:space:]]+wifi|resetprop[[:space:]]+(net\.|persist\.(net|wifi)|persist\.sys\.wifi)|setprop[[:space:]]+(net\.|persist\.(net|wifi)|persist\.sys\.wifi))'
 
+# High-risk property collisions: modules touching key Kitsunping/RIL/telephony namespaces.
+PATTERN_PROP_HIGH='((resetprop|setprop)[[:space:]]+(ro\.ril\.|persist\.radio\.|ro\.telephony\.default_network|persist\.telephony\.|persist\.kitsunping\.|kitsunping\.))'
+
 is_excluded_module() {
     local name="$1"
     local x
@@ -35,27 +38,33 @@ is_excluded_module() {
 scan_module() {
     local module_path="$1"
     local module_name="$2"
-    local high_hits medium_hits high_n medium_n risk
+    local high_hits medium_hits prop_high_hits high_n medium_n prop_high_n risk
 
     high_hits="$(grep -RInE "$PATTERN_HIGH" "$module_path" 2>/dev/null | head -n 8)"
     medium_hits="$(grep -RInE "$PATTERN_MEDIUM" "$module_path" 2>/dev/null | head -n 8)"
+    prop_high_hits="$(grep -RInE "$PATTERN_PROP_HIGH" "$module_path" 2>/dev/null | head -n 8)"
 
     high_n=0
     medium_n=0
+    prop_high_n=0
     [ -n "$high_hits" ] && high_n="$(printf '%s\n' "$high_hits" | wc -l | tr -d ' ')"
     [ -n "$medium_hits" ] && medium_n="$(printf '%s\n' "$medium_hits" | wc -l | tr -d ' ')"
+    [ -n "$prop_high_hits" ] && prop_high_n="$(printf '%s\n' "$prop_high_hits" | wc -l | tr -d ' ')"
 
     risk="low"
-    if [ "$high_n" -gt 0 ]; then
+    if [ "$high_n" -gt 0 ] || [ "$prop_high_n" -gt 0 ]; then
         risk="high"
     elif [ "$medium_n" -gt 0 ]; then
         risk="medium"
     fi
 
-    printf 'module=%s risk=%s high_hits=%s medium_hits=%s\n' "$module_name" "$risk" "$high_n" "$medium_n" >> "$REPORT_FILE"
+    printf 'module=%s risk=%s high_hits=%s prop_high_hits=%s medium_hits=%s\n' "$module_name" "$risk" "$high_n" "$prop_high_n" "$medium_n" >> "$REPORT_FILE"
 
     if [ -n "$high_hits" ]; then
         printf '[high:%s]\n%s\n' "$module_name" "$high_hits" >> "$REPORT_FILE"
+    fi
+    if [ -n "$prop_high_hits" ]; then
+        printf '[high-prop:%s]\n%s\n' "$module_name" "$prop_high_hits" >> "$REPORT_FILE"
     fi
     if [ -n "$medium_hits" ]; then
         printf '[medium:%s]\n%s\n' "$module_name" "$medium_hits" >> "$REPORT_FILE"

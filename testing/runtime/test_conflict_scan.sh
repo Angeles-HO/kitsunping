@@ -53,6 +53,21 @@ assert_contains "highest_risk=medium" "$scan_output" "scanner reports medium ove
 assert_file_contains "$MODDIR/cache/conflicts.state" "highest_risk=medium" "state file persists medium risk"
 assert_file_contains "$MODDIR/logs/conflicts_report.log" "module=MediumModule risk=medium" "report includes medium module"
 
+# Property namespace collisions (RIL/telephony/Kitsunping props) should be high risk.
+rm -rf "$MODULES_DIR"
+mkdir -p "$MODULES_DIR/PropCollision"
+cat > "$MODULES_DIR/PropCollision/service.sh" <<'EOF'
+#!/system/bin/sh
+resetprop ro.ril.lte.category 12
+setprop persist.kitsunping.emit_events 0
+EOF
+
+scan_output="$(MODDIR="$MODDIR" KITSUNPING_MODULES_DIR="$MODULES_DIR" sh "$REPO_DIR/tools/detect_module_conflicts.sh")"
+
+assert_contains "highest_risk=high" "$scan_output" "property collisions are classified as high risk"
+assert_file_contains "$MODDIR/logs/conflicts_report.log" "module=PropCollision risk=high" "property collision module appears as high risk"
+assert_file_contains "$MODDIR/logs/conflicts_report.log" "[high-prop:PropCollision]" "property collision details are logged"
+
 # Disabled/removed modules must be ignored even when content is risky.
 rm -rf "$MODULES_DIR"
 mkdir -p "$MODULES_DIR/DisabledRisky" "$MODULES_DIR/RemovedRisky" "$MODULES_DIR/ActiveBenign"

@@ -238,6 +238,26 @@ assert_contains "Boot calibration guard active" "$log_after_second_boot" "second
 printf 'idle' > "$CALIBRATE_STATE_FILE"
 printf '0' > "$CALIBRATE_TS_FILE"
 printf '0' > "$CALIBRATE_STREAK_FILE"
+rm -f "$CALIBRATE_BOOT_TS_FILE" 2>/dev/null || true
+CALIBRATE_BOOT_UPTIME_SEC=300
+
+EVENT_NAME="WIFI_JOINED"
+force_calibrate=0
+EPOCH_NOW=1700001200
+run_calibration_phase
+
+state_after_boot_ts_fallback=$(cat "$CALIBRATE_STATE_FILE" 2>/dev/null || echo "")
+log_after_boot_ts_fallback=$(cat "$POLICY_LOG" 2>/dev/null || echo "")
+
+assert_eq "postponed" "$state_after_boot_ts_fallback" "missing boot timestamp still enforces boot guard via uptime fallback"
+assert_contains "Boot calibration guard recovered boot timestamp from uptime" "$log_after_boot_ts_fallback" "boot timestamp fallback is logged"
+assert_contains "Boot calibration guard active" "$log_after_boot_ts_fallback" "boot guard remains active after fallback recovery"
+CALIBRATE_BOOT_UPTIME_SEC=0
+
+: > "$POLICY_LOG"
+printf 'idle' > "$CALIBRATE_STATE_FILE"
+printf '0' > "$CALIBRATE_TS_FILE"
+printf '0' > "$CALIBRATE_STREAK_FILE"
 
 EVENT_NAME="user_requested_calibrate"
 force_calibrate=1
