@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 6.30 - Release
+## Unreleased
 
 - [new] Added a local release gate script (`tools/release_gate_local.sh`) to validate version metadata consistency before publishing.
 - [new] Added baseline GitHub Actions CI workflow to run local verification checks on push and pull requests.
