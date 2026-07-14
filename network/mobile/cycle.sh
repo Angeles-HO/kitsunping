@@ -95,14 +95,6 @@ network__mobile__transport_cycle() {
                 continue
             fi
 
-            POLICY_REQUEST_FILE="$MODDIR/cache/policy.request"
-            prev_profile=""
-            [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
-            if [ "$profile" != "$prev_profile" ]; then
-                printf '%s' "$profile" > "$POLICY_REQUEST_FILE" 2>/dev/null || true
-                emit_event "PROFILE_CHANGED" "from=$prev_profile to=$profile composite=$composite ema=$composite_ema_val rsrp=$rsrp rsrp_score=$rsrp_score sinr=$sinr sinr_score=$sinr_score"
-            fi
-
             degraded_reason=""
             if printf '%s' "$composite" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
                 if awk -v v="$composite" 'BEGIN{exit !(v>0 && v<40)}'; then

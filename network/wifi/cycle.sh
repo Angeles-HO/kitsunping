@@ -604,13 +604,6 @@ network__wifi__transport_cycle() {
             return 0
         fi
 
-        prev_profile=""
-        [ -f "$POLICY_REQUEST_FILE" ] && prev_profile=$(cat "$POLICY_REQUEST_FILE" 2>/dev/null || echo "")
-        if [ "$profile" != "$prev_profile" ]; then
-            printf '%s' "$profile" > "$POLICY_REQUEST_FILE" 2>/dev/null || true
-            emit_event "PROFILE_CHANGED" "from=$prev_profile to=$profile transport=wifi wifi_score=$wifi_score wifi_quality=$wifi_quality_reason band=${wifi_band:--} probe_ok=${wifi_probe_ok:-1} rssi_dbm=${wifi_rssi_dbm:--} latency_ms=${wifi_latency_ms:--} latency_p95_ms=${wifi_latency_p95_ms:--} latency_p99_ms=${wifi_latency_p99_ms:--} jitter_ms=${wifi_jitter_ms:--} jitter_p95_ms=${wifi_jitter_p95_ms:--} jitter_p99_ms=${wifi_jitter_p99_ms:--} loss_pct=${wifi_loss_pct:--} loss_trend_pct=${wifi_loss_trend_pct:--} ema=$wifi_composite_ema_val up=$WIFI_SPEED_UP_THRESHOLD down=$WIFI_SPEED_DOWN_THRESHOLD hold_s=$WIFI_SWITCH_MIN_HOLD_SEC streak_req=$WIFI_SWITCH_STREAK_REQUIRED"
-        fi
-
         WIFI_SPEED_UP_THRESHOLD="$_wifi_up_base"
         WIFI_SPEED_DOWN_THRESHOLD="$_wifi_down_base"
         WIFI_SWITCH_STREAK_REQUIRED="$_wifi_streak_base"

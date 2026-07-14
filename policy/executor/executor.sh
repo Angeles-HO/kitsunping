@@ -186,38 +186,49 @@ fi
 # ---------------------------------------------------------------------------
 # Determine desired target profile
 # ---------------------------------------------------------------------------
-desired_profile="${TARGET_PROFILE:-}"
+normalize_profile() {
+    case "$1" in
+        benchmark) printf '%s' "benchmark_gaming" ;;
+        stable|speed|gaming|benchmark_gaming|benchmark_speed) printf '%s' "$1" ;;
+        *) return 1 ;;
+    esac
+}
 
-# Prefer PROFILE_CHANGED event details when present (expected: "from=x to=y ...").
+desired_profile=""
+if [ -n "${TARGET_PROFILE:-}" ]; then
+    desired_profile="$(normalize_profile "$TARGET_PROFILE" 2>/dev/null || true)"
+fi
+
+# policy.request is the current desired profile. Event details record what
+# caused a wake-up and must not override an intent written after that event.
+if [ -z "$desired_profile" ] && [ -f "$REQUEST_FILE" ]; then
+    requested_profile="$(cat "$REQUEST_FILE" 2>/dev/null)"
+    desired_profile="$(normalize_profile "$requested_profile" 2>/dev/null || true)"
+    [ -n "$desired_profile" ] && log_policy "Using current policy.request target_profile=$desired_profile"
+fi
+
+# Fall back to event details only when no current valid intent exists.
 if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "PROFILE_CHANGED" ] && [ -n "${EVENT_DETAILS:-}" ]; then
-    desired_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
+    event_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
+    desired_profile="$(normalize_profile "$event_profile" 2>/dev/null || true)"
 fi
 
-# For app/target overrides, request_profile carries details like: "... to=gaming ..."
+# request_profile details are likewise diagnostic fallback only.
 if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "request_profile" ] && [ -n "${EVENT_DETAILS:-}" ]; then
-    desired_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
-fi
-
-# For request_profile, prefer policy.request over policy.target to avoid stale target shadowing.
-if [ -z "$desired_profile" ] && [ "${EVENT_NAME:-}" = "request_profile" ] && [ -f "$REQUEST_FILE" ]; then
-    desired_profile="$(cat "$REQUEST_FILE" 2>/dev/null)"
-    [ -n "$desired_profile" ] && log_policy "Using policy.request for request_profile target_profile=$desired_profile"
+    event_profile=$(printf '%s' "${EVENT_DETAILS}" | sed -n 's/.*\bto=\([^ ]*\).*/\1/p')
+    desired_profile="$(normalize_profile "$event_profile" 2>/dev/null || true)"
 fi
 
 # Otherwise, use existing target file.
 if [ -z "$desired_profile" ] && [ -f "$TARGET_FILE" ]; then
-    desired_profile="$(cat "$TARGET_FILE" 2>/dev/null)"
-fi
-
-# Fallback: if only policy.request exists, treat it as the desired target.
-if [ -z "$desired_profile" ] && [ -f "$REQUEST_FILE" ]; then
-    desired_profile="$(cat "$REQUEST_FILE" 2>/dev/null)"
-    [ -n "$desired_profile" ] && log_policy "Using policy.request as target_profile=$desired_profile"
+    target_candidate="$(cat "$TARGET_FILE" 2>/dev/null)"
+    desired_profile="$(normalize_profile "$target_candidate" 2>/dev/null || true)"
 fi
 
 # User restart can force a re-apply of the currently active profile.
 if [ -z "$desired_profile" ] && [ "$force_reapply" -eq 1 ] && [ -f "$CURRENT_FILE" ]; then
-    desired_profile="$(cat "$CURRENT_FILE" 2>/dev/null)"
+    current_candidate="$(cat "$CURRENT_FILE" 2>/dev/null)"
+    desired_profile="$(normalize_profile "$current_candidate" 2>/dev/null || true)"
     [ -n "$desired_profile" ] && log_policy "Using policy.current as target_profile=$desired_profile (forced reapply)"
 fi
 
