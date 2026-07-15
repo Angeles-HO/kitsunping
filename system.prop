@@ -3,19 +3,6 @@
 # These settings aim to improve network performance, connectivity, and overall user experience.
 # Configs with MTK may not be affected in non-MTK devices, others work on all devices.
 
-# --- Radio / RIL ---
-# Allow simultaneous voice and data transfer (0: disable | 1: enable if the network supports it)
-ro.ril.enable.dtm=1
-
-# GSM/GPRS traffic encryption (0: disable | 1: enable)
-ro.ril.enable.a51=1
-ro.ril.enable.a52=0
-ro.ril.enable.a53=1
-ro.ril.enable.a54=1
-ro.ril.enable.a55=1
-ro.ril.gprsclass=34
-ro.ril.transmitpower=true
-
 # ====== Kitsunping / Module ======
 # This section is for the module Kitsunping, if you don't know what it is, leave it as is.
 #==================================
@@ -67,7 +54,8 @@ persist.kitsunping.ping_timeout=7
 persist.kitsunping.emit_events=true
 
 # Module debug mode (0: disable | 1: enable)
-persist.kitsunping.debug=1
+# 0 keeps warning/error diagnostics only; 1 enables detailed runtime tracing.
+persist.kitsunping.debug=0
 
 # ====== Kitsunping / App ======
 # Optional direct broadcast from daemon to APK for immediate UI updates without waiting for file polling (0: disable | 1: enable).
@@ -142,6 +130,16 @@ persist.kitsunping.target_request_cooldown_sec=8
 
 
 # ====== End of Kitsunping section ======
+
+# --- Radio / RIL ---
+# Allow simultaneous voice and data transfer (0: disable | 1: enable if the network supports it)
+ro.ril.enable.dtm=1
+
+# GSM/GPRS traffic encryption (0: disable | 1: enable)
+ro.ril.enable.a51=1
+ro.ril.enable.a52=0
+ro.ril.enable.a53=1
+ro.ril.gprsclass=34
 
 # Method of correlation of the database to obtain location (adjust if privacy is prioritized)
 # ro.ril.enable.dcm.feature=0

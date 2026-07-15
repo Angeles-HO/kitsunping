@@ -149,6 +149,49 @@ read_daemon_state_value() {
     awk -F= -v k="$key" '$1==k {print substr($0, index($0, "=")+1)}' "$DAEMON_STATE_FILE" | tail -n1
 }
 
+resolve_boot_guard_reference_ts() {
+    local now_ts="$1" boot_ts_file="$2"
+    local boot_ts_raw boot_ts uptime_raw uptime_sec fallback_boot_ts
+
+    boot_ts_raw="$(cat "$boot_ts_file" 2>/dev/null || echo 0)"
+    boot_ts="$(uint_or_default "$boot_ts_raw" "0")"
+    if [ "$boot_ts" -gt 0 ] && is_epoch_like "$boot_ts"; then
+        printf '%s' "$boot_ts"
+        return 0
+    fi
+
+    [ "$now_ts" -gt 0 ] || {
+        printf '%s' 0
+        return 0
+    }
+
+    uptime_raw="${CALIBRATE_BOOT_UPTIME_SEC:-}"
+    if [ -z "$uptime_raw" ]; then
+        uptime_raw="$(cat /proc/uptime 2>/dev/null | awk '{print $1}')"
+    fi
+    uptime_sec="${uptime_raw%%.*}"
+    uptime_sec="$(uint_or_default "$uptime_sec" "0")"
+    [ "$uptime_sec" -gt 0 ] || {
+        printf '%s' 0
+        return 0
+    }
+    [ "$now_ts" -gt "$uptime_sec" ] || {
+        printf '%s' 0
+        return 0
+    }
+
+    fallback_boot_ts=$((now_ts - uptime_sec))
+    if [ "$fallback_boot_ts" -gt 0 ] && is_epoch_like "$fallback_boot_ts"; then
+        printf '%s' "$fallback_boot_ts" | atomic_write "$boot_ts_file"
+        log_policy "Boot calibration guard recovered boot timestamp from uptime (${uptime_sec}s)"
+        printf '%s' "$fallback_boot_ts"
+        return 0
+    fi
+
+    printf '%s' 0
+    return 0
+}
+
 # DONE: Refactor pick_score to shared function used by daemon/executor
 pick_score() {
     local prefer_transport="${1:-auto}" score
@@ -295,8 +338,7 @@ run_calibration_phase() {
 
     boot_guard_active=0
     if [ "$manual_calibration_request" -ne 1 ] && [ "$install_bootstrap_calibration" -ne 1 ] && [ "$CALIBRATE_BOOT_GUARD_SEC" -gt 0 ] && [ "$now_ts" -gt 0 ]; then
-        boot_ts_raw="$(cat "$CALIBRATE_BOOT_TS_FILE" 2>/dev/null || echo 0)"
-        boot_ts="$(uint_or_default "$boot_ts_raw" "0")"
+        boot_ts="$(resolve_boot_guard_reference_ts "$now_ts" "$CALIBRATE_BOOT_TS_FILE")"
         if [ "$boot_ts" -gt 0 ] && is_epoch_like "$boot_ts"; then
             boot_elapsed=$((now_ts - boot_ts))
             [ "$boot_elapsed" -lt 0 ] && boot_elapsed=0

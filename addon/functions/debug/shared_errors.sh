@@ -9,8 +9,44 @@ WARNING="WARNING"
 INFO="INFO"
 DEBUG="DEBUG"
 
-# Actualizacion: Nivel de logging por defecto INFO
-LOG_LEVEL=2
+# Runtime policy: `persist.kitsunping.debug=0` keeps warnings/errors only;
+# `=1` enables informational and diagnostic output. The property is read at
+# emission time so the app can change it without restarting the daemon.
+KITSUNPING_DEBUG_PROP="${KITSUNPING_DEBUG_PROP:-persist.kitsunping.debug}"
+
+kitsunping_debug_enabled() {
+  local raw prop_file
+  raw="${KITSUNPING_DEBUG_OVERRIDE:-}"
+
+  if [ -z "$raw" ] && command -v getprop >/dev/null 2>&1; then
+    raw="$(getprop "$KITSUNPING_DEBUG_PROP" 2>/dev/null | tr -d '\r\n')"
+  fi
+
+  if [ -z "$raw" ]; then
+    prop_file="${MODDIR:-}/system.prop"
+    [ -f "$prop_file" ] || prop_file="${NEWMODPATH:-}/system.prop"
+    if [ -f "$prop_file" ]; then
+      raw="$(sed -n 's/^[[:space:]]*persist\.kitsunping\.debug[[:space:]]*=[[:space:]]*//p' "$prop_file" | tail -n 1 | tr -d '\r\n')"
+    fi
+  fi
+
+  case "$raw" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# 0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG. INFO and DEBUG are deliberately
+# suppressed in normal runtime mode to keep logs actionable and bounded.
+runtime_log_level() {
+  if kitsunping_debug_enabled; then
+    printf '%s' 3
+  else
+    printf '%s' 1
+  fi
+}
+
+LOG_LEVEL="$(runtime_log_level)"
 
 # Color output is enabled only for plain terminal output.
 # If ui_print exists (Magisk installer context), keep plain text for compatibility.
@@ -61,6 +97,18 @@ set_log_level() {
   esac
 }
 
+should_emit_log_level() {
+  local level="$1" active
+  active="$(runtime_log_level)"
+  case "$level" in
+    "$ERROR") [ "$active" -ge 0 ] ;;
+    "$WARNING") [ "$active" -ge 1 ] ;;
+    "$INFO") [ "$active" -ge 2 ] ;;
+    "$DEBUG") [ "$active" -ge 3 ] ;;
+    *) return 1 ;;
+  esac
+}
+
 emit_line() {
   if command -v ui_print >/dev/null 2>&1; then
     ui_print "$1"
@@ -97,31 +145,31 @@ emit_line_level() {
 
 # Funciones de logging
 log_error() {
-  if [ $LOG_LEVEL -ge 0 ]; then
+  if should_emit_log_level "$ERROR"; then
     emit_line_level "$ERROR" "$1"
   fi
 }
 
 log_warning() {
-  if [ $LOG_LEVEL -ge 1 ]; then
+  if should_emit_log_level "$WARNING"; then
     emit_line_level "$WARNING" "$1"
   fi
 }
 
 log_info() {
-  if [ $LOG_LEVEL -ge 2 ]; then
+  if should_emit_log_level "$INFO"; then
     emit_line_level "$INFO" "$1"
   fi
 }
 
 log_debug() {
-  if [ $LOG_LEVEL -ge 2 ]; then
+  if should_emit_log_level "$DEBUG"; then
     emit_line_level "$DEBUG" "$1"
   fi
 }
 
 log_daemon() {
-  if [ $LOG_LEVEL -ge 2 ]; then
+  if should_emit_log_level "$INFO"; then
     if command -v ui_print >/dev/null 2>&1; then
       ui_print "[DAEMON][$INFO] $1"
     else
@@ -135,7 +183,7 @@ log_daemon() {
 }
 
 log_policy() {
-  if [ $LOG_LEVEL -ge 2 ]; then
+  if should_emit_log_level "$INFO"; then
     if command -v ui_print >/dev/null 2>&1; then
       ui_print "[POLICY][$INFO] $1"
     else
