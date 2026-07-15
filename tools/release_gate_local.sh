@@ -69,8 +69,11 @@ MODULE_VERSION="$(prop_get version module.prop)"
 MODULE_VERSION_CODE="$(prop_get versionCode module.prop)"
 JSON_VERSION="$(json_get version update.json)"
 JSON_VERSION_CODE="$(json_get versionCode update.json)"
+JSON_RELEASE_TAG="$(json_get releaseTag update.json)"
 JSON_ZIP_URL="$(json_get zipUrl update.json)"
 EXPECTED_ZIP_NAME="Kitsunping.zip"
+
+[ -n "$JSON_RELEASE_TAG" ] || JSON_RELEASE_TAG="v${MODULE_VERSION}"
 
 if [ -n "$MODULE_VERSION" ]; then
     ok "module.prop version: $MODULE_VERSION"
@@ -97,8 +100,8 @@ else
 fi
 
 case "$JSON_ZIP_URL" in
-    *"/v${MODULE_VERSION}/"*) ok "zipUrl includes release tag v${MODULE_VERSION}" ;;
-    *) ko "zipUrl does not include v${MODULE_VERSION}: $JSON_ZIP_URL" ;;
+    *"/${JSON_RELEASE_TAG}/"*) ok "zipUrl includes release tag ${JSON_RELEASE_TAG}" ;;
+    *) ko "zipUrl does not include ${JSON_RELEASE_TAG}: $JSON_ZIP_URL" ;;
 esac
 
 case "$JSON_ZIP_URL" in
