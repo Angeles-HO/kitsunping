@@ -8,9 +8,19 @@ command -v json_escape >/dev/null 2>&1 || json_escape() {
 }
 
 command -v atomic_write >/dev/null 2>&1 || atomic_write() {
-    local target="$1" tmp target_dir
+    local target="$1" write_class="${2:-normal}" tmp target_dir
 
     [ -n "$target" ] || return 1
+    case "$write_class" in
+        debug_only)
+            if command -v kitsunping_debug_enabled >/dev/null 2>&1 && ! kitsunping_debug_enabled; then
+                cat >/dev/null || return 1
+                return 0
+            fi
+            ;;
+        normal|"") ;;
+        *) return 2 ;;
+    esac
     target_dir="$(dirname "$target")"
     [ -n "$target_dir" ] || target_dir="."
     mkdir -p "$target_dir" 2>/dev/null || return 1

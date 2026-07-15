@@ -54,7 +54,8 @@ persist.kitsunping.ping_timeout=7
 persist.kitsunping.emit_events=true
 
 # Module debug mode (0: disable | 1: enable)
-persist.kitsunping.debug=1
+# 0 keeps warning/error diagnostics only; 1 enables detailed runtime tracing.
+persist.kitsunping.debug=0
 
 # ====== Kitsunping / App ======
 # Optional direct broadcast from daemon to APK for immediate UI updates without waiting for file polling (0: disable | 1: enable).

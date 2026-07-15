@@ -283,6 +283,38 @@ flowchart TD
 ### Debugging and Performance Tuning
 - **kitsunping.daemon.interval**: Sets the interval for daemon checks in seconds (default: 10 seconds).
 - **persist.kitsunping.debug**: Toggles debug mode for detailed logging (0: disable | 1: enable).
+
+### Runtime logging policy
+
+`persist.kitsunping.debug` is the single runtime switch for detailed module logs.
+
+- `0` (default): emit warnings and errors only. Runtime state, policy state,
+  ONNX state/data, and calibration results continue to be written normally.
+- `1`: additionally emit informational and debug traces for diagnosis.
+
+The shared logging helpers read the property at emission time, so changing it
+does not require a daemon restart. `atomic_write` also accepts an optional
+second argument, `debug_only`; this is reserved for future diagnostic snapshots.
+When debug is disabled it consumes the supplied input and succeeds without
+creating or changing the target. Do not pass this mode for cache state,
+calibration, ONNX data, locks, or other runtime inputs.
+
+### Direct-write audit — 2026-07-14
+
+The runtime was audited for writes outside `atomic_write`.
+
+| Classification | Treatment |
+| --- | --- |
+| Runtime state and policy files | Keep/reuse `atomic_write`; state must not depend on Debug Mode. |
+| Calibration `BEST_*`, `.env`, progress, and ONNX data | No change in this stage; these are algorithm outputs, not debug logs. |
+| Shared `log_info` / `log_debug` paths | Centrally gated by `persist.kitsunping.debug`. |
+| Warnings, errors, failsafe, and installer logs | Keep direct and visible; they are operational diagnostics. |
+| Legacy direct cache marker writes in app target/state helpers | Follow-up migration candidate; do not conflate with logging policy. |
+
+The audit also found duplicate guarded `atomic_write` fallbacks in the daemon
+and policy helpers. They now expose the same optional `debug_only` contract;
+consolidating their implementation is deferred to avoid changing loader and
+installer behavior during this logging hardening.
 - **persist.kitsunping.ping_timeout**: Tuning value used by calibration/probing (currently used as a ping count in `Net_Calibrate/calibrate.sh`; default: 7).
 - **persist.kitsunping.emit_events**: Enables/disables emitting events and spawning the executor (0/1 or false/true; default: true).
 - **persist.kitsunping.event_debounce_sec**: Debounce window for events in seconds (integer > 0; default: 60 in current beta track; auto-raised to at least `kitsunping.daemon.interval`).

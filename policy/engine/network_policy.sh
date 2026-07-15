@@ -33,7 +33,17 @@ now_epoch() {
 }
 
 atomic_write() {
-	local target="$1" tmp
+	local target="$1" write_class="${2:-normal}" tmp
+	case "$write_class" in
+		debug_only)
+			if command -v kitsunping_debug_enabled >/dev/null 2>&1 && ! kitsunping_debug_enabled; then
+				cat >/dev/null || return 1
+				return 0
+			fi
+			;;
+		normal|"") ;;
+		*) return 2 ;;
+	esac
 	tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || tmp="${target}.$$.$(date +%s).tmp"
 	if cat - > "$tmp" 2>/dev/null; then
 		mv "$tmp" "$target" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }

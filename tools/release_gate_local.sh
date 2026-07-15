@@ -70,6 +70,7 @@ MODULE_VERSION_CODE="$(prop_get versionCode module.prop)"
 JSON_VERSION="$(json_get version update.json)"
 JSON_VERSION_CODE="$(json_get versionCode update.json)"
 JSON_ZIP_URL="$(json_get zipUrl update.json)"
+EXPECTED_ZIP_NAME="Kitsunping.zip"
 
 if [ -n "$MODULE_VERSION" ]; then
     ok "module.prop version: $MODULE_VERSION"
@@ -98,6 +99,11 @@ fi
 case "$JSON_ZIP_URL" in
     *"/v${MODULE_VERSION}/"*) ok "zipUrl includes release tag v${MODULE_VERSION}" ;;
     *) ko "zipUrl does not include v${MODULE_VERSION}: $JSON_ZIP_URL" ;;
+esac
+
+case "$JSON_ZIP_URL" in
+    *"/${EXPECTED_ZIP_NAME}") ok "zipUrl uses required asset name: ${EXPECTED_ZIP_NAME}" ;;
+    *) ko "zipUrl must end with /${EXPECTED_ZIP_NAME}: $JSON_ZIP_URL" ;;
 esac
 
 if grep -Fq "## ${MODULE_VERSION} -" CHANGELOG.md; then
