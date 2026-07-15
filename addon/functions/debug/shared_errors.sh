@@ -157,6 +157,14 @@ log_warning() {
 }
 
 log_info() {
+  # Installer guidance is user-facing, not diagnostic runtime logging.  Magisk
+  # exposes ui_print only while flashing, so always render it even when normal
+  # runtime Debug Mode suppresses informational logs.
+  if command -v ui_print >/dev/null 2>&1; then
+    emit_line_level "$INFO" "$1"
+    return 0
+  fi
+
   if should_emit_log_level "$INFO"; then
     emit_line_level "$INFO" "$1"
   fi

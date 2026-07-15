@@ -44,6 +44,17 @@ getprop() {
 TEST_DEBUG_MODE=0
 normal_output="$(log_info 'hidden info' 2>&1)"
 assert_eq "$normal_output" "" "normal mode suppresses informational logs"
+
+ui_print() {
+    printf '%s\n' "$1"
+}
+installer_output="$(log_info 'visible installer guidance' 2>&1)"
+case "$installer_output" in
+    *'visible installer guidance'*) pass "installer guidance bypasses runtime debug suppression" ;;
+    *) fail "installer guidance bypasses runtime debug suppression (output=$installer_output)" ;;
+esac
+unset -f ui_print
+
 normal_output="$(log_debug 'hidden debug' 2>&1)"
 assert_eq "$normal_output" "" "normal mode suppresses debug logs"
 normal_output="$(log_warning 'visible warning' 2>&1)"
