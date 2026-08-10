@@ -1,0 +1,21 @@
+model=SM-S901E
+android=15
+kernel=5.10.226-android12-9-30958166-abS901EXXSCFYI2
+daemon.pid=26637
+
+daemon.supervisor.pid=7042
+
+kitsunpingd.pid=absent
+kitsunpingd.supervisor.pid=absent
+profiler=0
+trace_on=0
+
+sidecar_processes=0
+
+deployed_sha256
+ad01137e3d23e542303a35996fc46ab186646e14333ae23d1f0ff45565465bdb  /data/adb/modules/Kitsunping/bin/kitsunpingd
+a918947408cd8cf1a41cf11a2cbdbf9a3bfad7dc980acef889da76c372a35165  /data/adb/modules/Kitsunping/addon/functions/snapshot_loader.sh
+e064bd04d6c23e709a1218db18b907d915315b9811df31d692cf2bd8b42acdcc  /data/adb/modules/Kitsunping/addon/functions/snapshot_bridge.sh
+ae97262ac7f0753740f17946704b386bf98281d77bf5c4da2295a21220a2f522  /data/adb/modules/Kitsunping/addon/functions/network_utils.sh
+b6d1603ebc8142921b3bac2cba439c0a4581d7ba5125b7e4ff1d1e8f680c05ff  /data/adb/modules/Kitsunping/network/mobile/cycle.sh
+628e502df493035cfd958d43da62cfb18a642791d92cc8ce96f489c4227ba0d8  /data/adb/modules/Kitsunping/network/app/target_engine.sh

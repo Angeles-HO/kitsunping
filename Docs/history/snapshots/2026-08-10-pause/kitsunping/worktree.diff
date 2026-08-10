@@ -1,0 +1,1293 @@
+diff --git a/.gitignore b/.gitignore
+index 943b213..f480c39 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -44,4 +44,5 @@ REPORTE_ANALISIS.md
+ Docs/design/onnx-adaptive-model.md
+ testing/integration/device_runtime_scenarios.md
+ report.md
+-history/
+\ No newline at end of file
++history/*
++artifacts/*
+\ No newline at end of file
+diff --git a/Docs/10-runtime/property-discovery-methods.md b/Docs/10-runtime/property-discovery-methods.md
+index 380a76d..4442da0 100644
+--- a/Docs/10-runtime/property-discovery-methods.md
++++ b/Docs/10-runtime/property-discovery-methods.md
+@@ -35,13 +35,30 @@ Optional binary-string scan (heavier):
+ sh tools/property_inventory.sh static --with-binaries
+ ```
+ 
+-### 2) Runtime snapshot
++### 2) Filtered network candidates (recommended for new research)
++
++```sh
++sh tools/property_inventory.sh candidates
++```
++
++This mode does not read `build.prop` as a candidate source. It derives
++network-related property names only from property contexts and init triggers,
++optionally adding binary strings with `--with-binaries`. It excludes keys that
++are already visible through `getprop`, module-owned `kitsunping.*` keys,
++read-only `ro.*` keys, and generic runtime namespaces.
++
++The generated TSV contains `property` and `static_sources`. It is a research
++queue, not an instruction to write a property. Each row still needs an owner,
++reader, OEM/API gate, observable effect and rollback before it can become a
++Kitsunping experiment.
++
++### 3) Runtime snapshot
+ 
+ ```sh
+ sh tools/property_inventory.sh snapshot /sdcard/props.before.txt
+ ```
+ 
+-### 3) Dynamic diff around a feature toggle
++### 4) Dynamic diff around a feature toggle
+ 
+ ```sh
+ # before
+@@ -61,11 +78,14 @@ This reveals added/removed/changed keys even when they are not in `build.prop`.
+ 
+ ## Practical workflow for Kitsunping investigations
+ 
+-1. Run `static` inventory and keep the merged key list as baseline.
+-2. Capture `snapshot` before action.
+-3. Trigger app/module/router scenario.
+-4. Capture `snapshot` after action.
+-5. Run `diff` and map resulting keys to runtime scripts.
++1. Run `candidates` to create an evidence-backed queue beyond `getprop` and
++	`build.prop`.
++2. Inspect its source files and follow the property consumer before proposing a
++	test.
++3. Capture `snapshot` before action.
++4. Trigger app/module/router scenario.
++5. Capture `snapshot` after action.
++6. Run `diff` and map resulting keys to runtime scripts.
+ 
+ ## Notes
+ 
+diff --git a/Docs/README.md b/Docs/README.md
+index c009f3c..98ffeda 100644
+--- a/Docs/README.md
++++ b/Docs/README.md
+@@ -1,9 +1,12 @@
+ # Kitsunping Documentation Hub
+ 
+-Last update: 2026-07-10
++Last update: 2026-08-10
+ 
+ This index is the canonical entry point for project documentation. Files are grouped by lifecycle stage to reduce noise and make release work easier.
+ 
++Current runtime and migration scope: `STATUS.md`.
++Historical campaigns and pause decisions: `history/`.
++
+ ## 00-overview
+ 
+ - `00-overview/privacy-and-telemetry.md`: privacy boundaries and local-data behavior.
+@@ -25,6 +28,8 @@ This index is the canonical entry point for project documentation. Files are gro
+ - `10-runtime/wifi-properties-reference.md`: Wi-Fi property reference.
+ - `10-runtime/binary-paths.md`: bundled/system binary resolution.
+ - `10-runtime/failsafe-module-status-reference.md`: failsafe and module-status lifecycle.
++- `10-runtime/kitsunping-kitsunpingd-contract.md`: implemented Bash/Rust state,
++  validation, fallback, authority, and measurement boundary.
+ - `10-runtime/runtime-cadence-baseline-v7-beta.md`: baseline cadence and debounce tuning plan for v7.0-beta.
+ - `10-runtime/runtime-debounce-experiment-matrix-v7-beta.md`: candidate comparison matrix for debounce 60s/90s.
+ 
+@@ -40,6 +45,12 @@ This index is the canonical entry point for project documentation. Files are gro
+ - `90-archive/testing-results-history.md`: historical benchmark log for older versions.
+ - `90-archive/scoring-snippets-legacy.md`: legacy scoring notes and scratch snippets.
+ 
++## History
++
++- `STATUS.md`: current production, Rust-first, experimental, historical, and
++   paused work status.
++- `history/README.md`: campaign archive policy and historical index.
++
+ ## Maintenance Rules
+ 
+ 1. Keep active release/runtime docs in `00` to `30` folders only.
+diff --git a/addon/functions/daemon_adaptive_sampling.sh b/addon/functions/daemon_adaptive_sampling.sh
+index 2859108..2598143 100644
+--- a/addon/functions/daemon_adaptive_sampling.sh
++++ b/addon/functions/daemon_adaptive_sampling.sh
+@@ -127,7 +127,7 @@ daemon_sampling_should_degrade() {
+     return 1
+ }
+ 
+-daemon_sampling_pick_interval() {
++daemon_sampling_pick_interval_bash() {
+     local base_interval="$1" desired
+ 
+     case "$base_interval" in ''|*[!0-9]* ) base_interval="${INTERVAL:-10}" ;; esac
+@@ -162,4 +162,102 @@ daemon_sampling_pick_interval() {
+ 
+     DAEMON_SAMPLE_INTERVAL_SEC="$desired"
+     printf '%s' "$desired"
++}
++
++daemon_sampling_pick_interval() {
++    local base_interval="$1" native_bin timeout_sec native_output
++    local interval mode reason bad_streak good_streak line key value
++    local interval_seen=0 mode_seen=0 reason_seen=0 bad_seen=0 good_seen=0
++    local wifi_score_arg wifi_latency_arg wifi_jitter_arg wifi_loss_arg
++
++    interval=""
++    mode=""
++    reason=""
++    bad_streak=""
++    good_streak=""
++
++    case "$base_interval" in ''|*[!0-9]*) base_interval="${INTERVAL:-10}" ;; esac
++
++    if [ -n "${KITSUNPINGD_ADAPTIVE_BIN:-}" ]; then
++        native_bin="$KITSUNPINGD_ADAPTIVE_BIN"
++    elif [ -x /data/local/tmp/kitsunping_dev/bin/kitsunpingd ]; then
++        native_bin=/data/local/tmp/kitsunping_dev/bin/kitsunpingd
++    else
++        native_bin="${MODDIR:-/data/adb/modules/Kitsunping}/bin/kitsunpingd"
++    fi
++    timeout_sec="${KITSUNPINGD_ADAPTIVE_TIMEOUT_SEC:-1}"
++    case "$timeout_sec" in ''|*[!0-9]*) timeout_sec=1 ;; esac
++    [ "$timeout_sec" -lt 1 ] && timeout_sec=1
++
++    [ -x "$native_bin" ] && command -v timeout >/dev/null 2>&1 || {
++        daemon_sampling_pick_interval_bash "$base_interval"
++        return
++    }
++
++    wifi_score_arg="${wifi_score:-}"
++    case "$wifi_score_arg" in *[!0-9]*) wifi_score_arg="" ;; esac
++    wifi_latency_arg="${wifi_latency_ms:-}"
++    case "$wifi_latency_arg" in *[!0-9]*) wifi_latency_arg="" ;; esac
++    wifi_jitter_arg="${wifi_jitter_ms:-}"
++    case "$wifi_jitter_arg" in *[!0-9]*) wifi_jitter_arg="" ;; esac
++    wifi_loss_arg="${wifi_loss_pct:-}"
++    case "$wifi_loss_arg" in *[!0-9]*) wifi_loss_arg="" ;; esac
++
++    native_output="$(timeout "$timeout_sec" "$native_bin" --adaptive-sampling \
++        --base-interval "$base_interval" \
++        --enabled "${ADAPTIVE_SAMPLING_ENABLE:-1}" \
++        --mode "${DAEMON_SAMPLE_MODE:-base}" \
++        --wifi-iface "${WIFI_IFACE:-none}" \
++        --wifi-state "${wifi_state:-unknown}" \
++        --wifi-quality-reason "${wifi_quality_reason:-}" \
++        --wifi-score "$wifi_score_arg" \
++        --wifi-latency-ms "$wifi_latency_arg" \
++        --wifi-jitter-ms "$wifi_jitter_arg" \
++        --wifi-loss-pct "$wifi_loss_arg" \
++        --wifi-loss-trend-pct "${wifi_loss_trend_pct:-}" \
++        --wifi-probe-ok "${wifi_probe_ok:-1}" \
++        --bad-streak "${daemon_adaptive_bad_streak:-0}" \
++        --good-streak "${daemon_adaptive_good_streak:-0}" \
++        --required-bad-streak "${ADAPTIVE_BAD_STREAK:-2}" \
++        --required-good-streak "${ADAPTIVE_GOOD_STREAK:-3}" \
++        --base-seconds "${ADAPTIVE_BASE_SEC:-30}" \
++        --degraded-seconds "${ADAPTIVE_DEGRADED_SEC:-8}" \
++        --wifi-score-threshold "${ADAPTIVE_WIFI_SCORE_THRESHOLD:-65}" \
++        --wifi-latency-threshold-ms "${ADAPTIVE_WIFI_LATENCY_THRESHOLD_MS:-120}" \
++        --wifi-jitter-threshold-ms "${ADAPTIVE_WIFI_JITTER_THRESHOLD_MS:-30}" \
++        --wifi-loss-threshold-pct "${ADAPTIVE_WIFI_LOSS_THRESHOLD_PCT:-5}" 2>/dev/null)" || native_output=""
++
++    while IFS= read -r line || [ -n "$line" ]; do
++        key="${line%%=*}"
++        value="${line#*=}"
++        [ "$key" != "$line" ] || { native_output=""; break; }
++        case "$key" in
++            interval) [ "$interval_seen" -eq 0 ] || { native_output=""; break; }; interval="$value"; interval_seen=1 ;;
++            mode) [ "$mode_seen" -eq 0 ] || { native_output=""; break; }; mode="$value"; mode_seen=1 ;;
++            reason) [ "$reason_seen" -eq 0 ] || { native_output=""; break; }; reason="$value"; reason_seen=1 ;;
++            bad_streak) [ "$bad_seen" -eq 0 ] || { native_output=""; break; }; bad_streak="$value"; bad_seen=1 ;;
++            good_streak) [ "$good_seen" -eq 0 ] || { native_output=""; break; }; good_streak="$value"; good_seen=1 ;;
++            *) native_output=""; break ;;
++        esac
++    done <<EOF
++$native_output
++EOF
++
++    case "$interval:$bad_streak:$good_streak" in *[!0-9:]*|::*) native_output="" ;; esac
++    case "$mode" in base|degraded|fixed) ;; *) native_output="" ;; esac
++    case "$reason" in ''|*[!a-z_]* ) native_output="" ;; esac
++    [ "$interval_seen:$mode_seen:$reason_seen:$bad_seen:$good_seen" = "1:1:1:1:1" ] || native_output=""
++
++    if [ -n "$native_output" ]; then
++        DAEMON_SAMPLE_MODE="$mode"
++        DAEMON_SAMPLE_REASON="$reason"
++        DAEMON_SAMPLE_INTERVAL_SEC="$interval"
++        daemon_adaptive_bad_streak="$bad_streak"
++        daemon_adaptive_good_streak="$good_streak"
++        printf '%s' "$interval"
++        return 0
++    fi
++
++    command -v log_warning >/dev/null 2>&1 && log_warning "adaptive sampling Rust result invalid; using Bash fallback"
++    daemon_sampling_pick_interval_bash "$base_interval"
+ }
+\ No newline at end of file
+diff --git a/addon/functions/network_utils.sh b/addon/functions/network_utils.sh
+index b88c773..cf07ac2 100644
+--- a/addon/functions/network_utils.sh
++++ b/addon/functions/network_utils.sh
+@@ -12,6 +12,14 @@ PING_COUNT=${PING_COUNT:-3}
+ PING_TIMEOUT=${PING_TIMEOUT:-2}
+ MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
+ 
++KITSUNPINGD_LEGACY_COLLECTORS_FILE="${KITSUNPINGD_LEGACY_COLLECTORS_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/legacy_network_collectors.sh}"
++KITSUNPINGD_SNAPSHOT_BRIDGE_FILE="${KITSUNPINGD_SNAPSHOT_BRIDGE_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/snapshot_bridge.sh}"
++KITSUNPINGD_SNAPSHOT_METRICS_FILE="${KITSUNPINGD_SNAPSHOT_METRICS_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/snapshot_metrics.sh}"
++
++[ -r "$KITSUNPINGD_LEGACY_COLLECTORS_FILE" ] && . "$KITSUNPINGD_LEGACY_COLLECTORS_FILE"
++[ -r "$KITSUNPINGD_SNAPSHOT_BRIDGE_FILE" ] && . "$KITSUNPINGD_SNAPSHOT_BRIDGE_FILE"
++[ -r "$KITSUNPINGD_SNAPSHOT_METRICS_FILE" ] && . "$KITSUNPINGD_SNAPSHOT_METRICS_FILE"
++
+ # Get Wi-Fi status with more detailed reason codes
+ # Returns: iface=IFACE link=STATE ip=HAS_IP egress=DEF_ROUTE reason=REASON
+ # Usage: get_wifi_status [IFACE]
+@@ -21,48 +29,24 @@ MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
+ # - no_default_route: interface is up with IP but not default route
+ # - usable_route: interface is up with IP and is default route
+ get_wifi_status() {
+-    # vars
+-    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
+-
+-    # If iface is missing/none or doesn't look like Wi-Fi, try auto-detect.
+-    # This prevents accidental assignment of mobile ifaces (rmnet/ccmni/...) as Wi-Fi.
+-    case "$wifi_iface" in
+-        ''|none|NONE) wifi_iface="" ;;
+-        wl*|wifi*) ;;
+-        *) wifi_iface="" ;;
+-    esac
+-
+-    # detect wifi interface if not specified
+-    if [ -z "$wifi_iface" ]; then
+-        wifi_iface=$("$IP_BIN" link show | awk -F: '/wl|wifi/ {gsub(/ /,"",$2); print $2; exit}')
+-        [ -z "$wifi_iface" ] && wifi_iface="none"
+-    fi
+-    
+-    link_state=$("$IP_BIN" link show "$wifi_iface" 2>/dev/null | awk '/state/ {print $9; exit}')
+-    [ "$link_state" = "UP" ] && link_up=1
+-
+-    if "$IP_BIN" addr show "$wifi_iface" 2>/dev/null | grep -q "inet "; then
+-        has_ip=1
+-    fi
+-
+-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $wifi_iface"; then
+-        def_route=1
+-    fi
+-
+-    reason="link_down"
+-    if [ $link_up -eq 1 ]; then
+-        if [ $has_ip -eq 1 ]; then
+-            if [ $def_route -eq 1 ]; then
+-                reason="usable_route"
+-            else
+-                reason="no_default_route"
+-            fi
++    local wifi_iface="${1:-${WIFI_IFACE:-}}" native_status
++
++    if native_status="$(get_native_wifi_status)"; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        # No caller-provided interface means the Shell fallback would also
++        # auto-detect it before its three link/IP/route probes.
++        if [ -z "${1:-${WIFI_IFACE:-}}" ]; then
++            kitsunpingd_metrics_record "wifi_status" 4 0 0 4
+         else
+-            reason="no_ip"
++            kitsunpingd_metrics_record "wifi_status" 3 0 0 3
+         fi
++        printf '%s\n' "$native_status"
++        return 0
+     fi
+ 
+-    echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
++    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
++    legacy_get_wifi_status "$wifi_iface"
+ }
+ 
+ # get_mobile_status:
+@@ -76,45 +60,18 @@ get_wifi_status() {
+ # - no_default_route: interface is up with IP but not default route
+ # - usable_route: interface is up with IP and is default route
+ get_mobile_status() {
+-    # Vars
+-    local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
++    local iface="$1" native_status
+ 
+-    # If iface is empty/none, exit fast (diagnostic only; no autodetect)
+-    if [ -z "$iface" ] || [ "$iface" = "none" ]; then
+-        echo "iface=none link=DOWN ip=0 egress=0 reason=link_down"
++    if native_status="$(get_native_mobile_status "$iface")"; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        [ "$iface" = "none" ] || [ -z "$iface" ] || kitsunpingd_metrics_record "mobile_status" 3 0 0 3
++        printf '%s\n' "$native_status"
+         return 0
+     fi
+ 
+-    # Query link state
+-    link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
+-    [ "$link_state" = "UP" ] && link_up=1
+-
+-    # Check for IP address
+-    if "$IP_BIN" addr show "$iface" 2>/dev/null | grep -q "inet "; then
+-        has_ip=1
+-    fi
+-
+-    # Check for default route
+-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $iface"; then
+-        def_route=1
+-    fi
+-
+-    # This section determines the reason code in if cases
+-    reason="link_down" # Default reason
+-    if [ $link_up -eq 1 ]; then # Interface is up
+-        if [ $has_ip -eq 1 ]; then # Has IP address
+-            if [ $def_route -eq 1 ]; then # Is default route
+-                reason="usable_route"
+-            else
+-                reason="no_default_route"
+-            fi
+-        else
+-            reason="no_ip"
+-        fi
+-    fi
+-
+-    # Output result
+-    echo "iface=$iface link=${link_state:-DOWN} ip=$has_ip egress=$def_route reason=$reason"
++    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
++    legacy_get_mobile_status "$iface"
+ }
+ 
+ # get_current_iface:
+@@ -123,20 +80,37 @@ get_mobile_status() {
+ # Output: interface name (e.g., wlan0, rmnet_data0) or "" if none found.
+ # Usage: get_current_iface
+ get_current_iface() {
+-    local via_route
+-    via_route=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+-    if [ -n "$via_route" ]; then
+-        echo "$via_route"
++    local native_iface
++    if native_iface="$(get_native_current_iface)"; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        kitsunpingd_metrics_record "current_iface" 1 0 0 1
++        printf '%s' "$native_iface"
+         return
+     fi
+-    echo ""
++    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
++    legacy_get_current_iface
+ }
+ 
+ # Get Wi-Fi RSSI in dBm (best-effort)
+ # Usage: get_wifi_rssi_dbm [IFACE]
+ # Output: integer RSSI (e.g., -55) or empty if unavailable
+ get_wifi_rssi_dbm() {
+-    local wifi_iface="${1:-$WIFI_IFACE}" rssi=""
++    local wifi_iface="${1:-${WIFI_IFACE:-}}" rssi="" native_rssi
++
++    if native_rssi="$(get_native_wifi_rssi_dbm)"; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        if [ -r /proc/net/wireless ]; then
++            kitsunpingd_metrics_record "wifi_rssi" 0 0 0 3
++        elif command_exists dumpsys; then
++            kitsunpingd_metrics_record "wifi_rssi" 0 0 1 2
++        fi
++        printf '%s' "$native_rssi"
++        return 0
++    fi
++
++    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+ 
+     # Fast path: kernel wireless stats (if present)
+     if [ -r /proc/net/wireless ]; then
+@@ -296,7 +270,7 @@ iw_is_usable() {
+     fi
+     IW_USABLE=1
+     return 0
+-} 
++}
+ 
+ infer_wifi_width_mhz() {
+     local band="$1" width="$2" link_speed="$3" inferred_width="" width_source="" width_confidence=""
+@@ -326,7 +300,7 @@ infer_wifi_width_mhz() {
+     fi
+ 
+     if [ "$infer_width_flag" -ne 1 ]; then
+-        printf '%s|%s|%s' "" "" "" 
++        printf '%s|%s|%s' "" "" ""
+         return 0
+     fi
+ 
+@@ -580,11 +554,26 @@ wifi_cache_write() {
+ # Usage: get_wifi_extended_info [IFACE]
+ # Output: key=value list (caps uses value=a|b)
+ get_wifi_extended_info() {
+-    local wifi_iface="${1:-$WIFI_IFACE}" info=""
++    local wifi_iface="${1:-${WIFI_IFACE:-}}" info=""
+ 
+     WIFI_INFO_SOURCE=""
+ 
+-    if iw_is_usable; then
++    info=$(get_native_wifi_extended_info "$wifi_iface" 2>/dev/null || true)
++    if [ -n "$info" ]; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        WIFI_INFO_SOURCE="kitsunpingd"
++        # iw_is_usable and parse_iw_link_info each invoke iw once before
++        # parsing. The later dumpsys/ip-neigh fallbacks are conditional, so
++        # they are intentionally not represented as avoided work here.
++        if resolve_iw_binary; then
++            kitsunpingd_metrics_record "wifi_extended_info" 0 2 0 1
++        fi
++    else
++        command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++        command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
++    fi
++
++    if [ -z "$info" ] && iw_is_usable; then
+         info=$(parse_iw_link_info "$wifi_iface")
+         [ -n "$info" ] && WIFI_INFO_SOURCE="iw"
+     fi
+diff --git a/addon/functions/utils/Kitsutils.sh b/addon/functions/utils/Kitsutils.sh
+index 7736de3..2be413d 100644
+--- a/addon/functions/utils/Kitsutils.sh
++++ b/addon/functions/utils/Kitsutils.sh
+@@ -79,6 +79,7 @@ set_permissions_module() {
+         [ -e "$modpath/addon/ping/ping" ] && set_perm "$modpath/addon/ping/ping" 0 0 0755
+         [ -e "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 0 0 0755
+         [ -e "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 0 0 0755
++        [ -e "$modpath/bin/kitsunpingd" ] && set_perm "$modpath/bin/kitsunpingd" 0 0 0755
+     else
+         # Fallback: attempt operations but avoid masking errors with '|| true'. Log failures to help debugging.
+         if ! chown -R 0:0 "$modpath" 2>/dev/null; then
+@@ -128,6 +129,7 @@ set_permissions_module() {
+             "$modpath/addon/functions/net_math.sh" \
+             "$modpath/addon/functions/core.sh" \
+             "$modpath/addon/functions/daemon_static.sh" \
++            "$modpath/bin/kitsunpingd" \
+             "$modpath/policy/executor/executor.sh" \
+             "$modpath/addon/policy/executor.sh"; do
+             if [ -e "$f" ]; then
+diff --git a/core/runtime.sh b/core/runtime.sh
+index 35b38c4..9c8083a 100644
+--- a/core/runtime.sh
++++ b/core/runtime.sh
+@@ -1,5 +1,15 @@
+ #!/system/bin/sh
+ 
++core_runtime_profiler_load_dev() {
++    runtime_profiler_script="${KITSUNPING_RUNTIME_PROFILER_DEV_SCRIPT:-/data/local/tmp/kitsunping_dev/runtime_profiler.sh}"
++    runtime_profiler_marker="${KITSUNPING_RUNTIME_PROFILER_DEV_MARKER:-/data/local/tmp/kitsunping_dev/.runtime_profiler.enabled}"
++    [ -r "$runtime_profiler_script" ] && [ -r "$runtime_profiler_marker" ] || return 0
++    KITSUNPING_RUNTIME_PROFILER_TOGGLE_FILE="$runtime_profiler_marker"
++    . "$runtime_profiler_script"
++}
++
++core_runtime_profiler_load_dev
++
+ core_daemon_trace_enabled() {
+     case "${DAEMON_TRACE:-$(getprop persist.kitsunping.daemon_trace 2>/dev/null | tr -d '\r\n')}" in
+         1|true|TRUE|yes|YES|on|ON) return 0 ;;
+@@ -12,106 +22,176 @@ core_daemon_trace() {
+     log_debug "[TRACE] $*"
+ }
+ 
++core_runtime_profiler_tick_begin() {
++    command -v runtime_profiler_tick_begin >/dev/null 2>&1 || return 0
++    runtime_profiler_tick_begin
++}
++
++core_runtime_profiler_tick_end() {
++    command -v runtime_profiler_tick_end >/dev/null 2>&1 || return 0
++    runtime_profiler_tick_end "${1:-0}"
++}
++
++core_runtime_profiler_producer_begin() {
++    command -v runtime_profiler_producer_begin >/dev/null 2>&1 || return 0
++    runtime_profiler_producer_begin "$1"
++}
++
++core_runtime_profiler_producer_end() {
++    command -v runtime_profiler_producer_end >/dev/null 2>&1 || return 0
++    runtime_profiler_producer_end "${1:-0}"
++}
++
+ core_daemon_iteration() {
+-    local pending_event
++    local pending_event producer_rc
++    core_runtime_profiler_tick_begin
+     pending_event="$(getprop persist.kitsuneping.user_event 2>/dev/null | tr -d '\r\n')"
+     [ -n "$pending_event" ] && log_info "core.loop pending_event=$pending_event app_prop=${APP_EVENT_PROP:-unset}"
+ 
++    core_runtime_profiler_producer_begin AppEventProducer
+     core_daemon_trace "before app_event_cycle"
+     if command -v network_app_event_cycle >/dev/null 2>&1; then
+         network_app_event_cycle
+     else
+         daemon_run_app_event_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after app_event_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin PairingSyncProducer
+     core_daemon_trace "before pairing_sync_cycle"
+     if command -v network_app_pairing_sync_cycle >/dev/null 2>&1; then
+         network_app_pairing_sync_cycle
+     else
+         daemon_run_pairing_sync_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after pairing_sync_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin CurrentIfaceProducer
+     core_daemon_trace "before get_current_iface"
+     current_iface="$(get_current_iface)"
++    producer_rc=$?
+     [ -z "$current_iface" ] && current_iface="none"
+     core_daemon_trace "iface current_iface=$current_iface"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin WiFiProducer
+     core_daemon_trace "before wifi_cycle"
+     if command -v network_wifi_cycle >/dev/null 2>&1; then
+         network_wifi_cycle
+     else
+         daemon_run_wifi_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after wifi_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin MobileProducer
+     core_daemon_trace "before mobile_cycle"
+     if command -v network_mobile_cycle >/dev/null 2>&1; then
+         network_mobile_cycle
+     else
+         daemon_run_mobile_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after mobile_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin WiFiTransportProducer
+     core_daemon_trace "before wifi_transport_cycle"
+     if command -v network_wifi_transport_cycle >/dev/null 2>&1; then
+         network_wifi_transport_cycle
+     else
+         daemon_run_wifi_transport_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after wifi_transport_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin MobileTransportProducer
+     core_daemon_trace "before mobile_transport_cycle"
+     if command -v network_mobile_transport_cycle >/dev/null 2>&1; then
+         network_mobile_transport_cycle
+     else
+         daemon_run_mobile_transport_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after mobile_transport_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin TargetProfileProducer
+     core_daemon_trace "before target_profile_cycle"
+     if command -v network_app_target_profile_cycle >/dev/null 2>&1; then
+         network_app_target_profile_cycle
+     else
+         daemon_run_target_profile_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after target_profile_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
++    core_runtime_profiler_producer_begin RouterStatusPushProducer
+     core_daemon_trace "before router_status_push_cycle"
+     if command -v network_app_router_status_push_cycle >/dev/null 2>&1; then
+         network_app_router_status_push_cycle
+     else
+         daemon_run_router_status_push_cycle
+     fi
++    producer_rc=$?
+     core_daemon_trace "after router_status_push_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
+ 
+     # Channel recommendation auto-trigger (M1)
+     # Request channel scan if: pairing_ok=1 && wifi_score < threshold && sustained 3+ iterations
+     if command -v daemon_run_channel_smart_trigger >/dev/null 2>&1; then
++        core_runtime_profiler_producer_begin ChannelSmartTriggerProducer
+         core_daemon_trace "before channel_smart_trigger"
+         daemon_run_channel_smart_trigger
++        producer_rc=$?
+         core_daemon_trace "after channel_smart_trigger"
++        core_runtime_profiler_producer_end "$producer_rc"
+     fi
+ 
++    core_runtime_profiler_producer_begin TransitionProducer
+     core_daemon_trace "before transition_cycle"
+     daemon_run_transition_cycle
++    producer_rc=$?
+     core_daemon_trace "after transition_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
++    core_runtime_profiler_producer_begin DaemonTickProducer
+     core_daemon_trace "before tick_cycle"
+     daemon_run_tick_cycle
++    producer_rc=$?
+     core_daemon_trace "after tick_cycle"
++    core_runtime_profiler_producer_end "$producer_rc"
++    core_runtime_profiler_producer_begin DaemonStateProducer
+     core_daemon_trace "before write_state_file"
+     daemon_write_state_file
++    producer_rc=$?
+     core_daemon_trace "after write_state_file"
++    core_runtime_profiler_producer_end "$producer_rc"
+     if command -v daemon_promote_startup_status_if_healthy >/dev/null 2>&1; then
++        core_runtime_profiler_producer_begin StartupStatusProducer
+         daemon_promote_startup_status_if_healthy || true
++        producer_rc=$?
++        core_runtime_profiler_producer_end "$producer_rc"
+     fi
+     # Diagnostic JSON export (rate-limited, max once per RUNTIME_EXPORT_INTERVAL_SEC)
+     if command -v network__app__runtime_export >/dev/null 2>&1; then
++        core_runtime_profiler_producer_begin RuntimeExportProducer
+         core_daemon_trace "before runtime_export"
+         network__app__runtime_export
++        producer_rc=$?
+         core_daemon_trace "after runtime_export"
++        core_runtime_profiler_producer_end "$producer_rc"
++    fi
++    if command -v kitsunpingd_metrics_record >/dev/null 2>&1; then
++        kitsunpingd_metrics_record "cycle" 0 0 0 0
+     fi
++    core_runtime_profiler_tick_end 0
+ }
+ 
+ core_daemon_main_loop() {
+diff --git a/installer/service.sh b/installer/service.sh
+index c323083..7be341b 100644
+--- a/installer/service.sh
++++ b/installer/service.sh
+@@ -44,9 +44,9 @@ elif command -v resetprop >/dev/null 2>&1; then
+ fi
+ echo "[SYS][SERVICE] heavy activity state reset (lock + $HEAVY_LOAD_PROP=0)" >> "$SERVICES_LOGS"
+ 
+-# Common utilities 
++# Common utilities
+ COMMON_UTIL="$SCRIPT_DIR/addon/functions/utils/Kitsutils.sh"
+- 
++
+ if [ -f "$COMMON_UTIL" ]; then
+     . "$COMMON_UTIL"
+ else
+@@ -82,19 +82,19 @@ fi
+ # =============================================================================
+ setup_wget_wrapper() {
+     WGET_WRAPPER="/data/local/tmp/wget"
+-    
++
+     # Check if busybox is available
+     if ! command -v busybox >/dev/null 2>&1; then
+         echo "[SYS][WARN]: busybox not found, wget wrapper not created" >> "$SERVICES_LOGS"
+         return 1
+     fi
+-    
++
+     # Check if wget already exists in PATH
+     if command -v wget >/dev/null 2>&1; then
+         echo "[SYS][INFO]: wget already available in PATH" >> "$SERVICES_LOGS"
+         return 0
+     fi
+-    
++
+     # Create wrapper if it doesn't exist or is outdated
+     if [ ! -f "$WGET_WRAPPER" ] || [ ! -x "$WGET_WRAPPER" ]; then
+         cat > "$WGET_WRAPPER" <<'WGET_EOF'
+@@ -102,7 +102,7 @@ setup_wget_wrapper() {
+ exec busybox wget "$@"
+ WGET_EOF
+         chmod 755 "$WGET_WRAPPER" 2>/dev/null
+-        
++
+         if [ -x "$WGET_WRAPPER" ]; then
+             echo "[SYS][OK]: wget wrapper created at $WGET_WRAPPER" >> "$SERVICES_LOGS"
+         else
+@@ -112,7 +112,7 @@ WGET_EOF
+     else
+         echo "[SYS][INFO]: wget wrapper already exists at $WGET_WRAPPER" >> "$SERVICES_LOGS"
+     fi
+-    
++
+     return 0
+ }
+ 
+@@ -137,7 +137,7 @@ custom_write() {
+     echo "[DEBUG]: Call to [custom_write()] with arguments: ['$1'], ['$2'], ['$3']" >> "$SERVICES_LOGS"
+ 
+     value="$1"
+-    normalized_value=$(normalize_sysctl_value "$value") # 
++    normalized_value=$(normalize_sysctl_value "$value") #
+     target_file="$2"
+     log_text="$3"
+ 
+@@ -211,7 +211,7 @@ apply_ril_settings() {
+     echo "[RIL settings applied]"   >> "$SERVICES_LOGS"
+ }
+ 
+-apply_general_network_settings() { 
++apply_general_network_settings() {
+     echo "[Applying general network settings...]"  >> "$SERVICES_LOGS"
+     echo "[General network settings applied]"  >> "$SERVICES_LOGS"
+ }
+@@ -262,26 +262,26 @@ apply_tcp_settings() {
+     echo "[Aplicando configuraciones [ IPV4/TCP ]...]"  >> "$SERVICES_LOGS"
+     apply_param_set <<'EOF'
+ 1|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn enabled
+-1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled 
+-1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled 
+-1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled 
+-16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem adjusted 
+-16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem adjusted 
+-65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem adjusted 
+-cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic 
++1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled
++1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled
++1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled
++16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem adjusted
++16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem adjusted
++65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem adjusted
++cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic
+ 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
+-3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled 
+-5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 adjusted 
+-5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 adjusted 
+-2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes adjusted 
+-3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries adjusted 
+-512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog adjusted 
+-32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans adjusted 
+-10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout adjusted 
+-35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time adjusted 
+-10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl adjusted 
+-3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes adjusted 
+-1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies enabled 
++3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled
++5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 adjusted
++5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 adjusted
++2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes adjusted
++3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries adjusted
++512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog adjusted
++32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans adjusted
++10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout adjusted
++35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time adjusted
++10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl adjusted
++3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes adjusted
++1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies enabled
+ EOF
+ 
+     echo "[Configuraciones TCP completadas]"  >> "$SERVICES_LOGS"
+@@ -304,44 +304,44 @@ apply_network_ipv4_settings() {
+ 0|/proc/sys/net/ipv4/conf/default/secure_redirects|secure_redirects disabled by default
+ 1|/proc/sys/net/ipv4/conf/all/src_valid_mark|src_valid_mark enabled globally
+ 1|/proc/sys/net/ipv4/conf/default/src_valid_mark|src_valid_mark enabled by default
+-1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect enabled 
+-0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all disabled 
+-1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts enabled 
+-0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr disabled 
+-1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses enabled 
+-100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimized 
+-5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimized 
+-500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimized for lower latency 
+-6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask adjusted 
+-1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports enabled 
+-50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships adjusted for higher efficiency 
+-20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf adjusted 
+-2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv adjusted 
+-64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl adjusted 
+-0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr disabled 
+-1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux enabled for faster processing 
+-0|/proc/sys/net/ipv4/ip_forward|ip_forward disabled to reduce overhead 
+-1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority adjusted 
+-0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu disabled 
+-1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing enabled 
+-1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range expanded for more connections 
+-0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc disabled 
+-1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind enabled to allow more connections 
+-1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start adjusted 
+-4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh adjusted for larger buffer 
+-3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh adjusted 
+-64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist adjusted 
+-0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval adjusted 
+-30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time adjusted 
+-1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux enabled for faster processing 
+-131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem adjusted for higher performance 
+-8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimized 
+-8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimized 
+-600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl adjusted 
+-120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl adjusted 
+-131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold adjusted for more peers 
+-0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range adjusted 
+-32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh adjusted 
++1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect enabled
++0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all disabled
++1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts enabled
++0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr disabled
++1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses enabled
++100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimized
++5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimized
++500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimized for lower latency
++6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask adjusted
++1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports enabled
++50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships adjusted for higher efficiency
++20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf adjusted
++2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv adjusted
++64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl adjusted
++0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr disabled
++1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux enabled for faster processing
++0|/proc/sys/net/ipv4/ip_forward|ip_forward disabled to reduce overhead
++1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority adjusted
++0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu disabled
++1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing enabled
++1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range expanded for more connections
++0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc disabled
++1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind enabled to allow more connections
++1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start adjusted
++4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh adjusted for larger buffer
++3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh adjusted
++64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist adjusted
++0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval adjusted
++30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time adjusted
++1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux enabled for faster processing
++131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem adjusted for higher performance
++8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimized
++8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimized
++600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl adjusted
++120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl adjusted
++131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold adjusted for more peers
++0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range adjusted
++32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh adjusted
+ EOF
+ 
+     echo "[Configuring optimized network settings completed]"  >> "$SERVICES_LOGS"
+@@ -385,7 +385,7 @@ EOF
+ 
+     echo "[IPv6 network configurations completed]"  >> "$SERVICES_LOGS"
+ }
+-    
++
+ apply_network_optimizations() {
+     echo "[SYS][SERVICE] Starting the application of all configurations..." >> "$SERVICES_LOGS"
+     apply_core_settings || echo "[SYS][SERVICE] Error applying configurations [CORE]" >> "$SERVICES_LOGS"
+@@ -433,8 +433,68 @@ apply_network_optimizations  || echo "[SYS][SERVICE] Error applying base optimiz
+ DAEMON_SH="$SCRIPT_DIR/addon/daemon/daemon.sh"
+ DAEMON_PID_FILE="$SCRIPT_DIR/cache/daemon.pid"
+ DAEMON_SUPERVISOR_PID_FILE="$SCRIPT_DIR/cache/daemon.supervisor.pid"
++NATIVE_DAEMON="$SCRIPT_DIR/bin/kitsunpingd"
++NATIVE_PID_FILE="$SCRIPT_DIR/cache/kitsunpingd.pid"
++NATIVE_SUPERVISOR_PID_FILE="$SCRIPT_DIR/cache/kitsunpingd.supervisor.pid"
+ mkdir -p "$SCRIPT_DIR/cache" 2>/dev/null
+ 
++native_snapshot_pid_is_running() {
++    native_pid="$(cat "$NATIVE_PID_FILE" 2>/dev/null)"
++    case "$native_pid" in
++        ''|*[!0-9]*) return 1 ;;
++    esac
++    kill -0 "$native_pid" 2>/dev/null || return 1
++    [ -r "/proc/$native_pid/cmdline" ] || return 1
++    tr '\0' ' ' < "/proc/$native_pid/cmdline" 2>/dev/null | grep -Fq "$NATIVE_DAEMON" || return 1
++    return 0
++}
++
++native_snapshot_supervisor_is_running() {
++    native_supervisor_pid="$(cat "$NATIVE_SUPERVISOR_PID_FILE" 2>/dev/null)"
++    case "$native_supervisor_pid" in
++        ''|*[!0-9]*) return 1 ;;
++    esac
++    kill -0 "$native_supervisor_pid" 2>/dev/null || return 1
++    return 0
++}
++
++start_native_snapshot_supervisor() {
++    native_interval="$(getprop kitsunping.daemon.interval 2>/dev/null | tr -d '\r\n')"
++    case "$native_interval" in
++        ''|*[!0-9]*|0) native_interval=10 ;;
++    esac
++
++    [ -x "$NATIVE_DAEMON" ] || {
++        echo "[SYS][SERVICE] Native snapshot sidecar absent; Shell network collectors remain active" >> "$SERVICES_LOGS"
++        return 0
++    }
++
++    (
++        while true; do
++            if native_snapshot_pid_is_running; then
++                sleep 5
++                continue
++            fi
++            rm -f "$NATIVE_PID_FILE" "$SCRIPT_DIR/cache/kitsunpingd.lock" 2>/dev/null
++            "$NATIVE_DAEMON" --root "$SCRIPT_DIR" --interval-seconds "$native_interval" >> "$SERVICES_LOGS" 2>&1
++            native_rc=$?
++            echo "[SYS][SERVICE][WARN] Native snapshot sidecar exited rc=$native_rc; restarting in 5s" >> "$SERVICES_LOGS"
++            sleep 5
++        done
++    ) &
++    echo "$!" > "$NATIVE_SUPERVISOR_PID_FILE"
++    echo "[SYS][SERVICE] Native snapshot supervisor started interval=${native_interval}s" >> "$SERVICES_LOGS"
++}
++
++if native_snapshot_pid_is_running; then
++    echo "[SYS][SERVICE] Native snapshot sidecar already running with PID $(cat "$NATIVE_PID_FILE")" >> "$SERVICES_LOGS"
++elif native_snapshot_supervisor_is_running; then
++    echo "[SYS][SERVICE] Native snapshot supervisor already running with PID $(cat "$NATIVE_SUPERVISOR_PID_FILE")" >> "$SERVICES_LOGS"
++else
++    rm -f "$NATIVE_SUPERVISOR_PID_FILE" 2>/dev/null
++    start_native_snapshot_supervisor || true
++fi
++
+ daemon_pid_is_running() {
+     pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null)"
+     case "$pid" in
+diff --git a/network/app/target_engine.sh b/network/app/target_engine.sh
+index 9961e6e..8e2023c 100644
+--- a/network/app/target_engine.sh
++++ b/network/app/target_engine.sh
+@@ -180,7 +180,23 @@ network__app__target_prop_lookup_profile() {
+ # -----------------------------------------------------------------------
+ 
+ network__app__detect_foreground_package() {
+-    local out pkg pkg_win pkg_act
++    local out pkg pkg_win pkg_act native_pkg
++
++    native_pkg=""
++    if command -v get_native_foreground_package >/dev/null 2>&1; then
++        native_pkg="$(get_native_foreground_package 2>/dev/null || true)"
++    fi
++    if [ -n "$native_pkg" ]; then
++        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++        if command -v kitsunpingd_metrics_record >/dev/null 2>&1; then
++            kitsunpingd_metrics_record "foreground_package" 0 0 2 8
++        fi
++        printf '%s' "$native_pkg"
++        return 0
++    fi
++
++    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+ 
+     out="$(dumpsys window windows 2>/dev/null | grep -m 1 -E 'mCurrentFocus|mFocusedApp')"
+     pkg_win="$(printf '%s\n' "$out" | sed -n 's/.* u[0-9][0-9]* \([^ /}][^ /}]*\)\/.*/\1/p' | head -n 1)"
+@@ -323,7 +339,7 @@ network__app__event_cycle() {
+                 *) band="2.4GHz" ;;
+             esac
+             log_info "app_event=$app_event band=$band (force=1)"
+-            
++
+             # Call channel request with force=1 (bypasses rate-limit and score threshold)
+             if command -v network__router__channel_recommend_request >/dev/null 2>&1; then
+                 network__router__channel_recommend_request "$band" "1"
+@@ -336,10 +352,10 @@ network__app__event_cycle() {
+             # Parse channel:band from app_event_data (e.g., "11:2g" or "36:5g")
+             local channel_info="$app_event_data"
+             local channel band
+-            
++
+             channel="${channel_info%%:*}"
+             band="${channel_info##*:}"
+-            
++
+             # Validate channel is numeric
+             case "$channel" in
+                 ''|*[!0-9]*)
+@@ -354,9 +370,9 @@ network__app__event_cycle() {
+                             band="2g" # fallback
+                             ;;
+                     esac
+-                    
++
+                     log_info "app_event=$app_event channel=$channel band=$band"
+-                    
++
+                     # Call channel apply function (P4)
+                     if command -v network__router__channel_apply_request >/dev/null 2>&1; then
+                         network__router__channel_apply_request "$band" "$channel"
+diff --git a/network/mobile/cycle.sh b/network/mobile/cycle.sh
+index a18ee02..c6837d1 100644
+--- a/network/mobile/cycle.sh
++++ b/network/mobile/cycle.sh
+@@ -43,28 +43,51 @@ network__mobile__transport_cycle() {
+         signal_loop_count=$((signal_loop_count + 1))
+         if [ "$signal_loop_count" -ge "$SIGNAL_POLL_INTERVAL" ]; then
+             signal_loop_count=0
+-            signal_info=$(get_signal_quality)
++            signal_info=$(get_native_mobile_signal_quality 2>/dev/null || true)
++            if [ -z "$signal_info" ]; then
++                command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
++                command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
++                signal_info=$(get_signal_quality)
++            else
++                command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
++                # The native signal payload replaces the direct telephony
++                # registry dump; parser work remains intentionally uncounted.
++                kitsunpingd_metrics_record "mobile_signal" 0 0 1 0
++            fi
+             echo "$signal_info" | atomic_write "$MODDIR/cache/signal_quality.json"
+ 
+             signal_score=""
++            signal_source=""
++            native_rsrp_score=""
++            native_sinr_score=""
+             rsrp=""
+             sinr=""
+             if [ -n "$JQ_BIN" ]; then
+                 signal_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .quality_score // empty' 2>/dev/null)
+                 rsrp=$(echo "$signal_info" | "$JQ_BIN" -r 'try .rsrp_dbm // empty' 2>/dev/null)
+                 sinr=$(echo "$signal_info" | "$JQ_BIN" -r 'try .sinr_db // empty' 2>/dev/null)
++                signal_source=$(echo "$signal_info" | "$JQ_BIN" -r 'try .source // empty' 2>/dev/null)
++                native_rsrp_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .rsrp_score // empty' 2>/dev/null)
++                native_sinr_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .sinr_score // empty' 2>/dev/null)
+             else
+                 signal_score=$(echo "$signal_info" | awk -F: '/quality_score/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
+                 rsrp=$(echo "$signal_info" | awk -F: '/rsrp_dbm/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
+                 sinr=$(echo "$signal_info" | awk -F: '/sinr_db/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
++                signal_source=$(echo "$signal_info" | awk -F'"' '/"source"/ {print $4; exit}')
++                native_rsrp_score=$(echo "$signal_info" | awk -F: '/"rsrp_score"/ {gsub(/[^0-9-]/,"",$2); print $2; exit}')
++                native_sinr_score=$(echo "$signal_info" | awk -F: '/"sinr_score"/ {gsub(/[^0-9-]/,"",$2); print $2; exit}')
+             fi
+ 
+             rsrp_score=0
+             sinr_score=0
+-            if [ -n "$rsrp" ]; then
++            if [ "$signal_source" = "kitsunpingd" ] && echo "$native_rsrp_score" | grep -Eq '^[0-9]+$'; then
++                rsrp_score="$native_rsrp_score"
++            elif [ -n "$rsrp" ]; then
+                 rsrp_score=$(score_rsrp_cached "$rsrp")
+             fi
+-            if [ -n "$sinr" ]; then
++            if [ "$signal_source" = "kitsunpingd" ] && echo "$native_sinr_score" | grep -Eq '^[0-9]+$'; then
++                sinr_score="$native_sinr_score"
++            elif [ -n "$sinr" ]; then
+                 sinr_score=$(score_sinr_cached "$sinr")
+             fi
+ 
+@@ -92,6 +115,7 @@ network__mobile__transport_cycle() {
+ 
+             if [ -f "$MODDIR/cache/target.override.active" ]; then
+                 log_debug "target override active; skipping auto mobile profile write"
++                # shellcheck disable=SC2104
+                 continue
+             fi
+ 
+diff --git a/setup.sh b/setup.sh
+index 614ce5a..7f08309 100644
+--- a/setup.sh
++++ b/setup.sh
+@@ -48,7 +48,8 @@ if [ -z "${MODPATH:-}" ]; then
+ fi
+ 
+ # Ensure runtime directories exist even when ZIP packaging omits empty folders.
+-mkdir -p "$NEWMODPATH/cache" "$NEWMODPATH/logs" "$NEWMODPATH/calibration/data/cache" 2>/dev/null || true
++mkdir -p "$NEWMODPATH/bin" "$NEWMODPATH/cache" "$NEWMODPATH/logs" "$NEWMODPATH/calibration/data/cache" 2>/dev/null || true
++[ -f "$NEWMODPATH/bin/kitsunpingd" ] && chmod 0755 "$NEWMODPATH/bin/kitsunpingd" 2>/dev/null || true
+ 
+ # Load base utilities and permissions
+ . "$NEWMODPATH/$complemento_kitsutils"
+@@ -242,7 +243,7 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
+     log_info "Please wait and do not interrupt"
+     log_info "  the process or move the device"
+     log_info "It may take several minutes to complete"
+-    
++
+     # POSIX-safe stderr handling: capture once, then mirror to installer stderr and persistent trace log.
+     trace_log_file="/sdcard/trace_log2.log"
+     trace_tmp_err="$NEWMODPATH/logs/calibration.stderr.log"
+@@ -350,7 +351,7 @@ progress_bar
+ # Auto mode but not have SIM card: 250s/280s
+ # Auto mode with SIM card: aprox 4/6 mins (420s-512s)
+ # Fixed mode: aprox 20s (static values + minimal processing)
+-INSTALL_END_TIME=$(date +%s) 
++INSTALL_END_TIME=$(date +%s)
+ INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))
+ echo "${divider}"
+ echo "❖ Installation completed in ${INSTALL_DURATION} seconds."
+diff --git a/testing/runtime/test_adaptive_sampling.sh b/testing/runtime/test_adaptive_sampling.sh
+index 58be27f..7054437 100644
+--- a/testing/runtime/test_adaptive_sampling.sh
++++ b/testing/runtime/test_adaptive_sampling.sh
+@@ -52,6 +52,7 @@ daemon_adaptive_sampling_init
+ WIFI_IFACE=wlan0
+ wifi_state=disconnected
+ interval_file="$TMP_DIR/adaptive_interval.txt"
++KITSUNPINGD_ADAPTIVE_BIN="/workspaces/KitsuneSeries/Kitsunpingd/target/debug/kitsunpingd"
+ daemon_sampling_pick_interval 10 > "$interval_file"
+ interval_result="$(cat "$interval_file")"
+ assert_eq 8 "$interval_result" "adaptive sampling degrades interval when Wi-Fi is disconnected"
+@@ -79,6 +80,46 @@ assert_eq 12 "$interval_result" "adaptive-off mode keeps caller interval"
+ assert_eq fixed "$DAEMON_SAMPLE_MODE" "adaptive-off mode reports fixed sampling"
+ assert_eq adaptive_off "$DAEMON_SAMPLE_REASON" "adaptive-off mode exposes reason"
+ 
++TEST_ADAPTIVE_SAMPLING=1
++daemon_adaptive_sampling_init
++WIFI_IFACE=wlan0
++wifi_state=disconnected
++bash_interval="$(daemon_sampling_pick_interval_bash 10)"
++bash_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
++daemon_adaptive_sampling_init
++WIFI_IFACE=wlan0
++wifi_state=disconnected
++rust_interval="$(daemon_sampling_pick_interval 10)"
++rust_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
++assert_eq "$bash_interval" "$rust_interval" "Rust matches Bash interval for disconnected Wi-Fi"
++assert_eq "$bash_state" "$rust_state" "Rust matches Bash state for disconnected Wi-Fi"
++
++TEST_ADAPTIVE_SAMPLING=0
++daemon_adaptive_sampling_init
++bash_interval="$(daemon_sampling_pick_interval_bash 12)"
++bash_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
++daemon_adaptive_sampling_init
++rust_interval="$(daemon_sampling_pick_interval 12)"
++rust_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
++assert_eq "$bash_interval" "$rust_interval" "Rust matches Bash interval when adaptive sampling is disabled"
++assert_eq "$bash_state" "$rust_state" "Rust matches Bash state when adaptive sampling is disabled"
++
++invalid_native="$TMP_DIR/invalid-kitsunpingd"
++cat > "$invalid_native" <<'EOF'
++#!/bin/sh
++printf '%s\n' 'invalid=result'
++EOF
++chmod 0700 "$invalid_native"
++KITSUNPINGD_ADAPTIVE_BIN="$invalid_native"
++TEST_ADAPTIVE_SAMPLING=1
++daemon_adaptive_sampling_init
++WIFI_IFACE=wlan0
++wifi_state=disconnected
++daemon_sampling_pick_interval 10 > "$interval_file"
++interval_result="$(cat "$interval_file")"
++assert_eq 8 "$interval_result" "invalid Rust result falls back to Bash interval"
++assert_eq degraded "$DAEMON_SAMPLE_MODE" "invalid Rust result falls back to Bash state"
++
+ rm -f "$interval_file"
+ 
+ finish
+\ No newline at end of file
+diff --git a/tools/property_inventory.sh b/tools/property_inventory.sh
+index d1b25c0..f1c14ac 100644
+--- a/tools/property_inventory.sh
++++ b/tools/property_inventory.sh
+@@ -21,7 +21,7 @@ OUT_DIR="${PROP_INV_OUT_DIR:-/sdcard/kitsunping_prop_inventory}"
+ WITH_BINARIES=0
+ MAX_BINARY_FILES="${PROP_INV_MAX_BINARY_FILES:-300}"
+ 
+-PROP_REGEX='(ro|persist|sys|vendor|debug|dalvik|init\.svc)\.[A-Za-z0-9._-]+'
++PROP_REGEX='(ro|persist|sys|vendor|debug|dalvik|init\.svc|net|wifi|ril)\.[A-Za-z0-9._-]+'
+ 
+ log() { printf '%s\n' "$*"; }
+ err() { printf '[ERR] %s\n' "$*" >&2; }
+@@ -36,7 +36,13 @@ Modes:
+       - property_contexts (plat/vendor/odm/product)
+       - init rc setprop and property: triggers
+       - known *.prop files
+-      - (optional) strings from selected binaries
++            - (optional) strings from selected binaries
++
++    candidates [--with-binaries] [--out-dir DIR]
++            Report network-related property candidates found in property contexts,
++            init rc files, and optionally binaries. Excludes build.prop keys,
++            currently visible getprop keys, Kitsunping keys, and generic runtime keys.
++            Output is evidence for investigation only; it never writes a property.
+ 
+   snapshot <out_file>
+       Save current getprop snapshot to out_file (sorted key=value).
+@@ -218,6 +224,67 @@ run_static() {
+     log "[INFO] total keys: $(wc -l < "$f_all" 2>/dev/null || echo 0)"
+ }
+ 
++snapshot_runtime_keys() {
++    local out="$1"
++    getprop 2>/dev/null | sed -n 's/^\[\([^]]*\)\]: \[.*\]$/\1/p' | sort -u > "$out" 2>/dev/null || : > "$out"
++}
++
++merge_network_candidates() {
++    local contexts="$1" init_rc="$2" binaries="$3" runtime="$4" out="$5"
++
++    awk -v contexts="$contexts" -v init_rc="$init_rc" -v binaries="$binaries" -v runtime="$runtime" '
++        FILENAME == runtime { runtime_key[$0] = 1; next }
++        FILENAME == contexts { source[$0] = source[$0] "property_contexts,"; next }
++        FILENAME == init_rc { source[$0] = source[$0] "init_rc,"; next }
++        FILENAME == binaries { source[$0] = source[$0] "binaries,"; next }
++        END {
++            for (key in source) {
++                if (runtime_key[key]) continue
++                if (key ~ /\.$/) continue
++                if (key ~ /^(persist\.)?kitsunping\./) continue
++                if (key ~ /^(init\.svc|debug|dalvik|service|sys\.boot)\./) continue
++                if (key ~ /^ro\./) continue
++                if (source[key] == "binaries," && key ~ /^wifi\./) continue
++                if (key !~ /^(wifi\.|net\.(tcp|wifi|data)\.|ril\.(data|wifi|radio)\.|sys\.(wifi|wlan|net|data)\.|vendor\.(wifi|wlan|data|radio)\.|persist\.(vendor\.(wifi|wlan|data|radio)|sys\.(wifi|wlan|net|data)|radio\.))/) continue
++                value = source[key]
++                sub(/,$/, "", value)
++                print key "\t" value
++            }
++        }
++    ' "$runtime" "$contexts" "$init_rc" "$binaries" | sort -u > "$out" 2>/dev/null || : > "$out"
++}
++
++run_candidates() {
++    local ts
++    ts="$(date +%Y%m%d_%H%M%S 2>/dev/null || echo unknown)"
++
++    ensure_out_dir || return 1
++
++    local f_ctx="$OUT_DIR/candidate_contexts_${ts}.txt"
++    local f_init="$OUT_DIR/candidate_init_rc_${ts}.txt"
++    local f_bin="$OUT_DIR/candidate_binaries_${ts}.txt"
++    local f_runtime="$OUT_DIR/candidate_runtime_excluded_${ts}.txt"
++    local f_out="$OUT_DIR/network_property_candidates_${ts}.tsv"
++
++    log "[RUN] candidate collection (read-only)"
++    extract_from_property_contexts "$f_ctx"
++    extract_from_init_rc "$f_init"
++    snapshot_runtime_keys "$f_runtime"
++
++    if [ "$WITH_BINARIES" -eq 1 ]; then
++        log "[RUN] binary strings scan (max files: $MAX_BINARY_FILES)"
++        extract_from_binaries_strings "$f_bin"
++    else
++        : > "$f_bin"
++    fi
++
++    merge_network_candidates "$f_ctx" "$f_init" "$f_bin" "$f_runtime" "$f_out"
++
++    log "[OK ] candidates:       $f_out"
++    log "[INFO] candidate keys: $(wc -l < "$f_out" 2>/dev/null || echo 0)"
++    log "[INFO] columns: property<TAB>static_sources"
++}
++
+ run_snapshot() {
+     local out_file="${1:-}"
+     [ -n "$out_file" ] || {
+@@ -272,6 +339,20 @@ case "$MODE" in
+         done
+         run_static
+         ;;
++    candidates)
++        while [ "$#" -gt 0 ]; do
++            case "$1" in
++                --with-binaries) WITH_BINARIES=1 ;;
++                --out-dir)
++                    shift
++                    OUT_DIR="${1:-$OUT_DIR}"
++                    ;;
++                *) err "Unknown candidates option: $1"; usage; exit 1 ;;
++            esac
++            shift
++        done
++        run_candidates
++        ;;
+     snapshot)
+         run_snapshot "${1:-}"
+         ;;

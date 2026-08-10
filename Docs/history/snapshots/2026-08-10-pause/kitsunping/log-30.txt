@@ -1,0 +1,30 @@
+0b57a74 (HEAD -> feat/rust-binary-integration, origin/main, main) fix(release): publish v7.0 beta manifest
+b36283f (tag: v7.00) Merge pull request #2 from Angeles-HO/hardening/v7-beta-state-machine
+7283674 feat(runtime): add debug-gated logging policy
+5817df4 feat(docs): add property discovery methods documentation and script
+69ffbc6 feat(calibration): implement boot timestamp fallback logic and enhance logging
+2e5e66b docs: add references applicability matrix for v7.0-beta
+e4a844a Merge pull request #1 from Angeles-HO/hardening/v7-beta-state-machine
+de465d3 chore: ignore local validation workspace
+79dd3fc chore: ignore local validation workspace
+e06bf41 fix(release): preserve published update metadata
+c2aa9a0 fix(release): preserve published update metadata
+0185290 chore: ignore local analysis artifacts
+6e8fbfc docs(runtime): align state and calibration contracts
+99be96c fix(runtime): report healthy startup and bounded calibration
+d948f06 fix(calibration): preserve install and boot guard state
+c7bf345 fix(runtime): enforce profile intent precedence
+e794d42 feat: Implement ONNX adaptive inference framework (Phase 2)
+a9784ac Add runtime tests for calibration boot guard, log rotation, and mobile SINR scoring
+18af9b7 docs: add GitHub CI status badge
+9aa7d97 docs+ci: add local gate guide and harden workflow concurrency
+b1cb64e tests: remove flaky rescue-absent assertion in failsafe test
+9a85fb3 tests: stabilize failsafe fixture assertions in CI
+062f0cd tests: detach router mock output to avoid CI step hang
+91352a4 ci: improve fixture failure diagnostics and upload logs
+f49ab59 ci: add release gate and fixture-based local test suites
+a0db24f test: add deterministic input-output function contracts
+0a14960 docs: untrack internal release planning documents
+f6c74b0 docs: add local gui-reference drafts area
+05053fb docs: reorganize Docs structure and refresh stale guides
+bdfd1e7 feat: update band classification to include 6GHz as 5G

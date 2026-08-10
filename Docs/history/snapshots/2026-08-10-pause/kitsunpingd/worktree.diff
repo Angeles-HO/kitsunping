@@ -1,0 +1,219 @@
+diff --git a/README.md b/README.md
+index c58f42d..ffaf953 100644
+--- a/README.md
++++ b/README.md
+@@ -6,9 +6,15 @@ Y sobre QMI/MBIM/DIAG: hay una distinción importante. **QMI y MBIM son interfac
+ 
+ ## Estado actual del MVP
+ 
+-El primer incremento está implementado como crate Rust de solo lectura. Aún no
+-está integrado en `Kitsunping/installer/service.sh`, por lo que no cambia el
+-comportamiento de ningún módulo instalado.
++`kitsunpingd` se inicia y supervisa desde `Kitsunping/installer/service.sh`.
++El contrato `network.discovery/v1` está certificado como Rust-first para la
++interfaz activa y los estados de conectividad Wi-Fi/móvil: el runtime consume
++el estado nativo válido y usa los colectores Bash sólo como fallback.
++
++El snapshot sigue siendo una superficie de observabilidad y recuperación; no
++autoriza a Rust a aplicar perfiles, propiedades, calibración ni cambios de red.
++Esas responsabilidades siguen en Bash hasta que cada contrato tenga su propia
++paridad, validación de dispositivo y procedimiento de rollback.
+ 
+ Incluye:
+ 
+@@ -29,10 +35,10 @@ cargo test --manifest-path Kitsunpingd/Cargo.toml
+ cargo run --manifest-path Kitsunpingd/Cargo.toml -- --root /tmp/kitsunpingd --once
+ ```
+ 
+-El entorno de desarrollo todavía no tiene instalado `aarch64-linux-android`.
+-Por tanto, la compilación Bionic, despliegue Magisk y validación real en S901E
+-siguen pendientes; no se reclama compatibilidad Android hasta observar esas
+-pruebas.
++La compilación Bionic para `aarch64-linux-android` y una validación de ejecución
++en dispositivo están disponibles. Cada promoción adicional debe volver a
++validar el binario en el dispositivo objetivo antes de ampliar la autoridad de
++Rust.
+ 
+ Cuando haya un NDK disponible, la compilación reproducible para `arm64-v8a`
+ se ejecuta fuera del árbol del módulo:
+@@ -44,8 +50,9 @@ ANDROID_NDK_HOME=/path/to/android-ndk \
+ ```
+ 
+ El resultado queda en `Kitsunpingd/dist/aarch64-linux-android/kitsunpingd`.
+-El script no copia el binario a `Kitsunping/` ni modifica el launcher; esa
+-integración sigue bloqueada hasta validar Bionic en un dispositivo.
++El despliegue en un módulo activo requiere preservar el binario anterior, su
++hash, permisos, contexto SELinux y una ruta de rollback antes de reiniciar sólo
++el proceso supervisado `kitsunpingd`.
+ 
+ ## 1. Primera etapa: crear `kitsunpingd`
+ 
+diff --git a/dist/aarch64-linux-android/kitsunpingd b/dist/aarch64-linux-android/kitsunpingd
+index b468893..8065eb0 100755
+Binary files a/dist/aarch64-linux-android/kitsunpingd and b/dist/aarch64-linux-android/kitsunpingd differ
+diff --git a/src/main.rs b/src/main.rs
+index 4b3b021..957c455 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -9,6 +9,7 @@ use std::thread;
+ use std::time::{Duration, SystemTime, UNIX_EPOCH};
+ 
+ mod backend;
++mod adaptive_sampling;
+ mod acquisition;
+ mod contract;
+ mod manager;
+@@ -75,12 +76,83 @@ impl Drop for InstanceLock {
+ }
+ 
+ fn main() {
++    let arguments = env::args().skip(1).collect::<Vec<_>>();
++    if arguments.first().is_some_and(|argument| argument == "--adaptive-sampling") {
++        match adaptive_sampling_command(&arguments[1..]) {
++            Ok(output) => {
++                print!("{output}");
++                return;
++            }
++            Err(error) => {
++                eprintln!("kitsunpingd: {error}");
++                process::exit(2);
++            }
++        }
++    }
+     if let Err(error) = run(parse_args()) {
+         eprintln!("kitsunpingd: {error}");
+         process::exit(1);
+     }
+ }
+ 
++fn adaptive_sampling_command(arguments: &[String]) -> Result<String, String> {
++    let mut values = BTreeMap::new();
++    let mut index = 0;
++    while index < arguments.len() {
++        let key = arguments.get(index).ok_or("missing adaptive argument")?;
++        let value = arguments
++            .get(index + 1)
++            .ok_or_else(|| format!("{key} requires a value"))?;
++        if !key.starts_with("--") {
++            return Err(format!("unknown adaptive argument: {key}"));
++        }
++        values.insert(key.as_str(), value.as_str());
++        index += 2;
++    }
++    let required = |key| values.get(key).copied().ok_or_else(|| format!("{key} requires a value"));
++    let integer = |key| {
++        required(key)?.parse::<u64>().map_err(|_| format!("{key} must be an unsigned integer"))
++    };
++    let optional_integer = |key| match values.get(key).copied() {
++        Some("") | None => Ok(None),
++        Some(value) => value.parse::<u64>().map(Some).map_err(|_| format!("{key} must be an unsigned integer or empty")),
++    };
++    let enabled = match required("--enabled")? {
++        "1" => true,
++        "0" => false,
++        _ => return Err("--enabled must be 0 or 1".into()),
++    };
++    let input = adaptive_sampling::Input {
++        base_interval: integer("--base-interval")?,
++        enabled,
++        mode: required("--mode")?,
++        wifi_iface: required("--wifi-iface")?,
++        wifi_state: required("--wifi-state")?,
++        wifi_quality_reason: required("--wifi-quality-reason")?,
++        wifi_score: optional_integer("--wifi-score")?,
++        wifi_latency_ms: optional_integer("--wifi-latency-ms")?,
++        wifi_jitter_ms: optional_integer("--wifi-jitter-ms")?,
++        wifi_loss_pct: optional_integer("--wifi-loss-pct")?,
++        wifi_loss_trend_pct: required("--wifi-loss-trend-pct")?,
++        wifi_probe_ok: required("--wifi-probe-ok")?,
++        bad_streak: integer("--bad-streak")?,
++        good_streak: integer("--good-streak")?,
++        required_bad_streak: integer("--required-bad-streak")?,
++        required_good_streak: integer("--required-good-streak")?,
++        base_seconds: integer("--base-seconds")?,
++        degraded_seconds: integer("--degraded-seconds")?,
++        wifi_score_threshold: integer("--wifi-score-threshold")?,
++        wifi_latency_threshold_ms: integer("--wifi-latency-threshold-ms")?,
++        wifi_jitter_threshold_ms: integer("--wifi-jitter-threshold-ms")?,
++        wifi_loss_threshold_pct: integer("--wifi-loss-threshold-pct")?,
++    };
++    let output = adaptive_sampling::evaluate(&input);
++    Ok(format!(
++        "interval={}\nmode={}\nreason={}\nbad_streak={}\ngood_streak={}\n",
++        output.interval, output.mode, output.reason, output.bad_streak, output.good_streak
++    ))
++}
++
+ fn parse_args() -> Config {
+     let mut root = env::var_os("KITSUNPINGD_ROOT")
+         .map(PathBuf::from)
+@@ -162,8 +234,8 @@ fn run(config: Config) -> io::Result<()> {
+             &cache.join("kitsunpingd.snapshot.json"),
+             snapshot.as_bytes(),
+         )?;
+-        let shadow_state = collect_shadow_state(&config, &cache, &backend_manager);
+-        atomic_write(&cache.join("daemon.native.state"), shadow_state.as_bytes())?;
++        let native_state = collect_native_state(&config, &cache, &backend_manager);
++        atomic_write(&cache.join("daemon.native.state"), native_state.as_bytes())?;
+         if config.once {
+             break;
+         }
+@@ -239,7 +311,7 @@ fn render_snapshot_json(data: &SnapshotData) -> String {
+     )
+ }
+ 
+-fn collect_shadow_state(config: &Config, cache: &Path, backend_manager: &BackendManager) -> String {
++fn collect_native_state(config: &Config, cache: &Path, backend_manager: &BackendManager) -> String {
+     let data = collect_snapshot_data(backend_manager);
+     let current_iface = data.default_route.clone().unwrap_or_else(|| "none".into());
+     let wifi_iface = is_wifi_iface(current_iface.as_str())
+@@ -354,7 +426,10 @@ fn collect_shadow_state(config: &Config, cache: &Path, backend_manager: &Backend
+     lines.push(format!("target.state.reason={target_state_reason}"));
+     lines.push(format!("target.state.ts={target_state_ts}"));
+     lines.push(format!("app.foreground_package={foreground_package}"));
+-    lines.push("daemon.sample_mode=native_shadow".to_string());
++    lines.push("daemon.sample_mode=native_primary".to_string());
++    lines.push("network.discovery.contract=v1".to_string());
++    lines.push("network.discovery.primary=BINARY".to_string());
++    lines.push("network.discovery.fallback=SHELL".to_string());
+     lines.push(format!(
+         "daemon.sample_reason=interval_{}",
+         config.interval.as_secs()
+@@ -1120,7 +1195,7 @@ mod tests {
+     use std::time::Duration;
+ 
+     use super::{
+-        BackendManager, Config, InstanceLock, collect_shadow_state, connectivity_score,
++        BackendManager, Config, InstanceLock, collect_native_state, connectivity_score,
+         detect_transport, escape_json, link_reason, parse_first_integer,
+         parse_mhz_width_from_rate_line, score_reason,
+     };
+@@ -1227,7 +1302,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn renders_native_shadow_state_with_contract_keys() {
++    fn renders_native_primary_state_with_contract_keys() {
+         let root = std::env::temp_dir().join(format!("kitsunpingd-state-test-{}", process::id()));
+         let cache = root.join("cache");
+         fs::create_dir_all(&cache).expect("cache dir must be created");
+@@ -1244,7 +1319,7 @@ mod tests {
+             once: true,
+         };
+         let backend_manager = BackendManager::default();
+-        let state = collect_shadow_state(&config, &cache, &backend_manager);
++        let state = collect_native_state(&config, &cache, &backend_manager);
+         assert!(state.contains("iface="));
+         assert!(state.contains("transport="));
+         assert!(state.contains("wifi.score="));
+@@ -1252,6 +1327,10 @@ mod tests {
+         assert!(state.contains("target.state="));
+         assert!(state.contains("link.route_changes="));
+         assert!(state.contains("daemon.sample_interval_sec=10"));
++        assert!(state.contains("daemon.sample_mode=native_primary"));
++        assert!(state.contains("network.discovery.contract=v1"));
++        assert!(state.contains("network.discovery.primary=BINARY"));
++        assert!(state.contains("network.discovery.fallback=SHELL"));
+         assert!(state.contains("profile=stable"));
+ 
+         let _ = fs::remove_dir_all(cache);

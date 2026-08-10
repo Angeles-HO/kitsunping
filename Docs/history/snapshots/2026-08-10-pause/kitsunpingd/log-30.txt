@@ -1,0 +1,1 @@
+fd65180 (HEAD -> master, origin/master) feat(kitsunpingd): add versioned native sidecar

@@ -1,8 +1,11 @@
 # Kitsunping Documentation Hub
 
-Last update: 2026-07-10
+Last update: 2026-08-10
 
 This index is the canonical entry point for project documentation. Files are grouped by lifecycle stage to reduce noise and make release work easier.
+
+Current runtime and migration scope: `STATUS.md`.
+Historical campaigns and pause decisions: `history/`.
 
 ## 00-overview
 
@@ -25,6 +28,8 @@ This index is the canonical entry point for project documentation. Files are gro
 - `10-runtime/wifi-properties-reference.md`: Wi-Fi property reference.
 - `10-runtime/binary-paths.md`: bundled/system binary resolution.
 - `10-runtime/failsafe-module-status-reference.md`: failsafe and module-status lifecycle.
+- `10-runtime/kitsunping-kitsunpingd-contract.md`: implemented Bash/Rust state,
+  validation, fallback, authority, and measurement boundary.
 - `10-runtime/runtime-cadence-baseline-v7-beta.md`: baseline cadence and debounce tuning plan for v7.0-beta.
 - `10-runtime/runtime-debounce-experiment-matrix-v7-beta.md`: candidate comparison matrix for debounce 60s/90s.
 
@@ -39,6 +44,12 @@ This index is the canonical entry point for project documentation. Files are gro
 
 - `90-archive/testing-results-history.md`: historical benchmark log for older versions.
 - `90-archive/scoring-snippets-legacy.md`: legacy scoring notes and scratch snippets.
+
+## History
+
+- `STATUS.md`: current production, Rust-first, experimental, historical, and
+   paused work status.
+- `history/README.md`: campaign archive policy and historical index.
 
 ## Maintenance Rules
 

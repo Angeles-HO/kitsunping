@@ -1,0 +1,14 @@
+ .gitignore                                    |   3 +-
+ Docs/10-runtime/property-discovery-methods.md |  34 ++++-
+ Docs/README.md                                |  13 +-
+ addon/functions/daemon_adaptive_sampling.sh   | 100 ++++++++++++-
+ addon/functions/network_utils.sh              | 155 ++++++++++----------
+ addon/functions/utils/Kitsutils.sh            |   2 +
+ core/runtime.sh                               |  82 ++++++++++-
+ installer/service.sh                          | 194 +++++++++++++++++---------
+ network/app/target_engine.sh                  |  28 +++-
+ network/mobile/cycle.sh                       |  30 +++-
+ setup.sh                                      |   7 +-
+ testing/runtime/test_adaptive_sampling.sh     |  41 ++++++
+ tools/property_inventory.sh                   |  85 ++++++++++-
+ 13 files changed, 599 insertions(+), 175 deletions(-)
