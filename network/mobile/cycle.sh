@@ -43,28 +43,51 @@ network__mobile__transport_cycle() {
         signal_loop_count=$((signal_loop_count + 1))
         if [ "$signal_loop_count" -ge "$SIGNAL_POLL_INTERVAL" ]; then
             signal_loop_count=0
-            signal_info=$(get_signal_quality)
+            signal_info=$(get_native_mobile_signal_quality 2>/dev/null || true)
+            if [ -z "$signal_info" ]; then
+                command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+                command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+                signal_info=$(get_signal_quality)
+            else
+                command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+                # The native signal payload replaces the direct telephony
+                # registry dump; parser work remains intentionally uncounted.
+                kitsunpingd_metrics_record "mobile_signal" 0 0 1 0
+            fi
             echo "$signal_info" | atomic_write "$MODDIR/cache/signal_quality.json"
 
             signal_score=""
+            signal_source=""
+            native_rsrp_score=""
+            native_sinr_score=""
             rsrp=""
             sinr=""
             if [ -n "$JQ_BIN" ]; then
                 signal_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .quality_score // empty' 2>/dev/null)
                 rsrp=$(echo "$signal_info" | "$JQ_BIN" -r 'try .rsrp_dbm // empty' 2>/dev/null)
                 sinr=$(echo "$signal_info" | "$JQ_BIN" -r 'try .sinr_db // empty' 2>/dev/null)
+                signal_source=$(echo "$signal_info" | "$JQ_BIN" -r 'try .source // empty' 2>/dev/null)
+                native_rsrp_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .rsrp_score // empty' 2>/dev/null)
+                native_sinr_score=$(echo "$signal_info" | "$JQ_BIN" -r 'try .sinr_score // empty' 2>/dev/null)
             else
                 signal_score=$(echo "$signal_info" | awk -F: '/quality_score/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
                 rsrp=$(echo "$signal_info" | awk -F: '/rsrp_dbm/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
                 sinr=$(echo "$signal_info" | awk -F: '/sinr_db/ {gsub(/[^0-9-\.]/,"",$2); print $2; exit}')
+                signal_source=$(echo "$signal_info" | awk -F'"' '/"source"/ {print $4; exit}')
+                native_rsrp_score=$(echo "$signal_info" | awk -F: '/"rsrp_score"/ {gsub(/[^0-9-]/,"",$2); print $2; exit}')
+                native_sinr_score=$(echo "$signal_info" | awk -F: '/"sinr_score"/ {gsub(/[^0-9-]/,"",$2); print $2; exit}')
             fi
 
             rsrp_score=0
             sinr_score=0
-            if [ -n "$rsrp" ]; then
+            if [ "$signal_source" = "kitsunpingd" ] && echo "$native_rsrp_score" | grep -Eq '^[0-9]+$'; then
+                rsrp_score="$native_rsrp_score"
+            elif [ -n "$rsrp" ]; then
                 rsrp_score=$(score_rsrp_cached "$rsrp")
             fi
-            if [ -n "$sinr" ]; then
+            if [ "$signal_source" = "kitsunpingd" ] && echo "$native_sinr_score" | grep -Eq '^[0-9]+$'; then
+                sinr_score="$native_sinr_score"
+            elif [ -n "$sinr" ]; then
                 sinr_score=$(score_sinr_cached "$sinr")
             fi
 
@@ -92,6 +115,7 @@ network__mobile__transport_cycle() {
 
             if [ -f "$MODDIR/cache/target.override.active" ]; then
                 log_debug "target override active; skipping auto mobile profile write"
+                # shellcheck disable=SC2104
                 continue
             fi
 

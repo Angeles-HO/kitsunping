@@ -180,7 +180,23 @@ network__app__target_prop_lookup_profile() {
 # -----------------------------------------------------------------------
 
 network__app__detect_foreground_package() {
-    local out pkg pkg_win pkg_act
+    local out pkg pkg_win pkg_act native_pkg
+
+    native_pkg=""
+    if command -v get_native_foreground_package >/dev/null 2>&1; then
+        native_pkg="$(get_native_foreground_package 2>/dev/null || true)"
+    fi
+    if [ -n "$native_pkg" ]; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        if command -v kitsunpingd_metrics_record >/dev/null 2>&1; then
+            kitsunpingd_metrics_record "foreground_package" 0 0 2 8
+        fi
+        printf '%s' "$native_pkg"
+        return 0
+    fi
+
+    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
 
     out="$(dumpsys window windows 2>/dev/null | grep -m 1 -E 'mCurrentFocus|mFocusedApp')"
     pkg_win="$(printf '%s\n' "$out" | sed -n 's/.* u[0-9][0-9]* \([^ /}][^ /}]*\)\/.*/\1/p' | head -n 1)"
@@ -323,7 +339,7 @@ network__app__event_cycle() {
                 *) band="2.4GHz" ;;
             esac
             log_info "app_event=$app_event band=$band (force=1)"
-            
+
             # Call channel request with force=1 (bypasses rate-limit and score threshold)
             if command -v network__router__channel_recommend_request >/dev/null 2>&1; then
                 network__router__channel_recommend_request "$band" "1"
@@ -336,10 +352,10 @@ network__app__event_cycle() {
             # Parse channel:band from app_event_data (e.g., "11:2g" or "36:5g")
             local channel_info="$app_event_data"
             local channel band
-            
+
             channel="${channel_info%%:*}"
             band="${channel_info##*:}"
-            
+
             # Validate channel is numeric
             case "$channel" in
                 ''|*[!0-9]*)
@@ -354,9 +370,9 @@ network__app__event_cycle() {
                             band="2g" # fallback
                             ;;
                     esac
-                    
+
                     log_info "app_event=$app_event channel=$channel band=$band"
-                    
+
                     # Call channel apply function (P4)
                     if command -v network__router__channel_apply_request >/dev/null 2>&1; then
                         network__router__channel_apply_request "$band" "$channel"
