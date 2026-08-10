@@ -12,6 +12,14 @@ PING_COUNT=${PING_COUNT:-3}
 PING_TIMEOUT=${PING_TIMEOUT:-2}
 MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
 
+KITSUNPINGD_LEGACY_COLLECTORS_FILE="${KITSUNPINGD_LEGACY_COLLECTORS_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/legacy_network_collectors.sh}"
+KITSUNPINGD_SNAPSHOT_BRIDGE_FILE="${KITSUNPINGD_SNAPSHOT_BRIDGE_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/snapshot_bridge.sh}"
+KITSUNPINGD_SNAPSHOT_METRICS_FILE="${KITSUNPINGD_SNAPSHOT_METRICS_FILE:-${ADDON_DIR:-${MODDIR:-/data/adb/modules/Kitsunping}/addon}/functions/snapshot_metrics.sh}"
+
+[ -r "$KITSUNPINGD_LEGACY_COLLECTORS_FILE" ] && . "$KITSUNPINGD_LEGACY_COLLECTORS_FILE"
+[ -r "$KITSUNPINGD_SNAPSHOT_BRIDGE_FILE" ] && . "$KITSUNPINGD_SNAPSHOT_BRIDGE_FILE"
+[ -r "$KITSUNPINGD_SNAPSHOT_METRICS_FILE" ] && . "$KITSUNPINGD_SNAPSHOT_METRICS_FILE"
+
 # Get Wi-Fi status with more detailed reason codes
 # Returns: iface=IFACE link=STATE ip=HAS_IP egress=DEF_ROUTE reason=REASON
 # Usage: get_wifi_status [IFACE]
@@ -21,48 +29,24 @@ MIN_OK_REPLIES=${MIN_OK_REPLIES:-2}
 # - no_default_route: interface is up with IP but not default route
 # - usable_route: interface is up with IP and is default route
 get_wifi_status() {
-    # vars
-    local wifi_iface="${1:-$WIFI_IFACE}" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
+    local wifi_iface="${1:-${WIFI_IFACE:-}}" native_status
 
-    # If iface is missing/none or doesn't look like Wi-Fi, try auto-detect.
-    # This prevents accidental assignment of mobile ifaces (rmnet/ccmni/...) as Wi-Fi.
-    case "$wifi_iface" in
-        ''|none|NONE) wifi_iface="" ;;
-        wl*|wifi*) ;;
-        *) wifi_iface="" ;;
-    esac
-
-    # detect wifi interface if not specified
-    if [ -z "$wifi_iface" ]; then
-        wifi_iface=$("$IP_BIN" link show | awk -F: '/wl|wifi/ {gsub(/ /,"",$2); print $2; exit}')
-        [ -z "$wifi_iface" ] && wifi_iface="none"
-    fi
-    
-    link_state=$("$IP_BIN" link show "$wifi_iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    if "$IP_BIN" addr show "$wifi_iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $wifi_iface"; then
-        def_route=1
-    fi
-
-    reason="link_down"
-    if [ $link_up -eq 1 ]; then
-        if [ $has_ip -eq 1 ]; then
-            if [ $def_route -eq 1 ]; then
-                reason="usable_route"
-            else
-                reason="no_default_route"
-            fi
+    if native_status="$(get_native_wifi_status)"; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        # No caller-provided interface means the Shell fallback would also
+        # auto-detect it before its three link/IP/route probes.
+        if [ -z "${1:-${WIFI_IFACE:-}}" ]; then
+            kitsunpingd_metrics_record "wifi_status" 4 0 0 4
         else
-            reason="no_ip"
+            kitsunpingd_metrics_record "wifi_status" 3 0 0 3
         fi
+        printf '%s\n' "$native_status"
+        return 0
     fi
 
-    echo "iface=$wifi_iface link=$link_state ip=$has_ip egress=$def_route reason=$reason"
+    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+    legacy_get_wifi_status "$wifi_iface"
 }
 
 # get_mobile_status:
@@ -76,45 +60,18 @@ get_wifi_status() {
 # - no_default_route: interface is up with IP but not default route
 # - usable_route: interface is up with IP and is default route
 get_mobile_status() {
-    # Vars
-    local iface="$1" link_state="DOWN" link_up=0 has_ip=0 def_route=0 reason
+    local iface="$1" native_status
 
-    # If iface is empty/none, exit fast (diagnostic only; no autodetect)
-    if [ -z "$iface" ] || [ "$iface" = "none" ]; then
-        echo "iface=none link=DOWN ip=0 egress=0 reason=link_down"
+    if native_status="$(get_native_mobile_status "$iface")"; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        [ "$iface" = "none" ] || [ -z "$iface" ] || kitsunpingd_metrics_record "mobile_status" 3 0 0 3
+        printf '%s\n' "$native_status"
         return 0
     fi
 
-    # Query link state
-    link_state=$("$IP_BIN" link show "$iface" 2>/dev/null | awk '/state/ {print $9; exit}')
-    [ "$link_state" = "UP" ] && link_up=1
-
-    # Check for IP address
-    if "$IP_BIN" addr show "$iface" 2>/dev/null | grep -q "inet "; then
-        has_ip=1
-    fi
-
-    # Check for default route
-    if "$IP_BIN" route get 8.8.8.8 2>/dev/null | grep -q "dev $iface"; then
-        def_route=1
-    fi
-
-    # This section determines the reason code in if cases
-    reason="link_down" # Default reason
-    if [ $link_up -eq 1 ]; then # Interface is up
-        if [ $has_ip -eq 1 ]; then # Has IP address
-            if [ $def_route -eq 1 ]; then # Is default route
-                reason="usable_route"
-            else
-                reason="no_default_route"
-            fi
-        else
-            reason="no_ip"
-        fi
-    fi
-
-    # Output result
-    echo "iface=$iface link=${link_state:-DOWN} ip=$has_ip egress=$def_route reason=$reason"
+    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+    legacy_get_mobile_status "$iface"
 }
 
 # get_current_iface:
@@ -123,20 +80,37 @@ get_mobile_status() {
 # Output: interface name (e.g., wlan0, rmnet_data0) or "" if none found.
 # Usage: get_current_iface
 get_current_iface() {
-    local via_route
-    via_route=$("$IP_BIN" route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
-    if [ -n "$via_route" ]; then
-        echo "$via_route"
+    local native_iface
+    if native_iface="$(get_native_current_iface)"; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        kitsunpingd_metrics_record "current_iface" 1 0 0 1
+        printf '%s' "$native_iface"
         return
     fi
-    echo ""
+    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+    legacy_get_current_iface
 }
 
 # Get Wi-Fi RSSI in dBm (best-effort)
 # Usage: get_wifi_rssi_dbm [IFACE]
 # Output: integer RSSI (e.g., -55) or empty if unavailable
 get_wifi_rssi_dbm() {
-    local wifi_iface="${1:-$WIFI_IFACE}" rssi=""
+    local wifi_iface="${1:-${WIFI_IFACE:-}}" rssi="" native_rssi
+
+    if native_rssi="$(get_native_wifi_rssi_dbm)"; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        if [ -r /proc/net/wireless ]; then
+            kitsunpingd_metrics_record "wifi_rssi" 0 0 0 3
+        elif command_exists dumpsys; then
+            kitsunpingd_metrics_record "wifi_rssi" 0 0 1 2
+        fi
+        printf '%s' "$native_rssi"
+        return 0
+    fi
+
+    command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+    command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
 
     # Fast path: kernel wireless stats (if present)
     if [ -r /proc/net/wireless ]; then
@@ -296,7 +270,7 @@ iw_is_usable() {
     fi
     IW_USABLE=1
     return 0
-} 
+}
 
 infer_wifi_width_mhz() {
     local band="$1" width="$2" link_speed="$3" inferred_width="" width_source="" width_confidence=""
@@ -326,7 +300,7 @@ infer_wifi_width_mhz() {
     fi
 
     if [ "$infer_width_flag" -ne 1 ]; then
-        printf '%s|%s|%s' "" "" "" 
+        printf '%s|%s|%s' "" "" ""
         return 0
     fi
 
@@ -580,11 +554,26 @@ wifi_cache_write() {
 # Usage: get_wifi_extended_info [IFACE]
 # Output: key=value list (caps uses value=a|b)
 get_wifi_extended_info() {
-    local wifi_iface="${1:-$WIFI_IFACE}" info=""
+    local wifi_iface="${1:-${WIFI_IFACE:-}}" info=""
 
     WIFI_INFO_SOURCE=""
 
-    if iw_is_usable; then
+    info=$(get_native_wifi_extended_info "$wifi_iface" 2>/dev/null || true)
+    if [ -n "$info" ]; then
+        command -v runtime_profiler_snapshot_hit >/dev/null 2>&1 && runtime_profiler_snapshot_hit
+        WIFI_INFO_SOURCE="kitsunpingd"
+        # iw_is_usable and parse_iw_link_info each invoke iw once before
+        # parsing. The later dumpsys/ip-neigh fallbacks are conditional, so
+        # they are intentionally not represented as avoided work here.
+        if resolve_iw_binary; then
+            kitsunpingd_metrics_record "wifi_extended_info" 0 2 0 1
+        fi
+    else
+        command -v runtime_profiler_snapshot_miss >/dev/null 2>&1 && runtime_profiler_snapshot_miss
+        command -v runtime_profiler_fallback >/dev/null 2>&1 && runtime_profiler_fallback
+    fi
+
+    if [ -z "$info" ] && iw_is_usable; then
         info=$(parse_iw_link_info "$wifi_iface")
         [ -n "$info" ] && WIFI_INFO_SOURCE="iw"
     fi

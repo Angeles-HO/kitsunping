@@ -44,9 +44,9 @@ elif command -v resetprop >/dev/null 2>&1; then
 fi
 echo "[SYS][SERVICE] heavy activity state reset (lock + $HEAVY_LOAD_PROP=0)" >> "$SERVICES_LOGS"
 
-# Common utilities 
+# Common utilities
 COMMON_UTIL="$SCRIPT_DIR/addon/functions/utils/Kitsutils.sh"
- 
+
 if [ -f "$COMMON_UTIL" ]; then
     . "$COMMON_UTIL"
 else
@@ -82,19 +82,19 @@ fi
 # =============================================================================
 setup_wget_wrapper() {
     WGET_WRAPPER="/data/local/tmp/wget"
-    
+
     # Check if busybox is available
     if ! command -v busybox >/dev/null 2>&1; then
         echo "[SYS][WARN]: busybox not found, wget wrapper not created" >> "$SERVICES_LOGS"
         return 1
     fi
-    
+
     # Check if wget already exists in PATH
     if command -v wget >/dev/null 2>&1; then
         echo "[SYS][INFO]: wget already available in PATH" >> "$SERVICES_LOGS"
         return 0
     fi
-    
+
     # Create wrapper if it doesn't exist or is outdated
     if [ ! -f "$WGET_WRAPPER" ] || [ ! -x "$WGET_WRAPPER" ]; then
         cat > "$WGET_WRAPPER" <<'WGET_EOF'
@@ -102,7 +102,7 @@ setup_wget_wrapper() {
 exec busybox wget "$@"
 WGET_EOF
         chmod 755 "$WGET_WRAPPER" 2>/dev/null
-        
+
         if [ -x "$WGET_WRAPPER" ]; then
             echo "[SYS][OK]: wget wrapper created at $WGET_WRAPPER" >> "$SERVICES_LOGS"
         else
@@ -112,7 +112,7 @@ WGET_EOF
     else
         echo "[SYS][INFO]: wget wrapper already exists at $WGET_WRAPPER" >> "$SERVICES_LOGS"
     fi
-    
+
     return 0
 }
 
@@ -137,7 +137,7 @@ custom_write() {
     echo "[DEBUG]: Call to [custom_write()] with arguments: ['$1'], ['$2'], ['$3']" >> "$SERVICES_LOGS"
 
     value="$1"
-    normalized_value=$(normalize_sysctl_value "$value") # 
+    normalized_value=$(normalize_sysctl_value "$value") #
     target_file="$2"
     log_text="$3"
 
@@ -211,7 +211,7 @@ apply_ril_settings() {
     echo "[RIL settings applied]"   >> "$SERVICES_LOGS"
 }
 
-apply_general_network_settings() { 
+apply_general_network_settings() {
     echo "[Applying general network settings...]"  >> "$SERVICES_LOGS"
     echo "[General network settings applied]"  >> "$SERVICES_LOGS"
 }
@@ -262,26 +262,26 @@ apply_tcp_settings() {
     echo "[Aplicando configuraciones [ IPV4/TCP ]...]"  >> "$SERVICES_LOGS"
     apply_param_set <<'EOF'
 1|/proc/sys/net/ipv4/tcp_ecn|tcp_ecn enabled
-1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled 
-1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled 
-1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled 
-16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem adjusted 
-16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem adjusted 
-65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem adjusted 
-cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic 
+1|/proc/sys/net/ipv4/tcp_sack|tcp_sack enabled
+1|/proc/sys/net/ipv4/tcp_fack|tcp_fack enabled
+1|/proc/sys/net/ipv4/tcp_window_scaling|tcp_window_scaling enabled
+16384,87380,26777216|/proc/sys/net/ipv4/tcp_rmem|tcp_rmem adjusted
+16384,87380,26777216|/proc/sys/net/ipv4/tcp_wmem|tcp_wmem adjusted
+65536,131072,262144|/proc/sys/net/ipv4/tcp_mem|tcp_mem adjusted
+cubic|/proc/sys/net/ipv4/tcp_congestion_control|tcp_congestion_control configurado a cubic
 1|/proc/sys/net/ipv4/tcp_no_metrics_save|tcp_no_metrics_save enabled
-3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled 
-5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 adjusted 
-5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 adjusted 
-2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes adjusted 
-3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries adjusted 
-512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog adjusted 
-32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans adjusted 
-10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout adjusted 
-35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time adjusted 
-10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl adjusted 
-3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes adjusted 
-1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies enabled 
+3|/proc/sys/net/ipv4/tcp_fastopen|tcp_fastopen enabled
+5|/proc/sys/net/ipv4/tcp_retries1|tcp_retries1 adjusted
+5|/proc/sys/net/ipv4/tcp_retries2|tcp_retries2 adjusted
+2097152|/proc/sys/net/ipv4/tcp_limit_output_bytes|tcp_limit_output_bytes adjusted
+3|/proc/sys/net/ipv4/tcp_orphan_retries|tcp_orphan_retries adjusted
+512|/proc/sys/net/ipv4/tcp_max_syn_backlog|tcp_max_syn_backlog adjusted
+32768|/proc/sys/net/ipv4/tcp_max_orphans|tcp_max_orphans adjusted
+10|/proc/sys/net/ipv4/tcp_fin_timeout|tcp_fin_timeout adjusted
+35|/proc/sys/net/ipv4/tcp_keepalive_time|tcp_keepalive_time adjusted
+10|/proc/sys/net/ipv4/tcp_keepalive_intvl|tcp_keepalive_intvl adjusted
+3|/proc/sys/net/ipv4/tcp_keepalive_probes|tcp_keepalive_probes adjusted
+1|/proc/sys/net/ipv4/tcp_syncookies|tcp_syncookies enabled
 EOF
 
     echo "[Configuraciones TCP completadas]"  >> "$SERVICES_LOGS"
@@ -304,44 +304,44 @@ apply_network_ipv4_settings() {
 0|/proc/sys/net/ipv4/conf/default/secure_redirects|secure_redirects disabled by default
 1|/proc/sys/net/ipv4/conf/all/src_valid_mark|src_valid_mark enabled globally
 1|/proc/sys/net/ipv4/conf/default/src_valid_mark|src_valid_mark enabled by default
-1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect enabled 
-0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all disabled 
-1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts enabled 
-0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr disabled 
-1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses enabled 
-100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimized 
-5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimized 
-500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimized for lower latency 
-6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask adjusted 
-1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports enabled 
-50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships adjusted for higher efficiency 
-20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf adjusted 
-2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv adjusted 
-64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl adjusted 
-0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr disabled 
-1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux enabled for faster processing 
-0|/proc/sys/net/ipv4/ip_forward|ip_forward disabled to reduce overhead 
-1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority adjusted 
-0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu disabled 
-1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing enabled 
-1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range expanded for more connections 
-0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc disabled 
-1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind enabled to allow more connections 
-1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start adjusted 
-4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh adjusted for larger buffer 
-3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh adjusted 
-64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist adjusted 
-0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval adjusted 
-30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time adjusted 
-1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux enabled for faster processing 
-131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem adjusted for higher performance 
-8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimized 
-8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimized 
-600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl adjusted 
-120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl adjusted 
-131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold adjusted for more peers 
-0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range adjusted 
-32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh adjusted 
+1|/proc/sys/net/ipv4/fwmark_reflect|fwmark_reflect enabled
+0|/proc/sys/net/ipv4/icmp_echo_ignore_all|icmp_echo_ignore_all disabled
+1|/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts|icmp_echo_ignore_broadcasts enabled
+0|/proc/sys/net/ipv4/icmp_errors_use_inbound_ifaddr|icmp_errors_use_inbound_ifaddr disabled
+1|/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses|icmp_ignore_bogus_error_responses enabled
+100|/proc/sys/net/ipv4/icmp_msgs_burst|icmp_msgs_burst optimized
+5000|/proc/sys/net/ipv4/icmp_msgs_per_sec|icmp_msgs_per_sec optimized
+500|/proc/sys/net/ipv4/icmp_ratelimit|icmp_ratelimit optimized for lower latency
+6168|/proc/sys/net/ipv4/icmp_ratemask|icmp_ratemask adjusted
+1|/proc/sys/net/ipv4/igmp_link_local_mcast_reports|igmp_link_local_mcast_reports enabled
+50|/proc/sys/net/ipv4/igmp_max_memberships|igmp_max_memberships adjusted for higher efficiency
+20|/proc/sys/net/ipv4/igmp_max_msf|igmp_max_msf adjusted
+2|/proc/sys/net/ipv4/igmp_qrv|igmp_qrv adjusted
+64|/proc/sys/net/ipv4/ip_default_ttl|ip_default_ttl adjusted
+0|/proc/sys/net/ipv4/ip_dynaddr|ip_dynaddr disabled
+1|/proc/sys/net/ipv4/ip_early_demux|ip_early_demux enabled for faster processing
+0|/proc/sys/net/ipv4/ip_forward|ip_forward disabled to reduce overhead
+1|/proc/sys/net/ipv4/ip_forward_update_priority|ip_forward_update_priority adjusted
+0|/proc/sys/net/ipv4/ip_forward_use_pmtu|ip_forward_use_pmtu disabled
+1|/proc/sys/net/ipv4/tcp_mtu_probing|tcp_mtu_probing enabled
+1024,65535|/proc/sys/net/ipv4/ip_local_port_range|ip_local_port_range expanded for more connections
+0|/proc/sys/net/ipv4/ip_no_pmtu_disc|ip_no_pmtu_disc disabled
+1|/proc/sys/net/ipv4/ip_nonlocal_bind|ip_nonlocal_bind enabled to allow more connections
+1024|/proc/sys/net/ipv4/ip_unprivileged_port_start|ip_unprivileged_port_start adjusted
+4194304|/proc/sys/net/ipv4/ipfrag_high_thresh|ipfrag_high_thresh adjusted for larger buffer
+3145728|/proc/sys/net/ipv4/ipfrag_low_thresh|ipfrag_low_thresh adjusted
+64|/proc/sys/net/ipv4/ipfrag_max_dist|ipfrag_max_dist adjusted
+0|/proc/sys/net/ipv4/ipfrag_secret_interval|ipfrag_secret_interval adjusted
+30|/proc/sys/net/ipv4/ipfrag_time|ipfrag_time adjusted
+1|/proc/sys/net/ipv4/udp_early_demux|udp_early_demux enabled for faster processing
+131072,262144,524288|/proc/sys/net/ipv4/udp_mem|udp_mem adjusted for higher performance
+8192|/proc/sys/net/ipv4/udp_rmem_min|udp_rmem_min optimized
+8192|/proc/sys/net/ipv4/udp_wmem_min|udp_wmem_min optimized
+600|/proc/sys/net/ipv4/inet_peer_maxttl|inet_peer_maxttl adjusted
+120|/proc/sys/net/ipv4/inet_peer_minttl|inet_peer_minttl adjusted
+131072|/proc/sys/net/ipv4/inet_peer_threshold|inet_peer_threshold adjusted for more peers
+0,2147483647|/proc/sys/net/ipv4/ping_group_range|ping_group_range adjusted
+32768|/proc/sys/net/ipv4/xfrm4_gc_thresh|xfrm4_gc_thresh adjusted
 EOF
 
     echo "[Configuring optimized network settings completed]"  >> "$SERVICES_LOGS"
@@ -385,7 +385,7 @@ EOF
 
     echo "[IPv6 network configurations completed]"  >> "$SERVICES_LOGS"
 }
-    
+
 apply_network_optimizations() {
     echo "[SYS][SERVICE] Starting the application of all configurations..." >> "$SERVICES_LOGS"
     apply_core_settings || echo "[SYS][SERVICE] Error applying configurations [CORE]" >> "$SERVICES_LOGS"
@@ -433,7 +433,67 @@ apply_network_optimizations  || echo "[SYS][SERVICE] Error applying base optimiz
 DAEMON_SH="$SCRIPT_DIR/addon/daemon/daemon.sh"
 DAEMON_PID_FILE="$SCRIPT_DIR/cache/daemon.pid"
 DAEMON_SUPERVISOR_PID_FILE="$SCRIPT_DIR/cache/daemon.supervisor.pid"
+NATIVE_DAEMON="$SCRIPT_DIR/bin/kitsunpingd"
+NATIVE_PID_FILE="$SCRIPT_DIR/cache/kitsunpingd.pid"
+NATIVE_SUPERVISOR_PID_FILE="$SCRIPT_DIR/cache/kitsunpingd.supervisor.pid"
 mkdir -p "$SCRIPT_DIR/cache" 2>/dev/null
+
+native_snapshot_pid_is_running() {
+    native_pid="$(cat "$NATIVE_PID_FILE" 2>/dev/null)"
+    case "$native_pid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$native_pid" 2>/dev/null || return 1
+    [ -r "/proc/$native_pid/cmdline" ] || return 1
+    tr '\0' ' ' < "/proc/$native_pid/cmdline" 2>/dev/null | grep -Fq "$NATIVE_DAEMON" || return 1
+    return 0
+}
+
+native_snapshot_supervisor_is_running() {
+    native_supervisor_pid="$(cat "$NATIVE_SUPERVISOR_PID_FILE" 2>/dev/null)"
+    case "$native_supervisor_pid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$native_supervisor_pid" 2>/dev/null || return 1
+    return 0
+}
+
+start_native_snapshot_supervisor() {
+    native_interval="$(getprop kitsunping.daemon.interval 2>/dev/null | tr -d '\r\n')"
+    case "$native_interval" in
+        ''|*[!0-9]*|0) native_interval=10 ;;
+    esac
+
+    [ -x "$NATIVE_DAEMON" ] || {
+        echo "[SYS][SERVICE] Native snapshot sidecar absent; Shell network collectors remain active" >> "$SERVICES_LOGS"
+        return 0
+    }
+
+    (
+        while true; do
+            if native_snapshot_pid_is_running; then
+                sleep 5
+                continue
+            fi
+            rm -f "$NATIVE_PID_FILE" "$SCRIPT_DIR/cache/kitsunpingd.lock" 2>/dev/null
+            "$NATIVE_DAEMON" --root "$SCRIPT_DIR" --interval-seconds "$native_interval" >> "$SERVICES_LOGS" 2>&1
+            native_rc=$?
+            echo "[SYS][SERVICE][WARN] Native snapshot sidecar exited rc=$native_rc; restarting in 5s" >> "$SERVICES_LOGS"
+            sleep 5
+        done
+    ) &
+    echo "$!" > "$NATIVE_SUPERVISOR_PID_FILE"
+    echo "[SYS][SERVICE] Native snapshot supervisor started interval=${native_interval}s" >> "$SERVICES_LOGS"
+}
+
+if native_snapshot_pid_is_running; then
+    echo "[SYS][SERVICE] Native snapshot sidecar already running with PID $(cat "$NATIVE_PID_FILE")" >> "$SERVICES_LOGS"
+elif native_snapshot_supervisor_is_running; then
+    echo "[SYS][SERVICE] Native snapshot supervisor already running with PID $(cat "$NATIVE_SUPERVISOR_PID_FILE")" >> "$SERVICES_LOGS"
+else
+    rm -f "$NATIVE_SUPERVISOR_PID_FILE" 2>/dev/null
+    start_native_snapshot_supervisor || true
+fi
 
 daemon_pid_is_running() {
     pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null)"

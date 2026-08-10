@@ -48,7 +48,8 @@ if [ -z "${MODPATH:-}" ]; then
 fi
 
 # Ensure runtime directories exist even when ZIP packaging omits empty folders.
-mkdir -p "$NEWMODPATH/cache" "$NEWMODPATH/logs" "$NEWMODPATH/calibration/data/cache" 2>/dev/null || true
+mkdir -p "$NEWMODPATH/bin" "$NEWMODPATH/cache" "$NEWMODPATH/logs" "$NEWMODPATH/calibration/data/cache" 2>/dev/null || true
+[ -f "$NEWMODPATH/bin/kitsunpingd" ] && chmod 0755 "$NEWMODPATH/bin/kitsunpingd" 2>/dev/null || true
 
 # Load base utilities and permissions
 . "$NEWMODPATH/$complemento_kitsutils"
@@ -242,7 +243,7 @@ if [ "$MODE_SELECTION" -eq 1 ]; then
     log_info "Please wait and do not interrupt"
     log_info "  the process or move the device"
     log_info "It may take several minutes to complete"
-    
+
     # POSIX-safe stderr handling: capture once, then mirror to installer stderr and persistent trace log.
     trace_log_file="/sdcard/trace_log2.log"
     trace_tmp_err="$NEWMODPATH/logs/calibration.stderr.log"
@@ -350,7 +351,7 @@ progress_bar
 # Auto mode but not have SIM card: 250s/280s
 # Auto mode with SIM card: aprox 4/6 mins (420s-512s)
 # Fixed mode: aprox 20s (static values + minimal processing)
-INSTALL_END_TIME=$(date +%s) 
+INSTALL_END_TIME=$(date +%s)
 INSTALL_DURATION=$((INSTALL_END_TIME - INSTALL_START_TIME))
 echo "${divider}"
 echo "❖ Installation completed in ${INSTALL_DURATION} seconds."

@@ -79,6 +79,7 @@ set_permissions_module() {
         [ -e "$modpath/addon/ping/ping" ] && set_perm "$modpath/addon/ping/ping" 0 0 0755
         [ -e "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/arm/keycheck" 0 0 0755
         [ -e "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" ] && set_perm "$modpath/addon/Volume-Key-Selector/tools/x86/keycheck" 0 0 0755
+        [ -e "$modpath/bin/kitsunpingd" ] && set_perm "$modpath/bin/kitsunpingd" 0 0 0755
     else
         # Fallback: attempt operations but avoid masking errors with '|| true'. Log failures to help debugging.
         if ! chown -R 0:0 "$modpath" 2>/dev/null; then
@@ -128,6 +129,7 @@ set_permissions_module() {
             "$modpath/addon/functions/net_math.sh" \
             "$modpath/addon/functions/core.sh" \
             "$modpath/addon/functions/daemon_static.sh" \
+            "$modpath/bin/kitsunpingd" \
             "$modpath/policy/executor/executor.sh" \
             "$modpath/addon/policy/executor.sh"; do
             if [ -e "$f" ]; then
