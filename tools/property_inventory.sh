@@ -21,7 +21,7 @@ OUT_DIR="${PROP_INV_OUT_DIR:-/sdcard/kitsunping_prop_inventory}"
 WITH_BINARIES=0
 MAX_BINARY_FILES="${PROP_INV_MAX_BINARY_FILES:-300}"
 
-PROP_REGEX='(ro|persist|sys|vendor|debug|dalvik|init\.svc)\.[A-Za-z0-9._-]+'
+PROP_REGEX='(ro|persist|sys|vendor|debug|dalvik|init\.svc|net|wifi|ril)\.[A-Za-z0-9._-]+'
 
 log() { printf '%s\n' "$*"; }
 err() { printf '[ERR] %s\n' "$*" >&2; }
@@ -36,7 +36,13 @@ Modes:
       - property_contexts (plat/vendor/odm/product)
       - init rc setprop and property: triggers
       - known *.prop files
-      - (optional) strings from selected binaries
+            - (optional) strings from selected binaries
+
+    candidates [--with-binaries] [--out-dir DIR]
+            Report network-related property candidates found in property contexts,
+            init rc files, and optionally binaries. Excludes build.prop keys,
+            currently visible getprop keys, Kitsunping keys, and generic runtime keys.
+            Output is evidence for investigation only; it never writes a property.
 
   snapshot <out_file>
       Save current getprop snapshot to out_file (sorted key=value).
@@ -218,6 +224,67 @@ run_static() {
     log "[INFO] total keys: $(wc -l < "$f_all" 2>/dev/null || echo 0)"
 }
 
+snapshot_runtime_keys() {
+    local out="$1"
+    getprop 2>/dev/null | sed -n 's/^\[\([^]]*\)\]: \[.*\]$/\1/p' | sort -u > "$out" 2>/dev/null || : > "$out"
+}
+
+merge_network_candidates() {
+    local contexts="$1" init_rc="$2" binaries="$3" runtime="$4" out="$5"
+
+    awk -v contexts="$contexts" -v init_rc="$init_rc" -v binaries="$binaries" -v runtime="$runtime" '
+        FILENAME == runtime { runtime_key[$0] = 1; next }
+        FILENAME == contexts { source[$0] = source[$0] "property_contexts,"; next }
+        FILENAME == init_rc { source[$0] = source[$0] "init_rc,"; next }
+        FILENAME == binaries { source[$0] = source[$0] "binaries,"; next }
+        END {
+            for (key in source) {
+                if (runtime_key[key]) continue
+                if (key ~ /\.$/) continue
+                if (key ~ /^(persist\.)?kitsunping\./) continue
+                if (key ~ /^(init\.svc|debug|dalvik|service|sys\.boot)\./) continue
+                if (key ~ /^ro\./) continue
+                if (source[key] == "binaries," && key ~ /^wifi\./) continue
+                if (key !~ /^(wifi\.|net\.(tcp|wifi|data)\.|ril\.(data|wifi|radio)\.|sys\.(wifi|wlan|net|data)\.|vendor\.(wifi|wlan|data|radio)\.|persist\.(vendor\.(wifi|wlan|data|radio)|sys\.(wifi|wlan|net|data)|radio\.))/) continue
+                value = source[key]
+                sub(/,$/, "", value)
+                print key "\t" value
+            }
+        }
+    ' "$runtime" "$contexts" "$init_rc" "$binaries" | sort -u > "$out" 2>/dev/null || : > "$out"
+}
+
+run_candidates() {
+    local ts
+    ts="$(date +%Y%m%d_%H%M%S 2>/dev/null || echo unknown)"
+
+    ensure_out_dir || return 1
+
+    local f_ctx="$OUT_DIR/candidate_contexts_${ts}.txt"
+    local f_init="$OUT_DIR/candidate_init_rc_${ts}.txt"
+    local f_bin="$OUT_DIR/candidate_binaries_${ts}.txt"
+    local f_runtime="$OUT_DIR/candidate_runtime_excluded_${ts}.txt"
+    local f_out="$OUT_DIR/network_property_candidates_${ts}.tsv"
+
+    log "[RUN] candidate collection (read-only)"
+    extract_from_property_contexts "$f_ctx"
+    extract_from_init_rc "$f_init"
+    snapshot_runtime_keys "$f_runtime"
+
+    if [ "$WITH_BINARIES" -eq 1 ]; then
+        log "[RUN] binary strings scan (max files: $MAX_BINARY_FILES)"
+        extract_from_binaries_strings "$f_bin"
+    else
+        : > "$f_bin"
+    fi
+
+    merge_network_candidates "$f_ctx" "$f_init" "$f_bin" "$f_runtime" "$f_out"
+
+    log "[OK ] candidates:       $f_out"
+    log "[INFO] candidate keys: $(wc -l < "$f_out" 2>/dev/null || echo 0)"
+    log "[INFO] columns: property<TAB>static_sources"
+}
+
 run_snapshot() {
     local out_file="${1:-}"
     [ -n "$out_file" ] || {
@@ -271,6 +338,20 @@ case "$MODE" in
             shift
         done
         run_static
+        ;;
+    candidates)
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --with-binaries) WITH_BINARIES=1 ;;
+                --out-dir)
+                    shift
+                    OUT_DIR="${1:-$OUT_DIR}"
+                    ;;
+                *) err "Unknown candidates option: $1"; usage; exit 1 ;;
+            esac
+            shift
+        done
+        run_candidates
         ;;
     snapshot)
         run_snapshot "${1:-}"
