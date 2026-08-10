@@ -24,6 +24,8 @@ turn raw development captures into module release content.
 - `experiments/rust-first/2026-08-10-network-discovery-ab-paused/`: later
   309-tick baseline paused by operator; incomplete.
 - `decisions/`: scope and pause decisions.
+- `decisions/2026-08-10-paused-worktree-exceptions.md`: preserved binary,
+  fixture, and ignore-rule exceptions not committed during the pause.
 - `snapshots/`: Git and device identity snapshots made during archival.
 
 ## Current Classification
