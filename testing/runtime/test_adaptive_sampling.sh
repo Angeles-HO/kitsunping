@@ -52,6 +52,7 @@ daemon_adaptive_sampling_init
 WIFI_IFACE=wlan0
 wifi_state=disconnected
 interval_file="$TMP_DIR/adaptive_interval.txt"
+KITSUNPINGD_ADAPTIVE_BIN="/workspaces/KitsuneSeries/Kitsunpingd/target/debug/kitsunpingd"
 daemon_sampling_pick_interval 10 > "$interval_file"
 interval_result="$(cat "$interval_file")"
 assert_eq 8 "$interval_result" "adaptive sampling degrades interval when Wi-Fi is disconnected"
@@ -78,6 +79,46 @@ interval_result="$(cat "$interval_file")"
 assert_eq 12 "$interval_result" "adaptive-off mode keeps caller interval"
 assert_eq fixed "$DAEMON_SAMPLE_MODE" "adaptive-off mode reports fixed sampling"
 assert_eq adaptive_off "$DAEMON_SAMPLE_REASON" "adaptive-off mode exposes reason"
+
+TEST_ADAPTIVE_SAMPLING=1
+daemon_adaptive_sampling_init
+WIFI_IFACE=wlan0
+wifi_state=disconnected
+bash_interval="$(daemon_sampling_pick_interval_bash 10)"
+bash_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
+daemon_adaptive_sampling_init
+WIFI_IFACE=wlan0
+wifi_state=disconnected
+rust_interval="$(daemon_sampling_pick_interval 10)"
+rust_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
+assert_eq "$bash_interval" "$rust_interval" "Rust matches Bash interval for disconnected Wi-Fi"
+assert_eq "$bash_state" "$rust_state" "Rust matches Bash state for disconnected Wi-Fi"
+
+TEST_ADAPTIVE_SAMPLING=0
+daemon_adaptive_sampling_init
+bash_interval="$(daemon_sampling_pick_interval_bash 12)"
+bash_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
+daemon_adaptive_sampling_init
+rust_interval="$(daemon_sampling_pick_interval 12)"
+rust_state="$DAEMON_SAMPLE_MODE:$DAEMON_SAMPLE_REASON:$daemon_adaptive_bad_streak:$daemon_adaptive_good_streak"
+assert_eq "$bash_interval" "$rust_interval" "Rust matches Bash interval when adaptive sampling is disabled"
+assert_eq "$bash_state" "$rust_state" "Rust matches Bash state when adaptive sampling is disabled"
+
+invalid_native="$TMP_DIR/invalid-kitsunpingd"
+cat > "$invalid_native" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'invalid=result'
+EOF
+chmod 0700 "$invalid_native"
+KITSUNPINGD_ADAPTIVE_BIN="$invalid_native"
+TEST_ADAPTIVE_SAMPLING=1
+daemon_adaptive_sampling_init
+WIFI_IFACE=wlan0
+wifi_state=disconnected
+daemon_sampling_pick_interval 10 > "$interval_file"
+interval_result="$(cat "$interval_file")"
+assert_eq 8 "$interval_result" "invalid Rust result falls back to Bash interval"
+assert_eq degraded "$DAEMON_SAMPLE_MODE" "invalid Rust result falls back to Bash state"
 
 rm -f "$interval_file"
 

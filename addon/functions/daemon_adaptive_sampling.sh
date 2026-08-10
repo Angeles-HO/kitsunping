@@ -127,7 +127,7 @@ daemon_sampling_should_degrade() {
     return 1
 }
 
-daemon_sampling_pick_interval() {
+daemon_sampling_pick_interval_bash() {
     local base_interval="$1" desired
 
     case "$base_interval" in ''|*[!0-9]* ) base_interval="${INTERVAL:-10}" ;; esac
@@ -162,4 +162,102 @@ daemon_sampling_pick_interval() {
 
     DAEMON_SAMPLE_INTERVAL_SEC="$desired"
     printf '%s' "$desired"
+}
+
+daemon_sampling_pick_interval() {
+    local base_interval="$1" native_bin timeout_sec native_output
+    local interval mode reason bad_streak good_streak line key value
+    local interval_seen=0 mode_seen=0 reason_seen=0 bad_seen=0 good_seen=0
+    local wifi_score_arg wifi_latency_arg wifi_jitter_arg wifi_loss_arg
+
+    interval=""
+    mode=""
+    reason=""
+    bad_streak=""
+    good_streak=""
+
+    case "$base_interval" in ''|*[!0-9]*) base_interval="${INTERVAL:-10}" ;; esac
+
+    if [ -n "${KITSUNPINGD_ADAPTIVE_BIN:-}" ]; then
+        native_bin="$KITSUNPINGD_ADAPTIVE_BIN"
+    elif [ -x /data/local/tmp/kitsunping_dev/bin/kitsunpingd ]; then
+        native_bin=/data/local/tmp/kitsunping_dev/bin/kitsunpingd
+    else
+        native_bin="${MODDIR:-/data/adb/modules/Kitsunping}/bin/kitsunpingd"
+    fi
+    timeout_sec="${KITSUNPINGD_ADAPTIVE_TIMEOUT_SEC:-1}"
+    case "$timeout_sec" in ''|*[!0-9]*) timeout_sec=1 ;; esac
+    [ "$timeout_sec" -lt 1 ] && timeout_sec=1
+
+    [ -x "$native_bin" ] && command -v timeout >/dev/null 2>&1 || {
+        daemon_sampling_pick_interval_bash "$base_interval"
+        return
+    }
+
+    wifi_score_arg="${wifi_score:-}"
+    case "$wifi_score_arg" in *[!0-9]*) wifi_score_arg="" ;; esac
+    wifi_latency_arg="${wifi_latency_ms:-}"
+    case "$wifi_latency_arg" in *[!0-9]*) wifi_latency_arg="" ;; esac
+    wifi_jitter_arg="${wifi_jitter_ms:-}"
+    case "$wifi_jitter_arg" in *[!0-9]*) wifi_jitter_arg="" ;; esac
+    wifi_loss_arg="${wifi_loss_pct:-}"
+    case "$wifi_loss_arg" in *[!0-9]*) wifi_loss_arg="" ;; esac
+
+    native_output="$(timeout "$timeout_sec" "$native_bin" --adaptive-sampling \
+        --base-interval "$base_interval" \
+        --enabled "${ADAPTIVE_SAMPLING_ENABLE:-1}" \
+        --mode "${DAEMON_SAMPLE_MODE:-base}" \
+        --wifi-iface "${WIFI_IFACE:-none}" \
+        --wifi-state "${wifi_state:-unknown}" \
+        --wifi-quality-reason "${wifi_quality_reason:-}" \
+        --wifi-score "$wifi_score_arg" \
+        --wifi-latency-ms "$wifi_latency_arg" \
+        --wifi-jitter-ms "$wifi_jitter_arg" \
+        --wifi-loss-pct "$wifi_loss_arg" \
+        --wifi-loss-trend-pct "${wifi_loss_trend_pct:-}" \
+        --wifi-probe-ok "${wifi_probe_ok:-1}" \
+        --bad-streak "${daemon_adaptive_bad_streak:-0}" \
+        --good-streak "${daemon_adaptive_good_streak:-0}" \
+        --required-bad-streak "${ADAPTIVE_BAD_STREAK:-2}" \
+        --required-good-streak "${ADAPTIVE_GOOD_STREAK:-3}" \
+        --base-seconds "${ADAPTIVE_BASE_SEC:-30}" \
+        --degraded-seconds "${ADAPTIVE_DEGRADED_SEC:-8}" \
+        --wifi-score-threshold "${ADAPTIVE_WIFI_SCORE_THRESHOLD:-65}" \
+        --wifi-latency-threshold-ms "${ADAPTIVE_WIFI_LATENCY_THRESHOLD_MS:-120}" \
+        --wifi-jitter-threshold-ms "${ADAPTIVE_WIFI_JITTER_THRESHOLD_MS:-30}" \
+        --wifi-loss-threshold-pct "${ADAPTIVE_WIFI_LOSS_THRESHOLD_PCT:-5}" 2>/dev/null)" || native_output=""
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        key="${line%%=*}"
+        value="${line#*=}"
+        [ "$key" != "$line" ] || { native_output=""; break; }
+        case "$key" in
+            interval) [ "$interval_seen" -eq 0 ] || { native_output=""; break; }; interval="$value"; interval_seen=1 ;;
+            mode) [ "$mode_seen" -eq 0 ] || { native_output=""; break; }; mode="$value"; mode_seen=1 ;;
+            reason) [ "$reason_seen" -eq 0 ] || { native_output=""; break; }; reason="$value"; reason_seen=1 ;;
+            bad_streak) [ "$bad_seen" -eq 0 ] || { native_output=""; break; }; bad_streak="$value"; bad_seen=1 ;;
+            good_streak) [ "$good_seen" -eq 0 ] || { native_output=""; break; }; good_streak="$value"; good_seen=1 ;;
+            *) native_output=""; break ;;
+        esac
+    done <<EOF
+$native_output
+EOF
+
+    case "$interval:$bad_streak:$good_streak" in *[!0-9:]*|::*) native_output="" ;; esac
+    case "$mode" in base|degraded|fixed) ;; *) native_output="" ;; esac
+    case "$reason" in ''|*[!a-z_]* ) native_output="" ;; esac
+    [ "$interval_seen:$mode_seen:$reason_seen:$bad_seen:$good_seen" = "1:1:1:1:1" ] || native_output=""
+
+    if [ -n "$native_output" ]; then
+        DAEMON_SAMPLE_MODE="$mode"
+        DAEMON_SAMPLE_REASON="$reason"
+        DAEMON_SAMPLE_INTERVAL_SEC="$interval"
+        daemon_adaptive_bad_streak="$bad_streak"
+        daemon_adaptive_good_streak="$good_streak"
+        printf '%s' "$interval"
+        return 0
+    fi
+
+    command -v log_warning >/dev/null 2>&1 && log_warning "adaptive sampling Rust result invalid; using Bash fallback"
+    daemon_sampling_pick_interval_bash "$base_interval"
 }
