@@ -54,12 +54,20 @@ under `Docs/history/`. Raw TSV/CSV/SQLite/tracefs evidence remains in the
 separate `KitsunpingRuntimeProfiler/artifacts/` store and is referenced by
 manifest rather than copied into a module release tree.
 
+## Active Stabilization
+
+The `network.discovery/v1` contract is in an active 24-hour read-only soak.
+The external observer records lifecycle and snapshot health without enabling
+Runtime Observatory instrumentation or a performance campaign. See
+`Docs/10-runtime/network-discovery-v1-soak.md`.
+
 ## Paused
 
 Rust migration work is **PAUSED until explicit operator direction**.
 
 - `MIG-002`: **NOT SELECTED**.
-- Performance campaigns: **PAUSED**.
+- Performance campaigns: **PAUSED**; the read-only soak is not a performance
+  campaign.
 - Property migration: **PAUSED**.
 - Runtime Observatory implementation: **FROZEN**.
 - SG2008 and Wireshark work: **PAUSED**.
