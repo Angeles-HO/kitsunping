@@ -4,6 +4,8 @@ Run ID: `network-discovery-v1-soak-20260811`
 
 Status: COMPLETED observer window / INCONCLUSIVE soak result
 
+Observer diagnosis: **D) CAUSE_UNDETERMINED**. See `observer-diagnostic.md`.
+
 ## Method
 
 An external read-only observer sampled the Bash daemon, `kitsunpingd`, native

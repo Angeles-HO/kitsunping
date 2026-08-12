@@ -56,11 +56,12 @@ manifest rather than copied into a module release tree.
 
 ## Stabilization Result
 
-The first 24-hour read-only soak observer window completed but is **INCONCLUSIVE**:
-29 valid samples, three stale samples, and only 32 of 289 expected samples.
+`network.discovery/v1` is **FROZEN / KEEP**. The first 24-hour read-only soak
+observer window is **INCONCLUSIVE**: 29 valid samples, three stale samples, and
+only 32 of 289 expected samples. Observer diagnosis is **D) CAUSE_UNDETERMINED**.
 Neither daemon was observed down, but the sample coverage and a 22,075-second
-observer gap are insufficient to declare `CONTRACT STABLE`. No packet capture,
-new migration, or automatic soak extension is authorized. See
+observer gap are insufficient to declare `CONTRACT STABLE`. Migration and packet
+capture are both **NO-GO**. No automatic soak extension is authorized. See
 `Docs/10-runtime/network-discovery-v1-soak.md`.
 
 ## Paused

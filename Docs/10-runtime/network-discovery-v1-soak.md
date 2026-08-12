@@ -28,6 +28,12 @@ The copied `health.tsv` SHA-256 is:
 74773a9265ff556b89977adde8d021209b10b1a5a1e721859611eec6f42decd5
 ```
 
+Observer-cause classification is **D) CAUSE_UNDETERMINED**. The diagnostic
+found no correlated reboot, observer log, process lifecycle record, module-log
+event, or contemporaneous suspend/wake evidence that proves why the observer
+lost cadence. See
+`Docs/history/experiments/rust-first/2026-08-11-network-discovery-soak/observer-diagnostic.md`.
+
 ## Scope
 
 `network.discovery/v1` is frozen as the pilot Rust-first contract:
