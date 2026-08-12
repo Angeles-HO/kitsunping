@@ -54,11 +54,13 @@ under `Docs/history/`. Raw TSV/CSV/SQLite/tracefs evidence remains in the
 separate `KitsunpingRuntimeProfiler/artifacts/` store and is referenced by
 manifest rather than copied into a module release tree.
 
-## Active Stabilization
+## Stabilization Result
 
-The `network.discovery/v1` contract is in an active 24-hour read-only soak.
-The external observer records lifecycle and snapshot health without enabling
-Runtime Observatory instrumentation or a performance campaign. See
+The first 24-hour read-only soak observer window completed but is **INCONCLUSIVE**:
+29 valid samples, three stale samples, and only 32 of 289 expected samples.
+Neither daemon was observed down, but the sample coverage and a 22,075-second
+observer gap are insufficient to declare `CONTRACT STABLE`. No packet capture,
+new migration, or automatic soak extension is authorized. See
 `Docs/10-runtime/network-discovery-v1-soak.md`.
 
 ## Paused

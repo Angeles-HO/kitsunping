@@ -1,8 +1,32 @@
 # network.discovery/v1 Soak
 
-Status: active, read-only stabilization phase
+Status: completed observer window, inconclusive soak result
 
 Started: 2026-08-11
+
+## Outcome
+
+The 24-hour observer window completed, but it does not establish `CONTRACT
+STABLE`. The observer expected 289 samples at a five-minute interval and
+recorded only 32. The health data contains 29 valid samples and three stale
+samples; no invalid or missing snapshots were recorded, and neither daemon nor
+sidecar was observed non-running.
+
+The maximum recorded snapshot age was 1,058 seconds and the maximum gap between
+samples was 22,075 seconds. The passive observer did not explain whether that
+gap was device suspension, observer scheduling, or another lifecycle event.
+Do not treat the low sample count as evidence that the contract survived the
+whole window uninterrupted.
+
+The evidence is preserved outside the module release tree at:
+
+`KitsunpingRuntimeProfiler/artifacts/network-discovery-v1/network-discovery-v1-soak-20260811/read-only-soak/`
+
+The copied `health.tsv` SHA-256 is:
+
+```text
+74773a9265ff556b89977adde8d021209b10b1a5a1e721859611eec6f42decd5
+```
 
 ## Scope
 
@@ -36,8 +60,10 @@ zero fallbacks.
 
 ## Duration and Review
 
-The initial window is 24 hours. At 24 hours, review the health file and decide
-whether to extend to 48 and then 72 hours without modifying the contract.
+The initial window was 24 hours. It completed with insufficient coverage, so
+there is no automatic extension to 48 or 72 hours and no authorization for
+packet capture. A future operator must decide whether to diagnose observer
+coverage or launch a new soak window.
 
 The soak is invalidated or paused only for a real safety concern, daemon loss,
 snapshot corruption, device-access loss, or an operator stop. Any such event

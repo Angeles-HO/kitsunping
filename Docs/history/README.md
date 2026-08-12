@@ -23,6 +23,8 @@ turn raw development captures into module release content.
   Rust-first functional A/B and its performance limits.
 - `experiments/rust-first/2026-08-10-network-discovery-ab-paused/`: later
   309-tick baseline paused by operator; incomplete.
+- `experiments/rust-first/2026-08-11-network-discovery-soak/`: completed
+  observer window with insufficient coverage; inconclusive for stability.
 - `decisions/`: scope and pause decisions.
 - `decisions/2026-08-10-paused-worktree-exceptions.md`: preserved binary,
   fixture, and ignore-rule exceptions not committed during the pause.
