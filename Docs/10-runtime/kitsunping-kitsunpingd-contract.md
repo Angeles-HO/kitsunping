@@ -75,6 +75,12 @@ which the PID file is removed and the lock is released. A `SIGKILL` can leave a
 lock behind; the supervisor deliberately removes stale native PID and lock
 files before it launches a replacement.
 
+The Bash native supervisor publishes the child PID to `kitsunpingd.pid` when it
+launches the binary and removes that file only when it still names the exited
+child. The binary also re-publishes its own PID at each collection iteration.
+This dual publication keeps liveness checks and passive observers functional if
+an external cleanup removes the PID file while the sidecar remains alive.
+
 The publication format for `daemon.native.state` is newline-separated
 `key=value` pairs. It has no escaping layer. Published values must therefore
 remain single-line scalar values. This is an interface constraint for every
@@ -163,6 +169,32 @@ runtime reaches current-interface discovery in its cycle, but a future caller
 must not assume that a long-lived shell process reloads the file automatically.
 Changing reader order or adding a long-running direct consumer requires a
 freshness regression test.
+
+### Native Failure Definition
+
+The native producer is considered failed for a public reader when the reader
+cannot establish a complete, valid contract for that reader. Failure is a
+fallback decision, not an assertion that the process crashed.
+
+| Boundary | Native failure conditions | Result |
+| --- | --- | --- |
+| `get_current_iface` | snapshot absent/unreadable, timestamp absent or stale, `iface` absent, or invalid interface format | `legacy_get_current_iface` |
+| `get_wifi_status` | snapshot absent/unreadable, timestamp absent or stale, any required `wifi.link`, `wifi.ip`, or `wifi.egress` field absent, invalid field domain, or invalid interface format | `legacy_get_wifi_status` |
+| `get_mobile_status` | snapshot absent/unreadable, timestamp absent or stale, any required `mobile.iface`, `mobile.link`, `mobile.ip`, or `mobile.egress` field absent, invalid field domain, invalid interface format, or requested/native interface mismatch | `legacy_get_mobile_status` |
+| Adaptive sampling CLI | binary absent/not executable, timeout/nonzero exit, empty output, duplicate or unknown key, missing required key, invalid numeric value, or invalid mode/reason domain | `daemon_sampling_pick_interval_bash` |
+
+The `network.discovery/v1` required fields must be present. Readers must not
+substitute an omitted `link`, `ip`, `egress`, mobile interface, or active
+interface with a default that turns an incomplete native snapshot into success.
+An empty Wi-Fi interface is normalized to `none` only after the required Wi-Fi
+link/IP/egress fields have been established.
+
+### Binary Diagnostics
+
+`kitsunpingd` functional CLI output remains unprefixed on `stdout` because Bash
+parses it as a machine contract. Native diagnostics written to `stderr` use the
+`[B] kitsunpingd:` prefix. This distinguishes binary-origin diagnostics from
+existing Shell logs without polluting snapshot files or adaptive CLI output.
 
 ## Published Extensions Outside the Promoted Contract
 

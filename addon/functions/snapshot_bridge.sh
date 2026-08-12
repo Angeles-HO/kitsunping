@@ -32,11 +32,14 @@ kitsunpingd_native_flag_is_valid() {
 get_native_wifi_status() {
     local wifi_iface wifi_link wifi_ip wifi_egress wifi_reason
     kitsunpingd_snapshot_load || return 1
+    [ -n "${KITSUNPINGD_NATIVE_WIFI_LINK:-}" ] || return 1
+    [ -n "${KITSUNPINGD_NATIVE_WIFI_IP:-}" ] || return 1
+    [ -n "${KITSUNPINGD_NATIVE_WIFI_EGRESS:-}" ] || return 1
     wifi_iface="${KITSUNPINGD_NATIVE_WIFI_IFACE:-none}"
     [ -n "$wifi_iface" ] || wifi_iface="none"
-    wifi_link="${KITSUNPINGD_NATIVE_WIFI_LINK:-DOWN}"
-    wifi_ip="${KITSUNPINGD_NATIVE_WIFI_IP:-0}"
-    wifi_egress="${KITSUNPINGD_NATIVE_WIFI_EGRESS:-0}"
+    wifi_link="$KITSUNPINGD_NATIVE_WIFI_LINK"
+    wifi_ip="$KITSUNPINGD_NATIVE_WIFI_IP"
+    wifi_egress="$KITSUNPINGD_NATIVE_WIFI_EGRESS"
     kitsunpingd_native_iface_is_valid "$wifi_iface" || return 1
     kitsunpingd_native_link_is_valid "$wifi_link" || return 1
     kitsunpingd_native_flag_is_valid "$wifi_ip" || return 1
@@ -61,11 +64,14 @@ get_native_wifi_status() {
 get_native_mobile_status() {
     local iface="$1" native_iface native_link native_ip native_egress native_reason
     kitsunpingd_snapshot_load || return 1
-    native_iface="${KITSUNPINGD_NATIVE_MOBILE_IFACE:-none}"
-    [ -n "$native_iface" ] || native_iface="none"
-    native_link="${KITSUNPINGD_NATIVE_MOBILE_LINK:-DOWN}"
-    native_ip="${KITSUNPINGD_NATIVE_MOBILE_IP:-0}"
-    native_egress="${KITSUNPINGD_NATIVE_MOBILE_EGRESS:-0}"
+    [ -n "${KITSUNPINGD_NATIVE_MOBILE_IFACE:-}" ] || return 1
+    [ -n "${KITSUNPINGD_NATIVE_MOBILE_LINK:-}" ] || return 1
+    [ -n "${KITSUNPINGD_NATIVE_MOBILE_IP:-}" ] || return 1
+    [ -n "${KITSUNPINGD_NATIVE_MOBILE_EGRESS:-}" ] || return 1
+    native_iface="$KITSUNPINGD_NATIVE_MOBILE_IFACE"
+    native_link="$KITSUNPINGD_NATIVE_MOBILE_LINK"
+    native_ip="$KITSUNPINGD_NATIVE_MOBILE_IP"
+    native_egress="$KITSUNPINGD_NATIVE_MOBILE_EGRESS"
     kitsunpingd_native_iface_is_valid "$native_iface" || return 1
     kitsunpingd_native_link_is_valid "$native_link" || return 1
     kitsunpingd_native_flag_is_valid "$native_ip" || return 1
@@ -97,8 +103,9 @@ get_native_mobile_status() {
 get_native_current_iface() {
     kitsunpingd_snapshot_reset
     kitsunpingd_snapshot_load || return 1
-    kitsunpingd_native_iface_is_valid "${KITSUNPINGD_NATIVE_IFACE:-none}" || return 1
-    [ "${KITSUNPINGD_NATIVE_IFACE:-none}" = "none" ] || printf '%s' "$KITSUNPINGD_NATIVE_IFACE"
+    [ -n "${KITSUNPINGD_NATIVE_IFACE:-}" ] || return 1
+    kitsunpingd_native_iface_is_valid "$KITSUNPINGD_NATIVE_IFACE" || return 1
+    [ "$KITSUNPINGD_NATIVE_IFACE" = "none" ] || printf '%s' "$KITSUNPINGD_NATIVE_IFACE"
 }
 
 get_native_wifi_rssi_dbm() {
