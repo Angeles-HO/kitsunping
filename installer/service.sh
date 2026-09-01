@@ -479,8 +479,11 @@ start_native_snapshot_supervisor() {
             "$NATIVE_DAEMON" --root "$SCRIPT_DIR" --interval-seconds "$native_interval" >> "$SERVICES_LOGS" 2>&1 &
             native_child=$!
             printf '%s\n' "$native_child" > "$NATIVE_PID_FILE" 2>/dev/null || true
-            wait "$native_child"
-            native_rc=$?
+            if wait "$native_child"; then
+                native_rc=0
+            else
+                native_rc=$?
+            fi
             [ "$(cat "$NATIVE_PID_FILE" 2>/dev/null)" = "$native_child" ] && rm -f "$NATIVE_PID_FILE" 2>/dev/null
             echo "[SYS][SERVICE][WARN] Native snapshot sidecar exited rc=$native_rc; restarting in 5s" >> "$SERVICES_LOGS"
             sleep 5

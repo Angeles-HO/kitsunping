@@ -7,7 +7,7 @@ configs/kitsuneping_original_backup*.conf
 configs/kitsuneping_optimal.conf
 configs/kitsuneping_static.conf
 !configs/.gitkeep
-
+.delegation/
 # Logs
 logs/
 tools/logs/*.txt
@@ -44,4 +44,5 @@ REPORTE_ANALISIS.md
 Docs/design/onnx-adaptive-model.md
 testing/integration/device_runtime_scenarios.md
 report.md
-history/
+history/*
+artifacts/*
